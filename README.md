@@ -23,5 +23,8 @@ In Progress...
 ## Repository Structure
 
 ```text
-docs/ -> project documentation
-src/  -> source code
+docs/
+├── team-contract.md
+└── meetings/ -> meeting agendas and notes
+
+src/ -> application source code
