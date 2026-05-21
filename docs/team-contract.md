@@ -5,7 +5,7 @@
 
 ## Roles
 
-- XXX is our team lead, and is responsible for coordinating the project.
+- Akshat is our team lead, and is responsible for coordinating the project.
 - XXX leads the [front-end/back-end/both] design [for YYY module(s)].
 - XXX leads the integration and end-to-end testing of the app. 
 - XXX leads the design and maintenance of the database.
