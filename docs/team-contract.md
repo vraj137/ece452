@@ -5,17 +5,17 @@
 
 ## Roles
 
-- Akshat is our team lead, and is responsible for coordinating the project.
-- XXX leads the [front-end/back-end/both] design [for YYY module(s)].
-- XXX leads the integration and end-to-end testing of the app. 
-- XXX leads the design and maintenance of the database.
+- Akshat Jawne is our team lead and is responsible for coordinating the project.
+- Vraj Bhavsar is the technical lead.
+- Vishvam Patel and Edmond Yang lead the front-end design (Design Leads).
+- Eric Zhu and Raghav Verma lead the back-end design.
 
 ---
 
 ## Communication
 
-- Our team will use [Discord/Slack/Teams] group chat to communicate project-related matters.
-- We will meet every week at XXX.
+- Our team will use Discord group chat to communicate project-related matters.
+- We will meet every week at 6 PM EST.
 
 ---
 
@@ -29,8 +29,8 @@
 - Decisions can be made during meetings even some members are absent.
 - Each member will take turns listening as well as talking, and active listening will be a strategy for all group discussions.
 
-- XXX will post the agenda for the week in our group chat each Monday.
-- XXX will take notes during all meetings.
+- Akshat Jawne will post the agenda for the week in our group chat each Monday.
+- Vraj Bhavsar will take notes during all meetings.
 ---
 
 # Expectations
