@@ -42,12 +42,12 @@ We have also completed P1 together and planned out the work for P3 - Project Pro
 
 ## Team Roles
 
-| Role              | Member |
-| Team Lead         | Akshat Jawne 
-| Technical Lead    | Vraj Bhavsar
-| Design Leads      | Vishvam Patel, Edmond Yang
-| Back-End Leads    | Eric Zhu, Raghav Verma
-
+Role & Member
+- Team Lead -> Akshat Jawne 
+- Technical Lead -> Vraj Bhavsar
+- Design Leads -> Vishvam Patel, Edmond Yang
+- Back-End Leads -> Eric Zhu, Raghav Verma
+  
 ---
 
 ## Communication
