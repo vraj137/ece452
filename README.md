@@ -20,10 +20,6 @@ To further enhance the user experience, the app may include gamification element
 - [Team Contract](./docs/team-contract.md)
 - [Meeting Notes](./docs/meetings/)
 
-## Project Overview
-
-In Progress...
-
 ## Repository Structure
 
 ```text
