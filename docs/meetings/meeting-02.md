@@ -14,18 +14,39 @@
 - Edmond Yang
 
 ## Meeting Agenda
+1. Team updates
+   - Review progress since Meeting 01
+   - Confirm repository and document structure are set up
+   - Project Proposal updates (review/suggestion current completed requirements)
 
+2. Define project scope
+   - Identify the main problem the app is solving
+   - Decide the target users
+   - Clarify the core features for the first version
 
+3. App Feature Discussion
+   - Any optiona/future features we think of to implement
+
+4. Technical planning
+   - Discuss possible front-end, back-end, and database options
+
+5. Team workflow
+   - Confirm how tasks will be assigned for the creation of the app
 ---
+
 ## Discussion Notes
 
+Team Updates:
+- Everyone is on track to complete their required work for the Project Proposal.
 
----
-## Decisions Made
+App Feature Disuccsion:
+- Interactive study spot map
+- Study space ratings and reviews
+- Filters for noise level, lighting, Wi-Fi, occupancy, and solo/group study
+- Basic user profiles
 
-
----
-## Action Items
-
+Team Workflow:
+- Design leads will provide a sketch and rough estimate on the main display layouts for the app
+- Vraj will implement the base bone structure of the application and team can continue to add on top of that as we progress.
 
 ---
