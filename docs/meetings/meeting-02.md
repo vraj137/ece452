@@ -1,4 +1,4 @@
-# Meeting 02 – 
+# Meeting 02
 
 **Date:** May 28, 2026  
 **Time:** 6:00 PM  
@@ -16,8 +16,9 @@
 ## Meeting Agenda
 1. Team updates
    - Review progress since Meeting 01
-   - Confirm repository and document structure are set up
+   - Confirm the repository and document structure are set up
    - Project Proposal updates (review/suggestion current completed requirements)
+   - Think of an app name 
 
 2. Define project scope
    - Identify the main problem the app is solving
@@ -25,7 +26,7 @@
    - Clarify the core features for the first version
 
 3. App Feature Discussion
-   - Any optiona/future features we think of to implement
+   - Any optional/future features we think of to implement
 
 4. Technical planning
    - Discuss possible front-end, back-end, and database options
@@ -38,8 +39,9 @@
 
 Team Updates:
 - Everyone is on track to complete their required work for the Project Proposal.
+- spotra (app name) - spotra by app-etizers
 
-App Feature Disuccsion:
+App Feature Discussion:
 - Interactive study spot map
 - Study space ratings and reviews
 - Filters for noise level, lighting, Wi-Fi, occupancy, and solo/group study
