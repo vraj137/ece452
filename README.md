@@ -23,8 +23,13 @@ To further enhance the user experience, the app may include gamification element
 ## Repository Structure
 
 ```text
+app/ -> native Android app module using Kotlin and Jetpack Compose
 docs/
 ├── team-contract.md
 └── meetings/ -> meeting agendas and notes
 
-src/ -> application source code
+build.gradle -> root Android Gradle configuration
+settings.gradle -> Gradle project/module configuration
+```
+
+See [Android Project Structure](./docs/android-project-structure.md) for the current mobile codebase foundation.
