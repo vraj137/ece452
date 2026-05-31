@@ -26,5 +26,6 @@ To further enhance the user experience, the app may include gamification element
 docs/
 ├── team-contract.md
 └── meetings/ -> meeting agendas and notes
+└── weeklyUpdates/ -> weekly updates on group progress (P2)
 
 src/ -> application source code
