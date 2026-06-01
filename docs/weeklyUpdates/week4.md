@@ -2,7 +2,7 @@
 
 May 25 - June 1
 
-- [All members] discussed the project proposal requirements and high-level architecture; [meeting minutes](https://github.com/pengyunie/project-x/blob/main/docs/meetings/week-4.md)
+- [All members] discussed the project proposal requirements and high-level architecture; [meeting minutes](https://github.com/vraj137/ece452/blob/main/docs/meetings/meeting-02.md)
 - [Vraj] Setting up Android project codebase structure; [commit/PR](https://github.com/vraj137/ece452/pull/5)
 - making progress on project proposal (P3), where:
   - [Vishvam] 
