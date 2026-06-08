@@ -8,7 +8,7 @@
 - Akshat Jawne is our team lead and is responsible for coordinating the project.
 - Vraj Bhavsar is the technical lead.
 - Vishvam Patel and Edmond Yang lead the front-end design (Design Leads).
-- Eric Zhu and Raghav Verma lead the back-end design.
+- Eric Zhu, Raghav Verma, and Pavan Jayasinha lead the back-end design.
 
 ---
 
