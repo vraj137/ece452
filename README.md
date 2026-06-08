@@ -14,6 +14,7 @@ To further enhance the user experience, the app may include gamification element
 - Vishvam Patel ([@VishvamPatel31](https://github.com/VishvamPatel31))
 - Raghav Verma ([@RaghavVerma24](https://github.com/RaghavVerma24))
 - Edmond Yang ([@Edmond0511](https://github.com/Edmond0511))
+- Pavan Jayasinha ([@Sinestro38](https://github.com/Sinestro38))
 
 ## Important Links
 
