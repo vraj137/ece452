@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -19,6 +20,7 @@ fun HomeScreen() {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .statusBarsPadding()
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -28,7 +30,7 @@ fun HomeScreen() {
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = "A mobile platform for discovering and evaluating study spaces on and around campus.",
+                text = "Your account is ready. Maps, live occupancy, filters, and study-space details will connect here.",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
