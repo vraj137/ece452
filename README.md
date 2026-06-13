@@ -36,3 +36,24 @@ settings.gradle -> Gradle project/module configuration
 ```
 
 See [Android Project Structure](./docs/android-project-structure.md) for the current mobile codebase foundation.
+
+## Onboarding and Supabase setup
+
+The app includes a passwordless onboarding flow backed by Supabase Auth and Postgres:
+
+1. Create a Supabase project.
+2. Run `supabase/migrations/202606120001_create_profiles_and_restrict_signups.sql`.
+3. In **Authentication > Hooks**, enable the `Before User Created` hook and select
+   `public.hook_restrict_signup_to_uwaterloo`.
+4. In the email confirmation template, include `{{ .Token }}` so users receive the
+   six-digit code rather than only a magic link.
+5. Add these untracked values to `local.properties`:
+
+```properties
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_PUBLISHABLE_KEY=your-publishable-or-anon-key
+```
+
+Never put a Supabase service-role key in the Android app. Without local credentials,
+the app still builds and displays onboarding, but network actions show a configuration
+error.
