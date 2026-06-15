@@ -1,7 +1,9 @@
 package com.appetizers.spotra.data.remote
 
+import com.appetizers.spotra.domain.model.UserProfile
 import com.appetizers.spotra.domain.repository.AuthRepository
 import com.appetizers.spotra.domain.repository.AuthUser
+import com.appetizers.spotra.domain.repository.ProfileRepository
 
 /**
  * Used in DEBUG builds when Supabase credentials are absent.
@@ -23,5 +25,15 @@ class DebugAuthRepository : AuthRepository {
 
     override suspend fun signOut() {
         session = null
+    }
+}
+
+class DebugProfileRepository : ProfileRepository {
+    private var profile: UserProfile? = null
+
+    override suspend fun getProfile(userId: String): UserProfile? = profile
+
+    override suspend fun saveProfile(profile: UserProfile) {
+        this.profile = profile
     }
 }

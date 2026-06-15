@@ -3,6 +3,7 @@ package com.appetizers.spotra
 import android.app.Application
 import com.appetizers.spotra.data.local.DataStoreOnboardingDraftRepository
 import com.appetizers.spotra.data.remote.DebugAuthRepository
+import com.appetizers.spotra.data.remote.DebugProfileRepository
 import com.appetizers.spotra.data.remote.MissingConfigurationAuthRepository
 import com.appetizers.spotra.data.remote.MissingConfigurationProfileRepository
 import com.appetizers.spotra.data.remote.SupabaseAuthRepository
@@ -55,7 +56,7 @@ class AppContainer(application: Application) {
             profileRepository = SupabaseProfileRepository(client)
         } else if (BuildConfig.DEBUG) {
             authRepository = DebugAuthRepository()
-            profileRepository = MissingConfigurationProfileRepository()
+            profileRepository = DebugProfileRepository()
         } else {
             authRepository = MissingConfigurationAuthRepository()
             profileRepository = MissingConfigurationProfileRepository()
