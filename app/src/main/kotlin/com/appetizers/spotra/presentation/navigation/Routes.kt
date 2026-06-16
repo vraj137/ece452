@@ -9,6 +9,5 @@ object Routes {
     const val Program = "program"
     const val Complete = "complete"
     const val SignIn = "sign-in"
-    const val SignInOtp = "sign-in-otp"
     const val Home = "home"
 }
