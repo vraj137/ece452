@@ -1,6 +1,10 @@
 package com.appetizers.spotra.domain.repository
 
+import com.appetizers.spotra.domain.model.CheckInSession
+import com.appetizers.spotra.domain.model.GroupMember
+import com.appetizers.spotra.domain.model.HomeSnapshot
 import com.appetizers.spotra.domain.model.OnboardingDraft
+import com.appetizers.spotra.domain.model.StudyMode
 import com.appetizers.spotra.domain.model.UserProfile
 import kotlinx.coroutines.flow.Flow
 
@@ -22,4 +26,16 @@ interface OnboardingDraftRepository {
     val draft: Flow<OnboardingDraft>
     suspend fun save(draft: OnboardingDraft)
     suspend fun clear()
+}
+
+interface HomeRepository {
+    suspend fun loadHome(): HomeSnapshot
+    suspend fun startCheckIn(
+        spotId: String,
+        mode: StudyMode,
+        groupSessionId: String?
+    ): CheckInSession
+    suspend fun checkOut(sessionId: String)
+    suspend fun sendBuddyRequest(studentId: String)
+    suspend fun inviteToGroup(groupSessionId: String, inviteText: String): GroupMember
 }

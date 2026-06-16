@@ -46,8 +46,7 @@ fun SpotraApp(container: AppContainer) {
         factory = OnboardingViewModel.Factory(
             container.authRepository,
             container.profileRepository,
-            container.draftRepository,
-            container.getStartRoute
+            container.draftRepository
         )
     )
     val startRoute by appViewModel.startRoute.collectAsStateWithLifecycle()
@@ -112,8 +111,7 @@ fun SpotraApp(container: AppContainer) {
         composable(Routes.Program) { ProgramScreen(state, goBack, onboardingViewModel) }
         composable(Routes.Complete) { CompleteScreen(state, onboardingViewModel::finishOnboarding) }
         composable(Routes.SignIn) { EmailScreen(state, goBack, onboardingViewModel, signIn = true) }
-        composable(Routes.SignInOtp) { OtpScreen(state, goBack, onboardingViewModel) }
-        composable(Routes.Home) { HomeScreen() }
+        composable(Routes.Home) { HomeScreen(container.homeRepository) }
     }
 }
 

@@ -9,9 +9,9 @@ import com.appetizers.spotra.domain.model.UserProfile
 import com.appetizers.spotra.domain.repository.AuthRepository
 import com.appetizers.spotra.domain.repository.OnboardingDraftRepository
 import com.appetizers.spotra.domain.repository.ProfileRepository
-import com.appetizers.spotra.domain.usecase.GetStartRouteUseCase
-import com.appetizers.spotra.domain.usecase.StartRoute
 import com.appetizers.spotra.presentation.navigation.Routes
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -46,9 +46,10 @@ object OnboardingValidation {
 class OnboardingViewModel(
     private val authRepository: AuthRepository,
     private val profileRepository: ProfileRepository,
-    private val draftRepository: OnboardingDraftRepository,
-    private val getStartRoute: GetStartRouteUseCase
+    private val draftRepository: OnboardingDraftRepository
 ) : ViewModel() {
+    private var draftSaveJob: Job? = null
+    private var hasLocalDraftChanges = false
     private val _uiState = MutableStateFlow(OnboardingUiState())
     val uiState: StateFlow<OnboardingUiState> = _uiState.asStateFlow()
 
@@ -58,17 +59,19 @@ class OnboardingViewModel(
     init {
         viewModelScope.launch {
             draftRepository.draft.collect { draft ->
-                _uiState.update { it.copy(draft = draft) }
+                _uiState.update { state ->
+                    if (hasLocalDraftChanges) state else state.copy(draft = draft)
+                }
             }
         }
     }
 
     fun beginRegistration() {
-        _uiState.update { it.copy(isRegistration = true, error = null) }
+        _uiState.update { it.copy(isRegistration = true, otp = "", error = null) }
     }
 
     fun beginSignIn() {
-        _uiState.update { it.copy(isRegistration = false, error = null) }
+        _uiState.update { it.copy(isRegistration = false, otp = "", error = null) }
     }
 
     fun updateName(firstName: String? = null, lastName: String? = null) {
@@ -107,11 +110,7 @@ class OnboardingViewModel(
         saveDraftAndAwait { copy(email = email) }
         authRepository.sendOtp(email, createUser = uiState.value.isRegistration)
         _uiState.update { it.copy(otp = "") }
-        _events.emit(
-            OnboardingEvent.Navigate(
-                if (uiState.value.isRegistration) Routes.Otp else Routes.SignInOtp
-            )
-        )
+        _events.emit(OnboardingEvent.Navigate(Routes.Otp))
     }
 
     fun verifyOtp() = runRequest {
@@ -119,19 +118,11 @@ class OnboardingViewModel(
         require(OnboardingValidation.isValidOtp(state.otp)) {
             "Enter the 6-digit code from your email."
         }
-        val user = authRepository.verifyOtp(state.draft.email, state.otp)
+        authRepository.verifyOtp(state.draft.email, state.otp)
         if (state.isRegistration) {
             _events.emit(OnboardingEvent.Navigate(Routes.Program))
         } else {
-            val destination = when (getStartRoute()) {
-                StartRoute.Home -> Routes.Home
-                StartRoute.Name -> {
-                    _uiState.update { it.copy(isRegistration = true) }
-                    Routes.Name
-                }
-                StartRoute.Welcome -> Routes.Welcome
-            }
-            _events.emit(OnboardingEvent.Navigate(destination))
+            _events.emit(OnboardingEvent.Navigate(Routes.Home))
         }
     }
 
@@ -166,6 +157,7 @@ class OnboardingViewModel(
 
     fun finishOnboarding() {
         viewModelScope.launch {
+            draftSaveJob?.cancel()
             draftRepository.clear()
             _events.emit(OnboardingEvent.Navigate(Routes.Home))
         }
@@ -173,12 +165,20 @@ class OnboardingViewModel(
 
     private fun saveDraft(transform: OnboardingDraft.() -> OnboardingDraft) {
         val updated = uiState.value.draft.transform()
-        _uiState.update { it.copy(error = null) }
-        viewModelScope.launch { draftRepository.save(updated) }
+        hasLocalDraftChanges = true
+        _uiState.update { it.copy(draft = updated, error = null) }
+        draftSaveJob?.cancel()
+        draftSaveJob = viewModelScope.launch {
+            delay(250)
+            draftRepository.save(updated)
+        }
     }
 
     private suspend fun saveDraftAndAwait(transform: OnboardingDraft.() -> OnboardingDraft) {
         val updated = uiState.value.draft.transform()
+        draftSaveJob?.cancel()
+        hasLocalDraftChanges = true
+        _uiState.update { it.copy(draft = updated, error = null) }
         draftRepository.save(updated)
     }
 
@@ -203,11 +203,10 @@ class OnboardingViewModel(
     class Factory(
         private val authRepository: AuthRepository,
         private val profileRepository: ProfileRepository,
-        private val draftRepository: OnboardingDraftRepository,
-        private val getStartRoute: GetStartRouteUseCase
+        private val draftRepository: OnboardingDraftRepository
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            OnboardingViewModel(authRepository, profileRepository, draftRepository, getStartRoute) as T
+            OnboardingViewModel(authRepository, profileRepository, draftRepository) as T
     }
 }

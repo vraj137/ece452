@@ -3,12 +3,14 @@ package com.appetizers.spotra
 import android.app.Application
 import com.appetizers.spotra.data.local.DataStoreOnboardingDraftRepository
 import com.appetizers.spotra.data.remote.DebugAuthRepository
+import com.appetizers.spotra.data.remote.DebugHomeRepository
 import com.appetizers.spotra.data.remote.DebugProfileRepository
 import com.appetizers.spotra.data.remote.MissingConfigurationAuthRepository
 import com.appetizers.spotra.data.remote.MissingConfigurationProfileRepository
 import com.appetizers.spotra.data.remote.SupabaseAuthRepository
 import com.appetizers.spotra.data.remote.SupabaseProfileRepository
 import com.appetizers.spotra.domain.repository.AuthRepository
+import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.OnboardingDraftRepository
 import com.appetizers.spotra.domain.repository.ProfileRepository
 import com.appetizers.spotra.domain.usecase.GetStartRouteUseCase
@@ -38,6 +40,7 @@ class AppContainer(application: Application) {
 
     val authRepository: AuthRepository
     val profileRepository: ProfileRepository
+    val homeRepository: HomeRepository
     val getStartRoute: GetStartRouteUseCase
 
     init {
@@ -62,6 +65,7 @@ class AppContainer(application: Application) {
             profileRepository = MissingConfigurationProfileRepository()
         }
 
+        homeRepository = DebugHomeRepository()
         getStartRoute = GetStartRouteUseCase(authRepository, profileRepository)
     }
 }

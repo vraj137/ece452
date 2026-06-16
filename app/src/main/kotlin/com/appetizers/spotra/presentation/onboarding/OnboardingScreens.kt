@@ -166,7 +166,7 @@ fun EmailScreen(
 fun OtpScreen(state: OnboardingUiState, onBack: () -> Unit, viewModel: OnboardingViewModel) {
     FormScreen(onBack) {
         if (state.isRegistration) {
-            StepHeader(2, "Check your email", "Enter the 6-digit code sent to ${state.draft.email}.")
+            StepHeader(3, "Check your email", "Enter the 6-digit code sent to ${state.draft.email}.")
         } else {
             Text("Check your email", style = MaterialTheme.typography.headlineMedium)
             Spacer(Modifier.height(8.dp))
@@ -197,7 +197,7 @@ fun OtpScreen(state: OnboardingUiState, onBack: () -> Unit, viewModel: Onboardin
 @OptIn(ExperimentalLayoutApi::class)
 fun ProgramScreen(state: OnboardingUiState, onBack: () -> Unit, viewModel: OnboardingViewModel) {
     FormScreen(onBack) {
-        StepHeader(3, "Major & year", "Helps you find and connect with classmates.")
+        StepHeader(4, "Major & year", "Helps you find and connect with classmates.")
         Spacer(Modifier.height(22.dp))
         SpotraTextField(
             state.draft.program,
