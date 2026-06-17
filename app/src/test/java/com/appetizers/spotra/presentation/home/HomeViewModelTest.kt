@@ -50,6 +50,26 @@ class HomeViewModelTest {
     }
 
     @Test
+    fun `map spots load and default selection is solo spot`() = runTest(dispatcher) {
+        val viewModel = HomeViewModel(FakeHomeRepository())
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(2, state.mapSpots.size)
+        assertEquals("e7-study-hall", state.selectedSpotId)
+    }
+
+    @Test
+    fun `selectMapSpot updates selected spot id`() = runTest(dispatcher) {
+        val viewModel = HomeViewModel(FakeHomeRepository())
+        advanceUntilIdle()
+
+        viewModel.selectMapSpot("dc-library")
+
+        assertEquals("dc-library", viewModel.uiState.value.selectedSpotId)
+    }
+
+    @Test
     fun `group invite appends member and clears input`() = runTest(dispatcher) {
         val viewModel = HomeViewModel(FakeHomeRepository())
         advanceUntilIdle()
@@ -100,7 +120,9 @@ private class FakeHomeRepository : HomeRepository {
         badge = "Quiet",
         distanceMeters = 120,
         rating = 4.8,
-        studyContextLabel = "Solo-friendly"
+        studyContextLabel = "Solo-friendly",
+        latitude = 43.4732,
+        longitude = -80.5388
     )
     private val groupSession = GroupStudySession(
         id = "group-1",
@@ -113,12 +135,21 @@ private class FakeHomeRepository : HomeRepository {
         )
     )
 
+    private val secondaryMapSpot = StudySpotSummary(
+        id = "dc-library",
+        name = "DC Library",
+        badge = "Quiet",
+        latitude = 43.4728,
+        longitude = -80.5424
+    )
+
     override suspend fun loadHome(): HomeSnapshot =
         HomeSnapshot(
             userFirstName = "Vraj",
             soloSpot = soloSpot,
             groupSession = groupSession,
-            groupSpots = emptyList()
+            groupSpots = emptyList(),
+            mapSpots = listOf(soloSpot, secondaryMapSpot)
         )
 
     override suspend fun startCheckIn(
