@@ -2,10 +2,14 @@ package com.appetizers.spotra.presentation.home
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -45,6 +49,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -54,7 +59,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -64,6 +71,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.appetizers.spotra.BuildConfig
 import com.appetizers.spotra.domain.model.CheckInSession
 import com.appetizers.spotra.domain.model.CheckedInStudent
 import com.appetizers.spotra.domain.model.GroupMember
@@ -73,6 +81,16 @@ import com.appetizers.spotra.domain.model.SpotFeatureType
 import com.appetizers.spotra.domain.model.StudyMode
 import com.appetizers.spotra.domain.model.StudySpotSummary
 import com.appetizers.spotra.domain.repository.HomeRepository
+import com.mapbox.geojson.Point
+import com.mapbox.maps.Style
+import com.mapbox.maps.ViewAnnotationAnchor
+import com.mapbox.maps.extension.compose.MapboxMap
+import com.mapbox.maps.extension.compose.animation.viewport.rememberMapViewportState
+import com.mapbox.maps.extension.compose.annotation.ViewAnnotation
+import com.mapbox.maps.extension.compose.style.MapStyle
+import com.mapbox.maps.viewannotation.annotationAnchor
+import com.mapbox.maps.viewannotation.geometry
+import com.mapbox.maps.viewannotation.viewAnnotationOptions
 import kotlinx.coroutines.delay
 
 @Composable
@@ -133,21 +151,32 @@ fun HomeScreen(homeRepository: HomeRepository) {
             accent = accent,
             onModeSelected = viewModel::selectMode
         )
-        CampusMapPlaceholder(
-            mode = state.selectedMode,
-            accent = accent,
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-        )
-        StudySpotCard(
-            spot = soloSpot,
-            accent = accent,
-            modifier = Modifier.padding(start = 30.dp, top = 16.dp, end = 30.dp),
-            onClick = {
-                viewModel.startCheckIn(soloSpot, StudyMode.Solo)
-            }
-        )
+        ) {
+            CampusMap(
+                spots = state.mapSpots,
+                selectedSpotId = state.selectedSpotId,
+                onSpotSelected = viewModel::selectMapSpot,
+                accent = accent,
+                mode = state.selectedMode,
+                modifier = Modifier.fillMaxSize()
+            )
+            val displayedSpot = state.mapSpots.firstOrNull { it.id == state.selectedSpotId }
+                ?: soloSpot
+            StudySpotCard(
+                spot = displayedSpot,
+                accent = accent,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(start = 30.dp, end = 30.dp, bottom = 16.dp),
+                onClick = {
+                    viewModel.startCheckIn(displayedSpot, StudyMode.Solo)
+                }
+            )
+        }
         BottomNavigationShell(accent = accent)
     }
 }
@@ -1057,6 +1086,66 @@ private fun ModeSegment(
 }
 
 @Composable
+private fun CampusMap(
+    spots: List<StudySpotSummary>,
+    selectedSpotId: String?,
+    onSpotSelected: (String) -> Unit,
+    accent: Color,
+    mode: StudyMode,
+    modifier: Modifier = Modifier
+) {
+    if (BuildConfig.MAPBOX_PUBLIC_TOKEN.isBlank()) {
+        CampusMapPlaceholder(mode = mode, accent = accent, modifier = modifier)
+        return
+    }
+
+    val located = spots.filter { it.latitude != null && it.longitude != null }
+    val mapViewportState = rememberMapViewportState {
+        setCameraOptions {
+            center(Point.fromLngLat(-80.5430, 43.4720))
+            zoom(14.6)
+        }
+    }
+
+    Box(modifier = modifier.background(MapLoadingBackground)) {
+        MapboxMap(
+            modifier = Modifier.fillMaxSize(),
+            mapViewportState = mapViewportState,
+            style = { MapStyle(style = Style.LIGHT) },
+            scaleBar = {},
+            logo = {},
+            attribution = {}
+        ) {
+            located.forEach { spot ->
+                key(spot.id) {
+                    val options = remember(spot.id) {
+                        viewAnnotationOptions {
+                            geometry(Point.fromLngLat(spot.longitude!!, spot.latitude!!))
+                            annotationAnchor {
+                                anchor(ViewAnnotationAnchor.BOTTOM)
+                            }
+                            allowOverlap(true)
+                        }
+                    }
+                    val interactionSource = remember { MutableInteractionSource() }
+                    ViewAnnotation(options = options) {
+                        MapPin(
+                            label = spot.name,
+                            color = accent,
+                            selected = spot.id == selectedSpotId,
+                            modifier = Modifier.clickable(
+                                interactionSource = interactionSource,
+                                indication = null
+                            ) { onSpotSelected(spot.id) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun CampusMapPlaceholder(
     mode: StudyMode,
     accent: Color,
@@ -1116,7 +1205,9 @@ private fun CampusMapPlaceholder(
 
         pins.forEach { pin ->
             MapPin(
-                pin = pin,
+                label = pin.label,
+                color = pin.color,
+                selected = pin.selected,
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .offset(x = maxWidth * pin.x, y = maxHeight * pin.y)
@@ -1136,35 +1227,75 @@ private fun CampusMapPlaceholder(
 }
 
 @Composable
-private fun MapPin(pin: StudyMapPin, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally
+private fun MapPin(
+    label: String,
+    color: Color,
+    selected: Boolean,
+    modifier: Modifier = Modifier
+) {
+    // Every spot always shows its label pill + dot. Focus is expressed purely through a
+    // draw-time scale and a fading white ring (no re-measure), so the Mapbox ViewAnnotation
+    // never repositions — the pin grows in place, anchored at its dot, instead of shaking.
+    val pillScale by animateFloatAsState(
+        targetValue = if (selected) 1.1f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "pill-scale"
+    )
+    val borderAlpha by animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "pill-border"
+    )
+    val dotScale by animateFloatAsState(
+        targetValue = if (selected) 1.25f else 1f,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "dot-scale"
+    )
+
+    val pillShape = RoundedCornerShape(18.dp)
+    // Reserve transparent room on top/sides — never the bottom — so the dot stays pinned to
+    // the map coordinate while the pill (and its shadow) render above without being clipped.
+    Box(
+        modifier = modifier.padding(top = 14.dp, start = 20.dp, end = 20.dp),
+        contentAlignment = Alignment.BottomCenter
     ) {
-        Text(
-            text = pin.label,
-            modifier = Modifier
-                .background(pin.color, RoundedCornerShape(18.dp))
-                .then(
-                    if (pin.selected) {
-                        Modifier.border(4.dp, Color.White, RoundedCornerShape(18.dp))
-                    } else {
-                        Modifier
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = label,
+                modifier = Modifier
+                    .graphicsLayer {
+                        scaleX = pillScale
+                        scaleY = pillScale
+                        // Grow up out of the dot.
+                        transformOrigin = TransformOrigin(0.5f, 1f)
                     }
-                )
-                .padding(horizontal = 14.dp, vertical = if (pin.selected) 9.dp else 7.dp),
-            color = Color.White,
-            fontSize = if (pin.selected) 17.sp else 14.sp,
-            fontWeight = FontWeight.ExtraBold,
-            maxLines = 1
-        )
-        Box(
-            modifier = Modifier
-                .offset(y = (-4).dp)
-                .size(11.dp)
-                .graphicsLayer(rotationZ = 45f)
-                .background(pin.color, RoundedCornerShape(2.dp))
-        )
+                    .shadow(6.dp, pillShape, clip = false)
+                    .background(color, pillShape)
+                    .border(2.dp, Color.White.copy(alpha = borderAlpha), pillShape)
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                color = Color.White,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 1
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            // Base marker — a dot that always marks the spot, enlarging slightly when selected.
+            Box(
+                modifier = Modifier
+                    .graphicsLayer {
+                        scaleX = dotScale
+                        scaleY = dotScale
+                    }
+                    .size(15.dp)
+                    .shadow(3.dp, CircleShape, clip = false)
+                    .background(Color.White, CircleShape)
+                    .padding(3.dp)
+                    .background(color, CircleShape)
+            )
+        }
     }
 }
 
@@ -1408,6 +1539,7 @@ private val ModerateFitText = Color(0xFF8A5200)
 private val InviteInputBackground = Color(0xFFF1F0ED)
 private val DisabledSend = Color(0xFF9ACFB9)
 private val MapBackground = Color(0xFFEAE6DB)
+private val MapLoadingBackground = Color(0xFFE8E8E8)
 private val MapBlock = Color(0xFFCFC9B6)
 private val CardBackground = Color(0xFFF0F1FF)
 private val QuietPill = Color(0xFFDDF6EA)
