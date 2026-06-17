@@ -21,6 +21,8 @@ data class HomeUiState(
     val soloSpot: StudySpotSummary? = null,
     val groupSession: GroupStudySession? = null,
     val groupSpots: List<StudySpotSummary> = emptyList(),
+    val mapSpots: List<StudySpotSummary> = emptyList(),
+    val selectedSpotId: String? = null,
     val activeCheckIn: CheckInSession? = null,
     val requestedBuddyIds: Set<String> = emptySet(),
     val inviteText: String = "",
@@ -39,6 +41,10 @@ class HomeViewModel(
 
     fun selectMode(mode: StudyMode) {
         _uiState.update { it.copy(selectedMode = mode, error = null) }
+    }
+
+    fun selectMapSpot(id: String) {
+        _uiState.update { it.copy(selectedSpotId = id, error = null) }
     }
 
     fun returnToSoloMap() {
@@ -141,6 +147,8 @@ class HomeViewModel(
                             soloSpot = snapshot.soloSpot,
                             groupSession = snapshot.groupSession,
                             groupSpots = snapshot.groupSpots,
+                            mapSpots = snapshot.mapSpots,
+                            selectedSpotId = snapshot.soloSpot.id,
                             error = null
                         )
                     }
