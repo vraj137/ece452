@@ -11,9 +11,28 @@ plugins {
 
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+
+    def localProperties = new Properties()
+    def localPropertiesFile = file('local.properties')
+    if (localPropertiesFile.exists()) {
+        localPropertiesFile.withInputStream { localProperties.load(it) }
+    }
+    def mapboxDownloadsToken = localProperties.getProperty('MAPBOX_DOWNLOADS_TOKEN', '')
+    if (!mapboxDownloadsToken) {
+        mapboxDownloadsToken = providers.gradleProperty('MAPBOX_DOWNLOADS_TOKEN').getOrElse('')
+    }
+
     repositories {
         google()
         mavenCentral()
+        maven {
+            url 'https://api.mapbox.com/downloads/v2/releases/maven'
+            authentication { basic(BasicAuthentication) }
+            credentials {
+                username = 'mapbox'
+                password = mapboxDownloadsToken
+            }
+        }
     }
 }
 

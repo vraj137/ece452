@@ -14,6 +14,7 @@ import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.OnboardingDraftRepository
 import com.appetizers.spotra.domain.repository.ProfileRepository
 import com.appetizers.spotra.domain.usecase.GetStartRouteUseCase
+import com.mapbox.common.MapboxOptions
 import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.postgrest.Postgrest
@@ -25,6 +26,9 @@ class SpotraApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        if (BuildConfig.MAPBOX_PUBLIC_TOKEN.isNotBlank()) {
+            MapboxOptions.accessToken = BuildConfig.MAPBOX_PUBLIC_TOKEN
+        }
         container = AppContainer(this)
     }
 }
