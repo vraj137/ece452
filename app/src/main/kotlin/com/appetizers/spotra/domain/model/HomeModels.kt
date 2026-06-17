@@ -29,7 +29,9 @@ data class StudySpotSummary(
     val rating: Double? = null,
     val studyContextLabel: String? = null,
     val features: List<SpotFeature> = emptyList(),
-    val bestFit: Boolean = false
+    val bestFit: Boolean = false,
+    val latitude: Double? = null,
+    val longitude: Double? = null
 )
 
 data class GroupMember(
@@ -66,5 +68,6 @@ data class HomeSnapshot(
     val userFirstName: String,
     val soloSpot: StudySpotSummary,
     val groupSession: GroupStudySession,
-    val groupSpots: List<StudySpotSummary>
+    val groupSpots: List<StudySpotSummary>,
+    val mapSpots: List<StudySpotSummary> = emptyList()
 )
