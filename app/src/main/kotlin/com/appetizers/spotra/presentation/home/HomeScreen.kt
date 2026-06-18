@@ -34,15 +34,22 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.AccessTime
+import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Group
+import androidx.compose.material.icons.rounded.Groups
+import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PersonAdd
 import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -118,12 +125,17 @@ fun HomeScreen(homeRepository: HomeRepository) {
             requestedBuddyIds = state.requestedBuddyIds,
             onBuddyRequest = viewModel::sendBuddyRequest,
             onBack = viewModel::closeCheckIn,
-            onCheckout = viewModel::checkOut
+            onCheckout = viewModel::checkOut,
+            selectedSection = state.selectedSection,
+            onSectionSelected = { section ->
+                viewModel.closeCheckIn()
+                viewModel.selectSection(section)
+            }
         )
         return
     }
 
-    if (state.selectedMode == StudyMode.Group) {
+    if (state.selectedSection == HomeSection.Map && state.selectedMode == StudyMode.Group) {
         BackHandler { viewModel.returnToSoloMap() }
         GroupModeScreen(
             groupSession = groupSession,
@@ -132,9 +144,47 @@ fun HomeScreen(homeRepository: HomeRepository) {
             onInviteTextChange = viewModel::updateInviteText,
             onSendInvite = viewModel::sendGroupInvite,
             onBack = viewModel::returnToSoloMap,
+            selectedSection = state.selectedSection,
+            onSectionSelected = viewModel::selectSection,
             onSpotSelected = { spot ->
                 viewModel.startCheckIn(spot, StudyMode.Group)
             }
+        )
+        return
+    }
+
+    if (state.selectedSection == HomeSection.Explore) {
+        val displayedSpot = state.mapSpots.firstOrNull { it.id == state.selectedSpotId } ?: soloSpot
+        LiveSensorEnvironmentScreen(
+            spot = displayedSpot,
+            selectedSection = state.selectedSection,
+            onSectionSelected = viewModel::selectSection,
+            onBack = { viewModel.selectSection(HomeSection.Map) },
+            onCheckIn = { viewModel.startCheckIn(displayedSpot, state.selectedMode) }
+        )
+        return
+    }
+
+    if (state.selectedSection == HomeSection.Social) {
+        SocialScreen(
+            selectedTab = state.selectedSocialTab,
+            onTabSelected = viewModel::selectSocialTab,
+            selectedSection = state.selectedSection,
+            onSectionSelected = viewModel::selectSection,
+            onJoin = {
+                viewModel.startCheckIn(soloSpot, StudyMode.Solo)
+            },
+            onAddBuddy = viewModel::sendBuddyRequest,
+            requestedBuddyIds = state.requestedBuddyIds
+        )
+        return
+    }
+
+    if (state.selectedSection == HomeSection.Profile) {
+        ProfileScreen(
+            userFirstName = state.userFirstName,
+            selectedSection = state.selectedSection,
+            onSectionSelected = viewModel::selectSection
         )
         return
     }
@@ -177,7 +227,11 @@ fun HomeScreen(homeRepository: HomeRepository) {
                 }
             )
         }
-        BottomNavigationShell(accent = accent)
+        BottomNavigationShell(
+            accent = accent,
+            selectedSection = state.selectedSection,
+            onSectionSelected = viewModel::selectSection
+        )
     }
 }
 
@@ -207,6 +261,8 @@ private fun GroupModeScreen(
     onInviteTextChange: (String) -> Unit,
     onSendInvite: () -> Unit,
     onBack: () -> Unit,
+    selectedSection: HomeSection,
+    onSectionSelected: (HomeSection) -> Unit,
     onSpotSelected: (StudySpotSummary) -> Unit
 ) {
     Column(
@@ -253,7 +309,11 @@ private fun GroupModeScreen(
             onValueChange = onInviteTextChange,
             onSend = onSendInvite
         )
-        BottomNavigationShell(accent = GroupGreen)
+        BottomNavigationShell(
+            accent = GroupGreen,
+            selectedSection = selectedSection,
+            onSectionSelected = onSectionSelected
+        )
     }
 }
 
@@ -556,15 +616,551 @@ private fun GroupInviteBar(
 }
 
 @Composable
+private fun LiveSensorEnvironmentScreen(
+    spot: StudySpotSummary,
+    selectedSection: HomeSection,
+    onSectionSelected: (HomeSection) -> Unit,
+    onBack: () -> Unit,
+    onCheckIn: () -> Unit
+) {
+    val readings = remember(spot.id) { sensorReadingsFor(spot.id) }
+    val score = remember(readings) { readings.sumOf { it.scoreWeight } / readings.size }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(CheckInHeader)
+            .statusBarsPadding()
+    ) {
+        Column(
+            modifier = Modifier.padding(start = 30.dp, top = 34.dp, end = 30.dp, bottom = 20.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(46.dp)
+                    .background(HeaderButton, RoundedCornerShape(14.dp))
+                    .clickable(onClick = onBack),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                    contentDescription = "Back",
+                    tint = Color.White
+                )
+            }
+            Spacer(Modifier.height(18.dp))
+            Text(
+                text = spot.name,
+                color = Color.White,
+                fontSize = 30.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+            Spacer(Modifier.height(5.dp))
+            Text(
+                text = "Live sensor readings - Updated 12s ago",
+                color = HeaderSecondary,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(Modifier.height(18.dp))
+            Row(
+                modifier = Modifier
+                    .background(SensorScoreBackground, RoundedCornerShape(24.dp))
+                    .padding(horizontal = 18.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Bolt,
+                    contentDescription = null,
+                    tint = Color(0xFF9BB2FF),
+                    modifier = Modifier.size(21.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "$score / 100 study score",
+                    color = Color(0xFFDCE4FF),
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+            }
+        }
+
+        SensorPrivacyNote()
+
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                start = 24.dp,
+                top = 26.dp,
+                end = 24.dp,
+                bottom = 18.dp
+            ),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            itemsIndexed(readings.chunked(2)) { _, row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    row.forEach { reading ->
+                        SensorReadingCard(
+                            reading = reading,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    if (row.size == 1) {
+                        Spacer(Modifier.weight(1f))
+                    }
+                }
+            }
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(58.dp)
+                        .background(SoloBlue, RoundedCornerShape(18.dp))
+                        .clickable(onClick = onCheckIn),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = Color.White)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "Check in here",
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
+            }
+        }
+        BottomNavigationShell(
+            accent = SoloBlue,
+            selectedSection = selectedSection,
+            onSectionSelected = onSectionSelected
+        )
+    }
+}
+
+@Composable
+private fun SensorPrivacyNote() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFFF2F4FF))
+            .padding(horizontal = 30.dp, vertical = 18.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.CheckCircle,
+            contentDescription = null,
+            tint = SoloBlue,
+            modifier = Modifier.size(22.dp)
+        )
+        Spacer(Modifier.width(14.dp))
+        Text(
+            text = "Readings from your phone's mic, light sensor & network",
+            color = SoloBlue,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
+@Composable
+private fun SensorReadingCard(
+    reading: SensorReading,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .height(178.dp)
+            .background(Color.White, RoundedCornerShape(20.dp))
+            .padding(18.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .background(reading.tint.copy(alpha = .13f), RoundedCornerShape(13.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = reading.icon,
+                    contentDescription = null,
+                    tint = reading.tint,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Text(
+                text = reading.label,
+                color = SectionLabel,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 1
+            )
+        }
+        Spacer(Modifier.height(20.dp))
+        Text(
+            text = reading.value,
+            color = Ink,
+            fontSize = 28.sp,
+            fontWeight = FontWeight.ExtraBold
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = reading.description,
+            color = HeaderMuted,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Spacer(Modifier.weight(1f))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(5.dp)
+                .background(DividerLine, RoundedCornerShape(3.dp))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(reading.progress)
+                    .height(5.dp)
+                    .background(reading.tint, RoundedCornerShape(3.dp))
+            )
+        }
+    }
+}
+
+@Composable
+private fun SocialScreen(
+    selectedTab: SocialTab,
+    onTabSelected: (SocialTab) -> Unit,
+    selectedSection: HomeSection,
+    onSectionSelected: (HomeSection) -> Unit,
+    onJoin: () -> Unit,
+    onAddBuddy: (String) -> Unit,
+    requestedBuddyIds: Set<String>
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.White)
+            .statusBarsPadding()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 30.dp, top = 34.dp, end = 30.dp)
+        ) {
+            Text(
+                text = "Social",
+                color = Ink,
+                fontSize = 32.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+            Spacer(Modifier.height(22.dp))
+            SocialTabs(selectedTab, onTabSelected)
+        }
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                start = 30.dp,
+                top = 22.dp,
+                end = 30.dp,
+                bottom = 18.dp
+            ),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            when (selectedTab) {
+                SocialTab.Friends -> {
+                    item { SectionHeader("STUDYING NOW") }
+                    itemsIndexed(friendStudyRows()) { _, friend ->
+                        SocialPersonRow(
+                            person = friend,
+                            actionLabel = if (friend.active) "Join" else "Offline",
+                            actionEnabled = friend.active,
+                            onAction = onJoin
+                        )
+                    }
+                    item { StudyStreakCard() }
+                }
+                SocialTab.Buddies -> {
+                    item { SectionHeader("CONFIRMED STUDY BUDDIES") }
+                    itemsIndexed(confirmedBuddies()) { _, buddy ->
+                        SocialPersonRow(
+                            person = buddy,
+                            actionLabel = "Message",
+                            actionEnabled = true,
+                            onAction = {}
+                        )
+                    }
+                    item { StudyStreakCard() }
+                }
+                SocialTab.Discover -> {
+                    item { SectionHeader("SUGGESTED FROM YOUR COURSES") }
+                    itemsIndexed(discoverBuddies()) { _, buddy ->
+                        SocialPersonRow(
+                            person = buddy,
+                            actionLabel = if (buddy.id in requestedBuddyIds) "Sent" else "+ Add",
+                            actionEnabled = buddy.id !in requestedBuddyIds,
+                            onAction = { onAddBuddy(buddy.id) }
+                        )
+                    }
+                    item { StudyStreakCard() }
+                }
+            }
+        }
+        BottomNavigationShell(
+            accent = SoloBlue,
+            selectedSection = selectedSection,
+            onSectionSelected = onSectionSelected
+        )
+    }
+}
+
+@Composable
+private fun SocialTabs(
+    selectedTab: SocialTab,
+    onTabSelected: (SocialTab) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(42.dp)
+            .border(1.dp, DividerLine, RoundedCornerShape(0.dp)),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        SocialTab.entries.forEach { tab ->
+            val selected = tab == selectedTab
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxSize()
+                    .clickable { onTabSelected(tab) },
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = tab.name,
+                    color = if (selected) SoloBlue else HeaderMuted,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Spacer(Modifier.height(7.dp))
+                Box(
+                    Modifier
+                        .height(3.dp)
+                        .fillMaxWidth(.72f)
+                        .background(if (selected) SoloBlue else Color.Transparent)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionHeader(label: String) {
+    Text(
+        text = label,
+        color = SectionLabel,
+        fontSize = 16.sp,
+        fontWeight = FontWeight.ExtraBold
+    )
+}
+
+@Composable
+private fun SocialPersonRow(
+    person: SocialPerson,
+    actionLabel: String,
+    actionEnabled: Boolean,
+    onAction: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(if (person.active) Color.White else Color(0xFFF8F8F6), RoundedCornerShape(18.dp))
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(54.dp)
+                .background(avatarColorFor(person.id), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = person.initials,
+                color = Color.White,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+        }
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = person.name,
+                color = if (person.active) Ink else HeaderMuted,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = person.detail,
+                color = HeaderMuted,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Text(
+            text = actionLabel,
+            modifier = Modifier
+                .background(if (actionEnabled) BuddyPill else SwitcherTrack, RoundedCornerShape(18.dp))
+                .clickable(enabled = actionEnabled, onClick = onAction)
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            color = if (actionEnabled) SoloBlue else HeaderMuted,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.ExtraBold,
+            maxLines = 1
+        )
+    }
+}
+
+@Composable
+private fun StudyStreakCard() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFFF6F3EA), RoundedCornerShape(22.dp))
+            .padding(20.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(54.dp)
+                .background(Color(0xFFFFF0CC), RoundedCornerShape(16.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Bolt,
+                contentDescription = null,
+                tint = StarGold,
+                modifier = Modifier.size(30.dp)
+            )
+        }
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = "4 day study streak",
+                color = Ink,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+            Text(
+                text = "Check in tomorrow to keep it alive.",
+                color = HeaderMuted,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+    }
+}
+
+@Composable
+private fun ProfileScreen(
+    userFirstName: String,
+    selectedSection: HomeSection,
+    onSectionSelected: (HomeSection) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(HomeBackground)
+            .statusBarsPadding()
+    ) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(30.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp)
+        ) {
+            item {
+                Text(
+                    text = "$userFirstName's study profile",
+                    color = Ink,
+                    fontSize = 31.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+            }
+            item {
+                StudyStreakCard()
+            }
+            item {
+                ProfileMetricCard("Preferred mode", "Solo mornings, group evenings", Icons.Rounded.Person)
+            }
+            item {
+                ProfileMetricCard("Top course match", "CS 341 - 8 active buddies", Icons.Rounded.School)
+            }
+            item {
+                ProfileMetricCard("Privacy", "Buddy requests are opt-in both ways", Icons.Rounded.CheckCircle)
+            }
+        }
+        BottomNavigationShell(
+            accent = SoloBlue,
+            selectedSection = selectedSection,
+            onSectionSelected = onSectionSelected
+        )
+    }
+}
+
+@Composable
+private fun ProfileMetricCard(title: String, detail: String, icon: ImageVector) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.White, RoundedCornerShape(22.dp))
+            .padding(20.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(52.dp)
+                .background(SelfPillBackground, RoundedCornerShape(16.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, contentDescription = null, tint = SoloBlue, modifier = Modifier.size(28.dp))
+        }
+        Spacer(Modifier.width(16.dp))
+        Column {
+            Text(title, color = Ink, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
+            Text(detail, color = HeaderMuted, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+@Composable
 private fun LiveCheckInScreen(
     session: CheckInSession,
     accent: Color,
     requestedBuddyIds: Set<String>,
     onBuddyRequest: (String) -> Unit,
     onBack: () -> Unit,
-    onCheckout: () -> Unit
+    onCheckout: () -> Unit,
+    selectedSection: HomeSection,
+    onSectionSelected: (HomeSection) -> Unit
 ) {
     var elapsedSeconds by remember(session.spot.name) { mutableStateOf(0) }
+    var selectedBuddy by remember(session.id) { mutableStateOf<CheckedInStudent?>(null) }
 
     LaunchedEffect(session.spot.name) {
         while (true) {
@@ -573,30 +1169,49 @@ private fun LiveCheckInScreen(
         }
     }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.White)
             .statusBarsPadding()
     ) {
-        LiveCheckInHeader(
-            spotName = session.spot.name,
-            peopleHere = session.attendees.size,
-            onBack = onBack
-        )
-        CheckInAttendeeList(
-            students = session.attendees,
-            requestedBuddyIds = requestedBuddyIds,
-            onBuddyClick = onBuddyRequest,
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-        )
-        CheckInSessionPanel(
-            elapsedSeconds = elapsedSeconds,
-            onCheckout = onCheckout
-        )
-        BottomNavigationShell(accent = accent)
+        Column(Modifier.fillMaxSize()) {
+            LiveCheckInHeader(
+                spotName = session.spot.name,
+                peopleHere = session.attendees.size,
+                onBack = onBack
+            )
+            CheckInAttendeeList(
+                students = session.attendees,
+                requestedBuddyIds = requestedBuddyIds,
+                onBuddyClick = { student -> selectedBuddy = student },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            )
+            CheckInSessionPanel(
+                elapsedSeconds = elapsedSeconds,
+                onCheckout = onCheckout
+            )
+            BottomNavigationShell(
+                accent = accent,
+                selectedSection = selectedSection,
+                onSectionSelected = onSectionSelected
+            )
+        }
+
+        selectedBuddy?.let { buddy ->
+            BuddyRequestSheet(
+                student = buddy,
+                requested = buddy.id in requestedBuddyIds,
+                onDismiss = { selectedBuddy = null },
+                onAccept = {
+                    onBuddyRequest(buddy.id)
+                    selectedBuddy = null
+                },
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
+        }
     }
 }
 
@@ -604,7 +1219,7 @@ private fun LiveCheckInScreen(
 private fun CheckInAttendeeList(
     students: List<CheckedInStudent>,
     requestedBuddyIds: Set<String>,
-    onBuddyClick: (String) -> Unit,
+    onBuddyClick: (CheckedInStudent) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
@@ -652,7 +1267,7 @@ private fun CheckInAttendeeList(
                     CheckedInStudentRow(
                         student = student,
                         requested = student.id in requestedBuddyIds,
-                        onBuddyClick = { onBuddyClick(student.id) }
+                        onBuddyClick = { onBuddyClick(student) }
                     )
                     if (index < students.lastIndex) {
                         Box(
@@ -866,6 +1481,130 @@ private fun BuddyRequestButton(requested: Boolean, onClick: () -> Unit) {
             fontWeight = FontWeight.ExtraBold,
             maxLines = 1
         )
+    }
+}
+
+@Composable
+private fun BuddyRequestSheet(
+    student: CheckedInStudent,
+    requested: Boolean,
+    onDismiss: () -> Unit,
+    onAccept: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = .48f))
+            .clickable(onClick = onDismiss),
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(enabled = false) {}
+                .background(Color.White, RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp))
+                .padding(start = 28.dp, top = 18.dp, end = 28.dp, bottom = 28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(
+                Modifier
+                    .width(70.dp)
+                    .height(5.dp)
+                    .background(DividerLine, RoundedCornerShape(3.dp))
+            )
+            Spacer(Modifier.height(22.dp))
+            Box(
+                modifier = Modifier
+                    .size(92.dp)
+                    .background(avatarColorFor(student.id), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = student.initials,
+                    color = Color.White,
+                    fontSize = 32.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+            }
+            Spacer(Modifier.height(14.dp))
+            Text(
+                text = student.name,
+                color = Ink,
+                fontSize = 24.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(5.dp))
+            Text(
+                text = buddyMeta(student),
+                color = HeaderMuted,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(Modifier.height(16.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                buddyTags(student).take(3).forEach { tag ->
+                    RelationPill(tag, BodyText, SwitcherTrack)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                buddyTags(student).drop(3).forEach { tag ->
+                    RelationPill(tag, BodyText, SwitcherTrack)
+                }
+            }
+            Spacer(Modifier.height(20.dp))
+            Text(
+                text = "\"Hey! Saw you're in CS 341 too. Want to be study buddies for finals week?\"",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(InviteInputBackground, RoundedCornerShape(16.dp))
+                    .padding(18.dp),
+                color = BodyText,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Spacer(Modifier.height(16.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "Decline",
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(54.dp)
+                        .background(SwitcherTrack, RoundedCornerShape(16.dp))
+                        .clickable(onClick = onDismiss)
+                        .padding(top = 16.dp),
+                    color = HeaderMuted,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Row(
+                    modifier = Modifier
+                        .weight(1.45f)
+                        .height(54.dp)
+                        .background(if (requested) RequestedPill else SoloBlue, RoundedCornerShape(16.dp))
+                        .clickable(enabled = !requested, onClick = onAccept),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = if (requested) Icons.Rounded.Check else Icons.Rounded.PersonAdd,
+                        contentDescription = null,
+                        tint = if (requested) QuietText else Color.White,
+                        modifier = Modifier.size(21.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = if (requested) "Request sent" else "Accept buddy",
+                        color = if (requested) QuietText else Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -1399,7 +2138,11 @@ private fun StudySpotCard(
 }
 
 @Composable
-private fun BottomNavigationShell(accent: Color) {
+private fun BottomNavigationShell(
+    accent: Color,
+    selectedSection: HomeSection,
+    onSectionSelected: (HomeSection) -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1408,10 +2151,38 @@ private fun BottomNavigationShell(accent: Color) {
             .padding(start = 24.dp, top = 18.dp, end = 24.dp, bottom = 18.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        BottomNavItem("Map", Icons.Rounded.Map, selected = true, accent = accent, modifier = Modifier.weight(1f))
-        BottomNavItem("Explore", Icons.Rounded.Explore, selected = false, accent = accent, modifier = Modifier.weight(1f))
-        BottomNavItem("Social", Icons.Rounded.Group, selected = false, accent = accent, modifier = Modifier.weight(1f))
-        BottomNavItem("Profile", Icons.Rounded.AccountCircle, selected = false, accent = accent, modifier = Modifier.weight(1f))
+        BottomNavItem(
+            label = "Map",
+            icon = Icons.Rounded.Map,
+            selected = selectedSection == HomeSection.Map,
+            accent = accent,
+            modifier = Modifier.weight(1f),
+            onClick = { onSectionSelected(HomeSection.Map) }
+        )
+        BottomNavItem(
+            label = "Explore",
+            icon = Icons.Rounded.Explore,
+            selected = selectedSection == HomeSection.Explore,
+            accent = accent,
+            modifier = Modifier.weight(1f),
+            onClick = { onSectionSelected(HomeSection.Explore) }
+        )
+        BottomNavItem(
+            label = "Social",
+            icon = Icons.Rounded.Group,
+            selected = selectedSection == HomeSection.Social,
+            accent = accent,
+            modifier = Modifier.weight(1f),
+            onClick = { onSectionSelected(HomeSection.Social) }
+        )
+        BottomNavItem(
+            label = "Profile",
+            icon = Icons.Rounded.AccountCircle,
+            selected = selectedSection == HomeSection.Profile,
+            accent = accent,
+            modifier = Modifier.weight(1f),
+            onClick = { onSectionSelected(HomeSection.Profile) }
+        )
     }
 }
 
@@ -1421,11 +2192,12 @@ private fun BottomNavItem(
     icon: ImageVector,
     selected: Boolean,
     accent: Color,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
 ) {
     val color = if (selected) accent else NavMuted
     Column(
-        modifier = modifier,
+        modifier = modifier.clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Icon(
@@ -1453,9 +2225,101 @@ private data class StudyMapPin(
     val selected: Boolean = false
 )
 
+private data class SensorReading(
+    val label: String,
+    val value: String,
+    val description: String,
+    val progress: Float,
+    val scoreWeight: Int,
+    val icon: ImageVector,
+    val tint: Color
+)
+
+private data class SocialPerson(
+    val id: String,
+    val initials: String,
+    val name: String,
+    val detail: String,
+    val active: Boolean = true
+)
+
 private fun StudyMode.accentColor(): Color = when (this) {
     StudyMode.Solo -> SoloBlue
     StudyMode.Group -> GroupGreen
+}
+
+private fun sensorReadingsFor(spotId: String): List<SensorReading> {
+    val quietBias = if (spotId.contains("library") || spotId.contains("e7")) 0 else 8
+    return listOf(
+        SensorReading(
+            label = "NOISE",
+            value = "${32 + quietBias} dB",
+            description = if (quietBias == 0) "Library-quiet" else "Moderate chatter",
+            progress = if (quietBias == 0) .42f else .62f,
+            scoreWeight = if (quietBias == 0) 96 else 78,
+            icon = Icons.AutoMirrored.Rounded.VolumeUp,
+            tint = GroupGreen
+        ),
+        SensorReading(
+            label = "LIGHTING",
+            value = "480 lx",
+            description = "Ideal for reading",
+            progress = .86f,
+            scoreWeight = 92,
+            icon = Icons.Rounded.LightMode,
+            tint = StarGold
+        ),
+        SensorReading(
+            label = "WI-FI",
+            value = "94 Mbps",
+            description = "Excellent signal",
+            progress = .94f,
+            scoreWeight = 94,
+            icon = Icons.Rounded.Wifi,
+            tint = SoloBlue
+        ),
+        SensorReading(
+            label = "OCCUPANCY",
+            value = "26%",
+            description = "Plenty of seats",
+            progress = .34f,
+            scoreWeight = 82,
+            icon = Icons.Rounded.Groups,
+            tint = GroupGreen
+        )
+    )
+}
+
+private fun friendStudyRows() = listOf(
+    SocialPerson("raghav", "RV", "Raghav Verma", "E7 Study Hall - 1h 2min"),
+    SocialPerson("vishvam", "VP", "Vishvam Patel", "DC Library 3F - 28min"),
+    SocialPerson("edmond", "EY", "Edmond Yang", "Last seen 3h ago", active = false)
+)
+
+private fun confirmedBuddies() = listOf(
+    SocialPerson("akshat", "AJ", "Akshat Jawne", "ECE 222 - quiet morning sessions"),
+    SocialPerson("eric", "EZ", "Eric Z.", "MATH 237 - problem set partner"),
+    SocialPerson("raghav", "RV", "Raghav Verma", "CS 341 - finals prep")
+)
+
+private fun discoverBuddies() = listOf(
+    SocialPerson("kira", "KL", "Kira L.", "CS 341 - graph algorithms"),
+    SocialPerson("max", "MP", "Max P.", "ECE 222 - circuits review"),
+    SocialPerson("sara", "SN", "Sara N.", "CS 341 - quiet study")
+)
+
+private fun buddyMeta(student: CheckedInStudent): String = when (student.id) {
+    "akshat" -> "2B Software Eng - 12 study sessions"
+    "eric" -> "2A Math - 8 study sessions"
+    "raghav" -> "3A CS - 18 study sessions"
+    else -> "${student.detail.substringBefore(" - ")} - study nearby"
+}
+
+private fun buddyTags(student: CheckedInStudent): List<String> = when (student.id) {
+    "akshat" -> listOf("ECE 222", "CS 341", "Quiet studier", "Morning sessions")
+    "eric" -> listOf("MATH 237", "CS 341", "Problem sets", "Whiteboard")
+    "raghav" -> listOf("CS 341", "ECE 298", "Friend", "Evening sessions")
+    else -> listOf("CS 341", "Focused", "Solo-friendly", "Open to buddy")
 }
 
 private fun soloPins(accent: Color) = listOf(
@@ -1523,6 +2387,7 @@ private val HeaderMuted = Color(0xFFA8A6AA)
 private val MutedText = Color(0xFF96949A)
 private val SwitcherTrack = Color(0xFFEDE9E0)
 private val SoloBlue = Color(0xFF4355E8)
+private val SensorScoreBackground = Color(0xFF293B8E)
 private val GroupGreen = Color(0xFF21A46F)
 private val GroupHeaderGreen = Color(0xFF115C3B)
 private val GroupHeaderChip = Color(0xFF3A7B62)
