@@ -1,12 +1,10 @@
 package com.appetizers.spotra.data.remote
 
+import com.appetizers.spotra.data.mock.MockData
 import com.appetizers.spotra.domain.model.CheckInSession
 import com.appetizers.spotra.domain.model.CheckedInStudent
 import com.appetizers.spotra.domain.model.GroupMember
-import com.appetizers.spotra.domain.model.GroupStudySession
 import com.appetizers.spotra.domain.model.HomeSnapshot
-import com.appetizers.spotra.domain.model.SpotFeature
-import com.appetizers.spotra.domain.model.SpotFeatureType
 import com.appetizers.spotra.domain.model.StudyMode
 import com.appetizers.spotra.domain.model.StudySpotSummary
 import com.appetizers.spotra.domain.model.UserProfile
@@ -15,11 +13,10 @@ import com.appetizers.spotra.domain.repository.AuthUser
 import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.ProfileRepository
 
-/**
- * Used in DEBUG builds when Supabase credentials are absent.
- * Accepts any 6-digit OTP and maintains an in-memory session so the full
- * onboarding flow can be exercised without a live backend.
- */
+// In-memory debug implementations — used when Supabase credentials are absent.
+// All spot and user data is sourced from MockData so there is a single source
+// of truth; do not hard-code names, IDs, or spot lists here.
+
 class DebugAuthRepository : AuthRepository {
     private var session: AuthUser? = null
 
@@ -39,7 +36,10 @@ class DebugAuthRepository : AuthRepository {
 }
 
 class DebugProfileRepository : ProfileRepository {
-    private var profile: UserProfile? = null
+    // Pre-seeded with the mock user so the Profile screen is populated in debug
+    // builds even before onboarding is completed.  saveProfile() overwrites this
+    // with the user's actual input, so the two flows do not conflict.
+    private var profile: UserProfile? = MockData.user
 
     override suspend fun getProfile(userId: String): UserProfile? = profile
 
@@ -49,28 +49,28 @@ class DebugProfileRepository : ProfileRepository {
 }
 
 class DebugHomeRepository : HomeRepository {
-    private var groupSession = defaultGroupSession()
+    private var groupSession = MockData.groupSession
 
-    override suspend fun loadHome(): HomeSnapshot =
-        HomeSnapshot(
-            userFirstName = "Vraj",
-            soloSpot = loadHomeSoloSpot(),
-            groupSession = groupSession,
-            groupSpots = groupSpotCandidates(),
-            mapSpots = mapSpots()
-        )
+    override suspend fun loadHome(): HomeSnapshot = HomeSnapshot(
+        userFirstName = MockData.user.firstName,
+        soloSpot = MockData.spotById("e7-study-hall")!!.toSummary(),
+        groupSession = groupSession,
+        groupSpots = MockData.groupSpots.map { it.toSummary() },
+        mapSpots = mapSpots()
+    )
 
     override suspend fun startCheckIn(
         spotId: String,
         mode: StudyMode,
         groupSessionId: String?
     ): CheckInSession {
-        val spot = spotFor(spotId)
+        val spot = MockData.spotById(spotId)?.toSummary()
+            ?: error("Unknown study spot: $spotId")
         return CheckInSession(
-            id = "debug-${spot.id}-${mode.name}",
+            id = "debug-$spotId-${mode.name}",
             spot = spot,
             mode = mode,
-            attendees = checkedInStudentsFor(mode, groupSession.members)
+            attendees = attendeesFor(mode)
         )
     }
 
@@ -78,32 +78,22 @@ class DebugHomeRepository : HomeRepository {
 
     override suspend fun sendBuddyRequest(studentId: String) = Unit
 
-    override suspend fun inviteToGroup(
-        groupSessionId: String,
-        inviteText: String
-    ): GroupMember {
+    override suspend fun inviteToGroup(groupSessionId: String, inviteText: String): GroupMember {
         val initials = inviteText
             .split(" ")
             .filter(String::isNotBlank)
             .take(2)
             .joinToString("") { it.first().uppercase() }
             .ifBlank { "?" }
-
+            .take(2)
         return GroupMember(
             id = "invite-${inviteText.lowercase().replace(" ", "-")}-${groupSession.members.size}",
             name = inviteText,
-            initials = initials.take(2)
+            initials = initials
         ).also { member ->
             groupSession = groupSession.copy(members = groupSession.members + member)
         }
     }
-
-    private fun spotFor(spotId: String): StudySpotSummary =
-        (listOf(loadHomeSoloSpot()) + groupSpotCandidates() + mapSpots())
-            .associateBy { it.id }
-            .values
-            .firstOrNull { it.id == spotId }
-            ?: error("Unknown study spot: $spotId")
 
     private fun loadHomeSoloSpot() = StudySpotSummary(
         id = "e7-study-hall",
@@ -170,115 +160,60 @@ class DebugHomeRepository : HomeRepository {
         )
     )
 
-    private fun defaultGroupSession() =
-        GroupStudySession(
-            id = "app-etizers-cs341",
-            title = "app-etizers study sesh",
-            subtitle = "CS 341 finals prep",
-            proximityLabel = "all within 10 min",
-            members = listOf(
-                GroupMember("you", "Vraj Patel", "VB"),
-                GroupMember("akshat", "Akshat J.", "AJ"),
-                GroupMember("eric", "Eric Z.", "EZ"),
-                GroupMember("raghav", "Raghav V.", "RV"),
-                GroupMember("pavan", "Pavan J.", "PJ")
-            )
+    private fun attendeesFor(mode: StudyMode): List<CheckedInStudent> {
+        val self = CheckedInStudent(
+            id = "you",
+            initials = MockData.selfInitials,
+            name = "You (${MockData.user.firstName})",
+            detail = "CS 341 - studying now",
+            isSelf = true
         )
-
-    private fun groupSpotCandidates() = listOf(
-        StudySpotSummary(
-            id = "slc-boardroom-2a",
-            name = "SLC Boardroom 2A",
-            badge = "Best fit",
-            features = listOf(
-                SpotFeature("Seats 8", SpotFeatureType.Seating),
-                SpotFeature("Whiteboard", SpotFeatureType.Whiteboard),
-                SpotFeature("Fast Wi-Fi", SpotFeatureType.Wifi),
-                SpotFeature("Accessible", SpotFeatureType.Accessible)
-            ),
-            bestFit = true
-        ),
-        StudySpotSummary(
-            id = "e5-collaboration-lab",
-            name = "E5 Collaboration Lab",
-            badge = "Moderate",
-            features = listOf(
-                SpotFeature("Seats 6", SpotFeatureType.Seating),
-                SpotFeature("Outlets", SpotFeatureType.Outlets),
-                SpotFeature("Moderate noise", SpotFeatureType.Noise)
-            )
-        ),
-        StudySpotSummary(
-            id = "dc-team-room-4",
-            name = "DC Team Room 4",
-            badge = "Good",
-            features = listOf(
-                SpotFeature("Seats 10", SpotFeatureType.Seating),
-                SpotFeature("Projector", SpotFeatureType.Projector),
-                SpotFeature("Whiteboard", SpotFeatureType.Whiteboard),
-                SpotFeature("Near cafe", SpotFeatureType.NearbyCafe)
-            )
-        )
-    )
-
-    private fun checkedInStudentsFor(
-        mode: StudyMode,
-        groupMembers: List<GroupMember>
-    ): List<CheckedInStudent> =
-        when (mode) {
-            StudyMode.Solo -> soloCheckInStudents()
-            StudyMode.Group -> groupCheckInStudents(groupMembers)
-        }
-
-    private fun soloCheckInStudents() = listOf(
-        checkedInSelf(),
-        CheckedInStudent("akshat", "AJ", "Akshat J.", "ECE 222 - 45 min here"),
-        CheckedInStudent("eric", "EZ", "Eric Z.", "MATH 237 - 20 min here"),
-        CheckedInStudent("raghav", "RV", "Raghav V.", "ECE 298 - 1h here", isFriend = true),
-        CheckedInStudent("mei", "ML", "Mei L.", "CS 350 - 12 min here"),
-        CheckedInStudent("nora", "NK", "Nora K.", "STAT 231 - 1h 08 min here"),
-        CheckedInStudent("sam", "SC", "Sam C.", "PHYS 122 - 32 min here"),
-        CheckedInStudent("tina", "TP", "Tina P.", "MATH 239 - 6 min here"),
-        CheckedInStudent("omar", "OH", "Omar H.", "CS 246 - 51 min here"),
-        CheckedInStudent("julia", "JW", "Julia W.", "ECE 250 - 24 min here"),
-        CheckedInStudent("dev", "DS", "Dev S.", "ECON 101 - 15 min here")
-    )
-
-    private fun groupCheckInStudents(groupMembers: List<GroupMember>): List<CheckedInStudent> {
-        val memberRows = groupMembers.mapIndexed { index, member ->
-            if (member.id == "you") {
-                checkedInSelf()
-            } else {
-                CheckedInStudent(
-                    id = member.id,
-                    initials = member.initials,
-                    name = member.name,
-                    detail = if (index < 5) {
-                        "CS 341 group session - ${10 + index * 7} min here"
+        return when (mode) {
+            StudyMode.Solo -> buildList {
+                add(self)
+                MockData.soloCheckInStudents.forEach { (id, initials, name) ->
+                    val isFriend = id == "raghav"
+                    add(CheckedInStudent(id, initials, name, courseDetailFor(id), isFriend = isFriend))
+                }
+            }
+            StudyMode.Group -> buildList {
+                groupSession.members.mapIndexed { index, member ->
+                    if (member.id == "you") {
+                        add(self)
                     } else {
-                        "Invited to this session"
-                    },
-                    isFriend = index < 5
-                )
+                        add(
+                            CheckedInStudent(
+                                id = member.id,
+                                initials = member.initials,
+                                name = member.name,
+                                detail = if (index < 5) {
+                                    "CS 341 group session - ${10 + index * 7} min here"
+                                } else {
+                                    "Invited to this session"
+                                },
+                                isFriend = index < 5
+                            )
+                        )
+                    }
+                }
+                add(CheckedInStudent("edmond", "EY", "Edmond Y.", "CS 348 nearby group - 28 min here"))
+                add(CheckedInStudent("maya", "MR", "Maya R.", "SE 212 whiteboard session - 18 min here"))
+                add(CheckedInStudent("leah", "LM", "Leah M.", "BIOL 130 exam review - 10 min here"))
             }
         }
-
-        return memberRows + listOf(
-            CheckedInStudent("edmond", "EY", "Edmond Y.", "CS 348 nearby group - 28 min here"),
-            CheckedInStudent("maya", "MR", "Maya R.", "SE 212 whiteboard session - 18 min here"),
-            CheckedInStudent("leah", "LM", "Leah M.", "BIOL 130 exam review - 10 min here"),
-            CheckedInStudent("kai", "KC", "Kai C.", "ME 269 group notes - 55 min here"),
-            CheckedInStudent("priya", "PN", "Priya N.", "CO 250 tutorial prep - 7 min here"),
-            CheckedInStudent("ben", "BT", "Ben T.", "ECE 106 group quiz - 41 min here"),
-            CheckedInStudent("lina", "LZ", "Lina Z.", "CS 240 review - 22 min here")
-        )
     }
 
-    private fun checkedInSelf() = CheckedInStudent(
-        id = "you",
-        initials = "VB",
-        name = "You (Vraj)",
-        detail = "CS 341 - studying now",
-        isSelf = true
-    )
+    private fun courseDetailFor(id: String): String = when (id) {
+        "akshat" -> "ECE 222 - 45 min here"
+        "eric"   -> "MATH 237 - 20 min here"
+        "raghav" -> "ECE 298 - 1h here"
+        "mei"    -> "CS 350 - 12 min here"
+        "nora"   -> "STAT 231 - 1h 08 min here"
+        "sam"    -> "PHYS 122 - 32 min here"
+        "tina"   -> "MATH 239 - 6 min here"
+        "omar"   -> "CS 246 - 51 min here"
+        "julia"  -> "ECE 250 - 24 min here"
+        "dev"    -> "ECON 101 - 15 min here"
+        else     -> "Studying here"
+    }
 }
