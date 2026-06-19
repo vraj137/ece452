@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -54,18 +55,18 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -126,7 +127,6 @@ fun HomeScreen(
     val soloSpot = state.soloSpot ?: return
     val groupSession = state.groupSession ?: return
 
-    // Spot detail overlay — full screen, no bottom nav
     viewingSpotId?.let { spotId ->
         SpotDetailScreen(
             spotId = spotId,
@@ -140,7 +140,6 @@ fun HomeScreen(
         return
     }
 
-    // Live check-in overlay
     state.activeCheckIn?.let { session ->
         LiveCheckInScreen(
             session = session,
@@ -158,7 +157,6 @@ fun HomeScreen(
         return
     }
 
-    // Group mode screen
     if (state.selectedSection == HomeSection.Map && state.selectedMode == StudyMode.Group) {
         BackHandler { viewModel.returnToSoloMap() }
         GroupModeContent(
@@ -175,7 +173,6 @@ fun HomeScreen(
         return
     }
 
-    // Explore section
     if (state.selectedSection == HomeSection.Explore) {
         Column(Modifier.fillMaxSize()) {
             ExploreTabContent(
@@ -192,7 +189,6 @@ fun HomeScreen(
         return
     }
 
-    // Social section
     if (state.selectedSection == HomeSection.Social) {
         SocialScreen(
             selectedTab = state.selectedSocialTab,
@@ -206,7 +202,6 @@ fun HomeScreen(
         return
     }
 
-    // Profile section
     if (state.selectedSection == HomeSection.Profile) {
         Column(Modifier.fillMaxSize()) {
             ProfileTabContent(
@@ -223,7 +218,6 @@ fun HomeScreen(
         return
     }
 
-    // Default: Map section
     Column(Modifier.fillMaxSize()) {
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             MapTabContent(
@@ -326,7 +320,7 @@ private fun GroupModeContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+            contentPadding = PaddingValues(
                 start = 38.dp,
                 top = 18.dp,
                 end = 32.dp,
@@ -721,7 +715,7 @@ private fun LiveSensorEnvironmentScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+            contentPadding = PaddingValues(
                 start = 24.dp,
                 top = 26.dp,
                 end = 24.dp,
@@ -897,7 +891,7 @@ private fun SocialScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+            contentPadding = PaddingValues(
                 start = 30.dp,
                 top = 22.dp,
                 end = 30.dp,
@@ -1185,7 +1179,7 @@ private fun CheckInAttendeeList(
             state = listState,
             modifier = Modifier.fillMaxSize(),
             userScrollEnabled = true,
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+            contentPadding = PaddingValues(
                 start = 36.dp, top = 20.dp, end = 24.dp, bottom = 104.dp
             )
         ) {
@@ -1442,14 +1436,15 @@ private fun BuddyRequestSheet(
                 fontWeight = FontWeight.SemiBold
             )
             Spacer(Modifier.height(16.dp))
+            val tags = buddyTags(student)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                buddyTags(student).take(3).forEach { tag ->
+                tags.take(3).forEach { tag ->
                     RelationPill(tag, BodyText, SwitcherTrack)
                 }
             }
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                buddyTags(student).drop(3).forEach { tag ->
+                tags.drop(3).forEach { tag ->
                     RelationPill(tag, BodyText, SwitcherTrack)
                 }
             }
@@ -1822,7 +1817,7 @@ private fun MapPin(
                 fontWeight = FontWeight.ExtraBold,
                 maxLines = 1
             )
-            Spacer(modifier = Modifier.height(2.dp))
+            Spacer(Modifier.height(2.dp))
             // Base marker — a dot that always marks the spot, enlarging slightly when selected.
             Box(
                 modifier = Modifier
@@ -2070,8 +2065,8 @@ private fun buddyTags(student: CheckedInStudent): List<String> = when (student.i
     else -> listOf("CS 341", "Focused", "Solo-friendly", "Open to buddy")
 }
 
-private fun soloPins(accent: Color): List<StudyMapPin> =
-    MockData.soloMapPins.mapNotNull { (spotId, selected) ->
+private fun pinsFrom(pinList: List<Pair<String, Boolean>>, accent: Color): List<StudyMapPin> =
+    pinList.mapNotNull { (spotId, selected) ->
         val spot = MockData.spotById(spotId) ?: return@mapNotNull null
         StudyMapPin(
             label = spot.shortLabel,
@@ -2082,17 +2077,8 @@ private fun soloPins(accent: Color): List<StudyMapPin> =
         )
     }
 
-private fun groupPins(accent: Color): List<StudyMapPin> =
-    MockData.groupMapPins.mapNotNull { (spotId, selected) ->
-        val spot = MockData.spotById(spotId) ?: return@mapNotNull null
-        StudyMapPin(
-            label = spot.shortLabel,
-            x = spot.mapPinX,
-            y = spot.mapPinY,
-            color = if (selected) accent else pinColorFor(spotId),
-            selected = selected
-        )
-    }
+private fun soloPins(accent: Color) = pinsFrom(MockData.soloMapPins, accent)
+private fun groupPins(accent: Color) = pinsFrom(MockData.groupMapPins, accent)
 
 private fun pinColorFor(spotId: String): Color = when (spotId) {
     "dc-library-3f", "e5-collab-lab" -> LibraryGreen
