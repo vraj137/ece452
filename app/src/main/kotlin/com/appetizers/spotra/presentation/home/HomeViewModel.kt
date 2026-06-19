@@ -18,6 +18,8 @@ data class HomeUiState(
     val isLoading: Boolean = true,
     val userFirstName: String = "",
     val selectedMode: StudyMode = StudyMode.Solo,
+    val selectedSection: HomeSection = HomeSection.Map,
+    val selectedSocialTab: SocialTab = SocialTab.Friends,
     val soloSpot: StudySpotSummary? = null,
     val groupSession: GroupStudySession? = null,
     val groupSpots: List<StudySpotSummary> = emptyList(),
@@ -28,6 +30,19 @@ data class HomeUiState(
     val inviteText: String = "",
     val error: String? = null
 )
+
+enum class HomeSection {
+    Map,
+    Explore,
+    Social,
+    Profile
+}
+
+enum class SocialTab {
+    Friends,
+    Buddies,
+    Discover
+}
 
 class HomeViewModel(
     private val repository: HomeRepository
@@ -40,7 +55,21 @@ class HomeViewModel(
     }
 
     fun selectMode(mode: StudyMode) {
-        _uiState.update { it.copy(selectedMode = mode, error = null) }
+        _uiState.update { it.copy(selectedMode = mode, selectedSection = HomeSection.Map, error = null) }
+    }
+
+    fun selectSection(section: HomeSection) {
+        _uiState.update { state ->
+            state.copy(
+                selectedSection = section,
+                selectedMode = if (section == HomeSection.Map) state.selectedMode else StudyMode.Solo,
+                error = null
+            )
+        }
+    }
+
+    fun selectSocialTab(tab: SocialTab) {
+        _uiState.update { it.copy(selectedSocialTab = tab, selectedSection = HomeSection.Social, error = null) }
     }
 
     fun selectMapSpot(id: String) {
@@ -48,7 +77,7 @@ class HomeViewModel(
     }
 
     fun returnToSoloMap() {
-        _uiState.update { it.copy(selectedMode = StudyMode.Solo, error = null) }
+        _uiState.update { it.copy(selectedMode = StudyMode.Solo, selectedSection = HomeSection.Map, error = null) }
     }
 
     fun startCheckIn(spot: StudySpotSummary, mode: StudyMode = uiState.value.selectedMode) {

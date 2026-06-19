@@ -70,6 +70,30 @@ class HomeViewModelTest {
     }
 
     @Test
+    fun `selectSection updates active home section`() = runTest(dispatcher) {
+        val viewModel = HomeViewModel(FakeHomeRepository())
+        advanceUntilIdle()
+
+        viewModel.selectSection(HomeSection.Explore)
+
+        val state = viewModel.uiState.value
+        assertEquals(HomeSection.Explore, state.selectedSection)
+        assertEquals(StudyMode.Solo, state.selectedMode)
+    }
+
+    @Test
+    fun `selectSocialTab opens social section and selects tab`() = runTest(dispatcher) {
+        val viewModel = HomeViewModel(FakeHomeRepository())
+        advanceUntilIdle()
+
+        viewModel.selectSocialTab(SocialTab.Discover)
+
+        val state = viewModel.uiState.value
+        assertEquals(HomeSection.Social, state.selectedSection)
+        assertEquals(SocialTab.Discover, state.selectedSocialTab)
+    }
+
+    @Test
     fun `group invite appends member and clears input`() = runTest(dispatcher) {
         val viewModel = HomeViewModel(FakeHomeRepository())
         advanceUntilIdle()
