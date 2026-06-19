@@ -43,7 +43,9 @@ data class MockSpot(
         rating = rating,
         studyContextLabel = studyContextLabel,
         features = features,
-        bestFit = bestFit
+        bestFit = bestFit,
+        latitude = latitude,
+        longitude = longitude
     )
 }
 

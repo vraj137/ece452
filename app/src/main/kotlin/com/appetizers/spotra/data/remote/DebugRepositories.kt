@@ -95,70 +95,7 @@ class DebugHomeRepository : HomeRepository {
         }
     }
 
-    private fun loadHomeSoloSpot() = StudySpotSummary(
-        id = "e7-study-hall",
-        name = "E7 Study Hall",
-        badge = "Quiet",
-        distanceMeters = 120,
-        rating = 4.8,
-        studyContextLabel = "Solo-friendly",
-        latitude = 43.4732,
-        longitude = -80.5388
-    )
-
-    private fun mapSpots(): List<StudySpotSummary> = listOf(
-        loadHomeSoloSpot(),
-        StudySpotSummary(
-            id = "dc-library",
-            name = "DC Library",
-            badge = "Quiet",
-            distanceMeters = 240,
-            rating = 4.6,
-            studyContextLabel = "Silent floor",
-            latitude = 43.4728,
-            longitude = -80.5424
-        ),
-        StudySpotSummary(
-            id = "slc-great-hall",
-            name = "SLC Great Hall",
-            badge = "Lively",
-            distanceMeters = 310,
-            rating = 4.2,
-            studyContextLabel = "Group-friendly",
-            latitude = 43.4717,
-            longitude = -80.5453
-        ),
-        StudySpotSummary(
-            id = "dp-library",
-            name = "Dana Porter Library",
-            badge = "Quiet",
-            distanceMeters = 520,
-            rating = 4.5,
-            studyContextLabel = "Silent floors",
-            latitude = 43.4690,
-            longitude = -80.5424
-        ),
-        StudySpotSummary(
-            id = "qnc-atrium",
-            name = "QNC Atrium",
-            badge = "Moderate",
-            distanceMeters = 430,
-            rating = 4.3,
-            studyContextLabel = "Open seating",
-            latitude = 43.4719,
-            longitude = -80.5430
-        ),
-        StudySpotSummary(
-            id = "m3-atrium",
-            name = "M3 Atrium",
-            badge = "Moderate",
-            distanceMeters = 600,
-            rating = 4.1,
-            studyContextLabel = "Open seating",
-            latitude = 43.4736,
-            longitude = -80.5408
-        )
-    )
+    private fun mapSpots(): List<StudySpotSummary> = MockData.spots.map { it.toSummary() }
 
     private fun attendeesFor(mode: StudyMode): List<CheckedInStudent> {
         val self = CheckedInStudent(
