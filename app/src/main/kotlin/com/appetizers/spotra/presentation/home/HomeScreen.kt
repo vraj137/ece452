@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -36,7 +37,6 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.AccountCircle
-import androidx.compose.material.icons.rounded.AccessTime
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -55,30 +55,31 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.appetizers.spotra.BuildConfig
+import com.appetizers.spotra.data.mock.MockData
 import com.appetizers.spotra.domain.model.CheckInSession
 import com.appetizers.spotra.domain.model.CheckedInStudent
 import com.appetizers.spotra.domain.model.GroupMember
@@ -87,7 +88,9 @@ import com.appetizers.spotra.domain.model.SpotFeature
 import com.appetizers.spotra.domain.model.SpotFeatureType
 import com.appetizers.spotra.domain.model.StudyMode
 import com.appetizers.spotra.domain.model.StudySpotSummary
+import com.appetizers.spotra.domain.repository.AuthRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
+import com.appetizers.spotra.domain.repository.ProfileRepository
 import com.mapbox.geojson.Point
 import com.mapbox.maps.Style
 import com.mapbox.maps.ViewAnnotationAnchor
@@ -101,7 +104,11 @@ import com.mapbox.maps.viewannotation.viewAnnotationOptions
 import kotlinx.coroutines.delay
 
 @Composable
-fun HomeScreen(homeRepository: HomeRepository) {
+fun HomeScreen(
+    homeRepository: HomeRepository,
+    profileRepository: ProfileRepository,
+    authRepository: AuthRepository
+) {
     val viewModel: HomeViewModel = viewModel(
         factory = HomeViewModel.Factory(homeRepository)
     )
@@ -111,12 +118,27 @@ fun HomeScreen(homeRepository: HomeRepository) {
         label = "mode-accent"
     )
 
+    var viewingSpotId by remember { mutableStateOf<String?>(null) }
+
     if (state.isLoading || state.soloSpot == null || state.groupSession == null) {
         HomeLoadingScreen()
         return
     }
     val soloSpot = state.soloSpot ?: return
     val groupSession = state.groupSession ?: return
+
+    viewingSpotId?.let { spotId ->
+        SpotDetailScreen(
+            spotId = spotId,
+            accent = accent,
+            onBack = { viewingSpotId = null },
+            onCheckIn = { spot ->
+                viewModel.startCheckIn(spot, StudyMode.Solo)
+                viewingSpotId = null
+            }
+        )
+        return
+    }
 
     state.activeCheckIn?.let { session ->
         LiveCheckInScreen(
@@ -137,7 +159,7 @@ fun HomeScreen(homeRepository: HomeRepository) {
 
     if (state.selectedSection == HomeSection.Map && state.selectedMode == StudyMode.Group) {
         BackHandler { viewModel.returnToSoloMap() }
-        GroupModeScreen(
+        GroupModeContent(
             groupSession = groupSession,
             spots = state.groupSpots,
             inviteText = state.inviteText,
@@ -146,22 +168,24 @@ fun HomeScreen(homeRepository: HomeRepository) {
             onBack = viewModel::returnToSoloMap,
             selectedSection = state.selectedSection,
             onSectionSelected = viewModel::selectSection,
-            onSpotSelected = { spot ->
-                viewModel.startCheckIn(spot, StudyMode.Group)
-            }
+            onSpotSelected = { spot -> viewModel.startCheckIn(spot, StudyMode.Group) }
         )
         return
     }
 
     if (state.selectedSection == HomeSection.Explore) {
-        val displayedSpot = state.mapSpots.firstOrNull { it.id == state.selectedSpotId } ?: soloSpot
-        LiveSensorEnvironmentScreen(
-            spot = displayedSpot,
-            selectedSection = state.selectedSection,
-            onSectionSelected = viewModel::selectSection,
-            onBack = { viewModel.selectSection(HomeSection.Map) },
-            onCheckIn = { viewModel.startCheckIn(displayedSpot, state.selectedMode) }
-        )
+        Column(Modifier.fillMaxSize()) {
+            ExploreTabContent(
+                accent = accent,
+                onSpotSelected = { viewingSpotId = it },
+                modifier = Modifier.weight(1f)
+            )
+            BottomNavigationShell(
+                accent = accent,
+                selectedSection = state.selectedSection,
+                onSectionSelected = viewModel::selectSection
+            )
+        }
         return
     }
 
@@ -171,9 +195,7 @@ fun HomeScreen(homeRepository: HomeRepository) {
             onTabSelected = viewModel::selectSocialTab,
             selectedSection = state.selectedSection,
             onSectionSelected = viewModel::selectSection,
-            onJoin = {
-                viewModel.startCheckIn(soloSpot, StudyMode.Solo)
-            },
+            onJoin = { viewModel.startCheckIn(soloSpot, StudyMode.Solo) },
             onAddBuddy = viewModel::sendBuddyRequest,
             requestedBuddyIds = state.requestedBuddyIds
         )
@@ -181,50 +203,30 @@ fun HomeScreen(homeRepository: HomeRepository) {
     }
 
     if (state.selectedSection == HomeSection.Profile) {
-        ProfileScreen(
-            userFirstName = state.userFirstName,
-            selectedSection = state.selectedSection,
-            onSectionSelected = viewModel::selectSection
-        )
+        Column(Modifier.fillMaxSize()) {
+            ProfileTabContent(
+                profileRepository = profileRepository,
+                authRepository = authRepository,
+                modifier = Modifier.weight(1f)
+            )
+            BottomNavigationShell(
+                accent = accent,
+                selectedSection = state.selectedSection,
+                onSectionSelected = viewModel::selectSection
+            )
+        }
         return
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(HomeBackground)
-            .statusBarsPadding()
-    ) {
-        HomeHeader(
-            userFirstName = state.userFirstName,
-            selectedMode = state.selectedMode,
-            accent = accent,
-            onModeSelected = viewModel::selectMode
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-        ) {
-            CampusMap(
-                spots = state.mapSpots,
-                selectedSpotId = state.selectedSpotId,
-                onSpotSelected = viewModel::selectMapSpot,
+    Column(Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            MapTabContent(
+                state = state,
+                soloSpot = soloSpot,
                 accent = accent,
-                mode = state.selectedMode,
-                modifier = Modifier.fillMaxSize()
-            )
-            val displayedSpot = state.mapSpots.firstOrNull { it.id == state.selectedSpotId }
-                ?: soloSpot
-            StudySpotCard(
-                spot = displayedSpot,
-                accent = accent,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(start = 30.dp, end = 30.dp, bottom = 16.dp),
-                onClick = {
-                    viewModel.startCheckIn(displayedSpot, StudyMode.Solo)
-                }
+                onModeSelected = viewModel::selectMode,
+                onMapSpotSelected = viewModel::selectMapSpot,
+                onSpotSelected = { viewingSpotId = it }
             )
         }
         BottomNavigationShell(
@@ -254,7 +256,49 @@ private fun HomeLoadingScreen() {
 }
 
 @Composable
-private fun GroupModeScreen(
+private fun MapTabContent(
+    state: HomeUiState,
+    soloSpot: StudySpotSummary,
+    accent: Color,
+    onModeSelected: (StudyMode) -> Unit,
+    onMapSpotSelected: (String) -> Unit,
+    onSpotSelected: (String) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(HomeBackground)
+            .statusBarsPadding()
+    ) {
+        HomeHeader(
+            userFirstName = state.userFirstName,
+            selectedMode = state.selectedMode,
+            accent = accent,
+            onModeSelected = onModeSelected
+        )
+        CampusMap(
+            spots = state.mapSpots,
+            selectedSpotId = state.selectedSpotId,
+            onSpotSelected = onMapSpotSelected,
+            accent = accent,
+            mode = state.selectedMode,
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+        )
+        val displayedSpot = state.mapSpots.firstOrNull { it.id == state.selectedSpotId } ?: soloSpot
+        StudySpotCard(
+            spot = displayedSpot,
+            accent = accent,
+            modifier = Modifier.padding(start = 30.dp, top = 16.dp, end = 30.dp),
+            onClick = { onSpotSelected(displayedSpot.id) }
+        )
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+@Composable
+private fun GroupModeContent(
     groupSession: GroupStudySession,
     spots: List<StudySpotSummary>,
     inviteText: String,
@@ -276,7 +320,7 @@ private fun GroupModeScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+            contentPadding = PaddingValues(
                 start = 38.dp,
                 top = 18.dp,
                 end = 32.dp,
@@ -442,10 +486,7 @@ private fun GroupAvatarStrip(members: List<GroupMember>) {
 }
 
 @Composable
-private fun GroupSpotCard(
-    spot: StudySpotSummary,
-    onClick: () -> Unit
-) {
+private fun GroupSpotCard(spot: StudySpotSummary, onClick: () -> Unit) {
     val borderColor = if (spot.bestFit) GroupGreen else GroupCardBorder
     val backgroundColor = if (spot.bestFit) GroupBestFitBackground else Color.White
     val icon = groupSpotIconFor(spot)
@@ -542,13 +583,8 @@ private fun GroupFeatureChip(feature: SpotFeature) {
 }
 
 @Composable
-private fun GroupInviteBar(
-    value: String,
-    onValueChange: (String) -> Unit,
-    onSend: () -> Unit
-) {
+private fun GroupInviteBar(value: String, onValueChange: (String) -> Unit, onSend: () -> Unit) {
     val canSend = value.trim().isNotEmpty()
-
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -569,11 +605,7 @@ private fun GroupInviteBar(
                 value = value,
                 onValueChange = onValueChange,
                 singleLine = false,
-                textStyle = TextStyle(
-                    color = Ink,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Medium
-                ),
+                textStyle = TextStyle(color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Medium),
                 modifier = Modifier.fillMaxWidth()
             )
             if (value.isBlank()) {
@@ -589,10 +621,7 @@ private fun GroupInviteBar(
         Row(
             modifier = Modifier
                 .height(72.dp)
-                .background(
-                    if (canSend) GroupGreen else DisabledSend,
-                    RoundedCornerShape(16.dp)
-                )
+                .background(if (canSend) GroupGreen else DisabledSend, RoundedCornerShape(16.dp))
                 .clickable(enabled = canSend, onClick = onSend)
                 .padding(horizontal = 20.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -605,12 +634,7 @@ private fun GroupInviteBar(
                 modifier = Modifier.size(22.dp)
             )
             Spacer(Modifier.width(8.dp))
-            Text(
-                text = "Send",
-                color = Color.White,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.ExtraBold
-            )
+            Text(text = "Send", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
         }
     }
 }
@@ -691,7 +715,7 @@ private fun LiveSensorEnvironmentScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+            contentPadding = PaddingValues(
                 start = 24.dp,
                 top = 26.dp,
                 end = 24.dp,
@@ -867,7 +891,7 @@ private fun SocialScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+            contentPadding = PaddingValues(
                 start = 30.dp,
                 top = 22.dp,
                 end = 30.dp,
@@ -1076,79 +1100,6 @@ private fun StudyStreakCard() {
 }
 
 @Composable
-private fun ProfileScreen(
-    userFirstName: String,
-    selectedSection: HomeSection,
-    onSectionSelected: (HomeSection) -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(HomeBackground)
-            .statusBarsPadding()
-    ) {
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(30.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp)
-        ) {
-            item {
-                Text(
-                    text = "$userFirstName's study profile",
-                    color = Ink,
-                    fontSize = 31.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
-            }
-            item {
-                StudyStreakCard()
-            }
-            item {
-                ProfileMetricCard("Preferred mode", "Solo mornings, group evenings", Icons.Rounded.Person)
-            }
-            item {
-                ProfileMetricCard("Top course match", "CS 341 - 8 active buddies", Icons.Rounded.School)
-            }
-            item {
-                ProfileMetricCard("Privacy", "Buddy requests are opt-in both ways", Icons.Rounded.CheckCircle)
-            }
-        }
-        BottomNavigationShell(
-            accent = SoloBlue,
-            selectedSection = selectedSection,
-            onSectionSelected = onSectionSelected
-        )
-    }
-}
-
-@Composable
-private fun ProfileMetricCard(title: String, detail: String, icon: ImageVector) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.White, RoundedCornerShape(22.dp))
-            .padding(20.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(52.dp)
-                .background(SelfPillBackground, RoundedCornerShape(16.dp)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(icon, contentDescription = null, tint = SoloBlue, modifier = Modifier.size(28.dp))
-        }
-        Spacer(Modifier.width(16.dp))
-        Column {
-            Text(title, color = Ink, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
-            Text(detail, color = HeaderMuted, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-        }
-    }
-}
-
-@Composable
 private fun LiveCheckInScreen(
     session: CheckInSession,
     accent: Color,
@@ -1223,30 +1174,17 @@ private fun CheckInAttendeeList(
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(Color.White)
-    ) {
+    Box(modifier = modifier.fillMaxWidth().background(Color.White)) {
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
             userScrollEnabled = true,
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                start = 36.dp,
-                top = 20.dp,
-                end = 24.dp,
-                bottom = 104.dp
+            contentPadding = PaddingValues(
+                start = 36.dp, top = 20.dp, end = 24.dp, bottom = 104.dp
             )
         ) {
             item {
-                Text(
-                    text = "WHO'S HERE",
-                    color = SectionLabel,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
+                Text(text = "WHO'S HERE", color = SectionLabel, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
                 Spacer(Modifier.height(14.dp))
             }
             if (students.isEmpty()) {
@@ -1260,22 +1198,14 @@ private fun CheckInAttendeeList(
                     )
                 }
             } else {
-                itemsIndexed(
-                    items = students,
-                    key = { _, student -> student.id }
-                ) { index, student ->
+                itemsIndexed(items = students, key = { _, s -> s.id }) { index, student ->
                     CheckedInStudentRow(
                         student = student,
                         requested = student.id in requestedBuddyIds,
                         onBuddyClick = { onBuddyClick(student) }
                     )
                     if (index < students.lastIndex) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(1.dp)
-                                .background(DividerLine)
-                        )
+                        Box(Modifier.fillMaxWidth().height(1.dp).background(DividerLine))
                     }
                 }
             }
@@ -1285,21 +1215,13 @@ private fun CheckInAttendeeList(
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .height(28.dp)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(Color.Transparent, Color.White)
-                    )
-                )
+                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.White)))
         )
     }
 }
 
 @Composable
-private fun LiveCheckInHeader(
-    spotName: String,
-    peopleHere: Int,
-    onBack: () -> Unit
-) {
+private fun LiveCheckInHeader(spotName: String, peopleHere: Int, onBack: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1345,11 +1267,7 @@ private fun LiveCheckInHeader(
                 .padding(horizontal = 16.dp, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .size(10.dp)
-                    .background(CheckedInDot, CircleShape)
-            )
+            Box(Modifier.size(10.dp).background(CheckedInDot, CircleShape))
             Spacer(Modifier.width(9.dp))
             Text(
                 text = "Checked in",
@@ -1362,11 +1280,7 @@ private fun LiveCheckInHeader(
 }
 
 @Composable
-private fun CheckedInStudentRow(
-    student: CheckedInStudent,
-    requested: Boolean,
-    onBuddyClick: () -> Unit
-) {
+private fun CheckedInStudentRow(student: CheckedInStudent, requested: Boolean, onBuddyClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1374,7 +1288,14 @@ private fun CheckedInStudentRow(
             .padding(vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        StudentAvatar(student)
+        Box(
+            modifier = Modifier
+                .size(56.dp)
+                .background(avatarColorFor(student.id), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(text = student.initials, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
+        }
         Spacer(Modifier.width(16.dp))
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1388,12 +1309,7 @@ private fun CheckedInStudentRow(
                 )
                 if (student.isFriend) {
                     Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = "friend",
-                        color = SoloBlue,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.ExtraBold
-                    )
+                    Text(text = "friend", color = SoloBlue, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold)
                 }
             }
             Spacer(Modifier.height(4.dp))
@@ -1415,37 +1331,13 @@ private fun CheckedInStudentRow(
                 fontSize = 17.sp,
                 fontWeight = FontWeight.SemiBold
             )
-            else -> BuddyRequestButton(
-                requested = requested,
-                onClick = onBuddyClick
-            )
+            else -> BuddyRequestButton(requested = requested, onClick = onBuddyClick)
         }
     }
 }
 
 @Composable
-private fun StudentAvatar(student: CheckedInStudent) {
-    Box(
-        modifier = Modifier
-            .size(56.dp)
-            .background(avatarColorFor(student.id), CircleShape),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = student.initials,
-            color = Color.White,
-            fontSize = 19.sp,
-            fontWeight = FontWeight.ExtraBold
-        )
-    }
-}
-
-@Composable
-private fun RelationPill(
-    text: String,
-    contentColor: Color,
-    backgroundColor: Color
-) {
+private fun RelationPill(text: String, contentColor: Color, backgroundColor: Color) {
     Text(
         text = text,
         modifier = Modifier
@@ -1544,14 +1436,15 @@ private fun BuddyRequestSheet(
                 fontWeight = FontWeight.SemiBold
             )
             Spacer(Modifier.height(16.dp))
+            val tags = buddyTags(student)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                buddyTags(student).take(3).forEach { tag ->
+                tags.take(3).forEach { tag ->
                     RelationPill(tag, BodyText, SwitcherTrack)
                 }
             }
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                buddyTags(student).drop(3).forEach { tag ->
+                tags.drop(3).forEach { tag ->
                     RelationPill(tag, BodyText, SwitcherTrack)
                 }
             }
@@ -1609,10 +1502,7 @@ private fun BuddyRequestSheet(
 }
 
 @Composable
-private fun CheckInSessionPanel(
-    elapsedSeconds: Int,
-    onCheckout: () -> Unit
-) {
+private fun CheckInSessionPanel(elapsedSeconds: Int, onCheckout: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1626,12 +1516,7 @@ private fun CheckInSessionPanel(
         ) {
             SessionClockIcon()
             Spacer(Modifier.width(12.dp))
-            Text(
-                text = "Session time",
-                color = BodyText,
-                fontSize = 19.sp,
-                fontWeight = FontWeight.SemiBold
-            )
+            Text(text = "Session time", color = BodyText, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.weight(1f))
             Text(
                 text = elapsedSeconds.asSessionTime(),
@@ -1650,19 +1535,9 @@ private fun CheckInSessionPanel(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center
         ) {
-            Icon(
-                imageVector = Icons.Rounded.Check,
-                contentDescription = null,
-                tint = BodyText,
-                modifier = Modifier.size(22.dp)
-            )
+            Icon(imageVector = Icons.Rounded.Check, contentDescription = null, tint = BodyText, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(10.dp))
-            Text(
-                text = "Check out & review",
-                color = BodyText,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.ExtraBold
-            )
+            Text(text = "Check out & review", color = BodyText, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
         }
     }
 }
@@ -1682,20 +1557,8 @@ private fun SessionClockIcon() {
                 radius = size.minDimension / 2 - stroke,
                 style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke)
             )
-            drawLine(
-                color = SoloBlue,
-                start = center,
-                end = Offset(center.x, center.y - size.height * .26f),
-                strokeWidth = stroke,
-                cap = StrokeCap.Round
-            )
-            drawLine(
-                color = SoloBlue,
-                start = center,
-                end = Offset(center.x + size.width * .22f, center.y + size.height * .12f),
-                strokeWidth = stroke,
-                cap = StrokeCap.Round
-            )
+            drawLine(SoloBlue, center, Offset(center.x, center.y - size.height * .26f), stroke, StrokeCap.Round)
+            drawLine(SoloBlue, center, Offset(center.x + size.width * .22f, center.y + size.height * .12f), stroke, StrokeCap.Round)
         }
     }
 }
@@ -1722,44 +1585,21 @@ private fun HomeHeader(
             fontWeight = FontWeight.Medium
         )
         Spacer(Modifier.height(24.dp))
-        ModeSwitcher(
-            selectedMode = selectedMode,
-            accent = accent,
-            onModeSelected = onModeSelected
-        )
+        ModeSwitcher(selectedMode = selectedMode, accent = accent, onModeSelected = onModeSelected)
     }
 }
 
 @Composable
 private fun SpotraLandingWordmark(accent: Color) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            text = "sp",
-            color = Ink,
-            fontSize = 31.sp,
-            fontWeight = FontWeight.ExtraBold
-        )
-        Text(
-            text = "o",
-            color = accent,
-            fontSize = 31.sp,
-            fontWeight = FontWeight.ExtraBold
-        )
-        Text(
-            text = "tra",
-            color = Ink,
-            fontSize = 31.sp,
-            fontWeight = FontWeight.ExtraBold
-        )
+        Text(text = "sp", color = Ink, fontSize = 31.sp, fontWeight = FontWeight.ExtraBold)
+        Text(text = "o", color = accent, fontSize = 31.sp, fontWeight = FontWeight.ExtraBold)
+        Text(text = "tra", color = Ink, fontSize = 31.sp, fontWeight = FontWeight.ExtraBold)
     }
 }
 
 @Composable
-private fun ModeSwitcher(
-    selectedMode: StudyMode,
-    accent: Color,
-    onModeSelected: (StudyMode) -> Unit
-) {
+private fun ModeSwitcher(selectedMode: StudyMode, accent: Color, onModeSelected: (StudyMode) -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1799,28 +1639,15 @@ private fun ModeSegment(
     Row(
         modifier = modifier
             .fillMaxSize()
-            .background(
-                color = if (selected) selectedColor else Color.Transparent,
-                shape = RoundedCornerShape(30.dp)
-            )
+            .background(if (selected) selectedColor else Color.Transparent, RoundedCornerShape(30.dp))
             .clickable(onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center
     ) {
         val contentColor = if (selected) Color.White else MutedText
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            tint = contentColor,
-            modifier = Modifier.size(24.dp)
-        )
+        Icon(imageVector = icon, contentDescription = label, tint = contentColor, modifier = Modifier.size(24.dp))
         Spacer(Modifier.width(10.dp))
-        Text(
-            text = label,
-            color = contentColor,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold
-        )
+        Text(text = label, color = contentColor, fontSize = 20.sp, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -1885,21 +1712,11 @@ private fun CampusMap(
 }
 
 @Composable
-private fun CampusMapPlaceholder(
-    mode: StudyMode,
-    accent: Color,
-    modifier: Modifier = Modifier
-) {
+private fun CampusMapPlaceholder(mode: StudyMode, accent: Color, modifier: Modifier = Modifier) {
     val pins = if (mode == StudyMode.Solo) soloPins(accent) else groupPins(accent)
-
-    BoxWithConstraints(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(MapBackground)
-    ) {
+    BoxWithConstraints(modifier = modifier.fillMaxWidth().background(MapBackground)) {
         Canvas(Modifier.fillMaxSize()) {
             drawRect(MapBackground)
-
             val blockColor = MapBlock.copy(alpha = .88f)
             val blockRadius = 9.dp.toPx()
             val blockWidth = size.width * .24f
@@ -1913,35 +1730,16 @@ private fun CampusMapPlaceholder(
                 Offset(size.width * .63f, size.height * .49f)
             )
             blockPositions.forEach { topLeft ->
-                drawRoundRect(
-                    color = blockColor,
-                    topLeft = topLeft,
-                    size = Size(blockWidth, blockHeight),
-                    cornerRadius = CornerRadius(blockRadius, blockRadius)
-                )
+                drawRoundRect(color = blockColor, topLeft = topLeft, size = Size(blockWidth, blockHeight), cornerRadius = CornerRadius(blockRadius, blockRadius))
             }
-
             val streetWidth = 13.dp.toPx()
             listOf(.26f, .58f, .91f).forEach { x ->
-                drawLine(
-                    color = Color.White,
-                    start = Offset(size.width * x, 0f),
-                    end = Offset(size.width * x, size.height),
-                    strokeWidth = streetWidth,
-                    cap = StrokeCap.Round
-                )
+                drawLine(Color.White, Offset(size.width * x, 0f), Offset(size.width * x, size.height), streetWidth, StrokeCap.Round)
             }
             listOf(.31f, .59f, .87f).forEach { y ->
-                drawLine(
-                    color = Color.White,
-                    start = Offset(0f, size.height * y),
-                    end = Offset(size.width, size.height * y),
-                    strokeWidth = streetWidth,
-                    cap = StrokeCap.Round
-                )
+                drawLine(Color.White, Offset(0f, size.height * y), Offset(size.width, size.height * y), streetWidth, StrokeCap.Round)
             }
         }
-
         pins.forEach { pin ->
             MapPin(
                 label = pin.label,
@@ -1952,7 +1750,6 @@ private fun CampusMapPlaceholder(
                     .offset(x = maxWidth * pin.x, y = maxHeight * pin.y)
             )
         }
-
         Box(
             modifier = Modifier
                 .align(Alignment.TopStart)
@@ -2020,7 +1817,7 @@ private fun MapPin(
                 fontWeight = FontWeight.ExtraBold,
                 maxLines = 1
             )
-            Spacer(modifier = Modifier.height(2.dp))
+            Spacer(Modifier.height(2.dp))
             // Base marker — a dot that always marks the spot, enlarging slightly when selected.
             Box(
                 modifier = Modifier
@@ -2065,17 +1862,10 @@ private fun StudySpotCard(
                 .background(Color(0xFFE7E8FF), RoundedCornerShape(18.dp)),
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                imageVector = Icons.Rounded.School,
-                contentDescription = null,
-                tint = accent,
-                modifier = Modifier.size(29.dp)
-            )
+            Icon(imageVector = Icons.Rounded.School, contentDescription = null, tint = accent, modifier = Modifier.size(29.dp))
         }
         Spacer(Modifier.width(18.dp))
-        Column(
-            modifier = Modifier.weight(1f)
-        ) {
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = spot.name,
                 color = Ink,
@@ -2087,39 +1877,14 @@ private fun StudySpotCard(
             Spacer(Modifier.height(7.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 distanceLabel?.let {
-                    Text(
-                        text = it,
-                        color = HeaderMuted,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1
-                    )
+                    Text(text = it, color = HeaderMuted, fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1)
                 }
                 spot.rating?.let { rating ->
-                    Icon(
-                        imageVector = Icons.Rounded.Star,
-                        contentDescription = null,
-                        tint = StarGold,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Text(
-                        text = " $rating",
-                        color = HeaderMuted,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Icon(imageVector = Icons.Rounded.Star, contentDescription = null, tint = StarGold, modifier = Modifier.size(18.dp))
+                    Text(text = " $rating", color = HeaderMuted, fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 if (contextLabel.isNotBlank()) {
-                    Text(
-                        text = " - $contextLabel",
-                        color = HeaderMuted,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Text(text = " - $contextLabel", color = HeaderMuted, fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
@@ -2148,7 +1913,7 @@ private fun BottomNavigationShell(
             .fillMaxWidth()
             .background(Color.White)
             .navigationBarsPadding()
-            .padding(start = 24.dp, top = 18.dp, end = 24.dp, bottom = 18.dp),
+            .padding(start = 24.dp, top = 14.dp, end = 24.dp, bottom = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         BottomNavItem(
@@ -2200,30 +1965,13 @@ private fun BottomNavItem(
         modifier = modifier.clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            tint = color,
-            modifier = Modifier.size(28.dp)
-        )
+        Icon(imageVector = icon, contentDescription = label, tint = color, modifier = Modifier.size(28.dp))
         Spacer(Modifier.height(5.dp))
-        Text(
-            text = label,
-            color = color,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1
-        )
+        Text(text = label, color = color, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1)
     }
 }
 
-private data class StudyMapPin(
-    val label: String,
-    val x: Float,
-    val y: Float,
-    val color: Color,
-    val selected: Boolean = false
-)
+private data class StudyMapPin(val label: String, val x: Float, val y: Float, val color: Color, val selected: Boolean = false)
 
 private data class SensorReading(
     val label: String,
@@ -2242,11 +1990,6 @@ private data class SocialPerson(
     val detail: String,
     val active: Boolean = true
 )
-
-private fun StudyMode.accentColor(): Color = when (this) {
-    StudyMode.Solo -> SoloBlue
-    StudyMode.Group -> GroupGreen
-}
 
 private fun sensorReadingsFor(spotId: String): List<SensorReading> {
     val quietBias = if (spotId.contains("library") || spotId.contains("e7")) 0 else 8
@@ -2322,40 +2065,26 @@ private fun buddyTags(student: CheckedInStudent): List<String> = when (student.i
     else -> listOf("CS 341", "Focused", "Solo-friendly", "Open to buddy")
 }
 
-private fun soloPins(accent: Color) = listOf(
-    StudyMapPin("E7 Hall", .64f, .20f, accent, selected = true),
-    StudyMapPin("DC Lib", .33f, .35f, LibraryGreen),
-    StudyMapPin("SLC 2F", .07f, .65f, SLCOrange),
-    StudyMapPin("DP Atrium", .66f, .64f, DPAtriumRed)
-)
+private fun pinsFrom(pinList: List<Pair<String, Boolean>>, accent: Color): List<StudyMapPin> =
+    pinList.mapNotNull { (spotId, selected) ->
+        val spot = MockData.spotById(spotId) ?: return@mapNotNull null
+        StudyMapPin(
+            label = spot.shortLabel,
+            x = spot.mapPinX,
+            y = spot.mapPinY,
+            color = if (selected) accent else pinColorFor(spotId),
+            selected = selected
+        )
+    }
 
-private fun groupPins(accent: Color) = listOf(
-    StudyMapPin("DC Team", .29f, .31f, accent, selected = true),
-    StudyMapPin("E7 Hall", .63f, .20f, SoloBlue),
-    StudyMapPin("SLC 2F", .07f, .65f, SLCOrange),
-    StudyMapPin("EV3 Hub", .63f, .64f, LibraryGreen)
-)
+private fun soloPins(accent: Color) = pinsFrom(MockData.soloMapPins, accent)
+private fun groupPins(accent: Color) = pinsFrom(MockData.groupMapPins, accent)
 
-private fun avatarColorFor(id: String, index: Int = 0): Color = when (id) {
-    "you" -> SoloBlue
-    "akshat" -> PurpleAvatar
-    "eric" -> LibraryGreen
-    "raghav" -> SLCOrange
-    "pavan" -> Color(0xFF0EA5E9)
-    "edmond" -> Color(0xFF14B8A6)
-    "maya" -> Color(0xFF8B5CF6)
-    "leah" -> DPAtriumRed
-    "kai" -> Color(0xFF64748B)
-    "priya" -> Color(0xFFEF4444)
-    "ben" -> Color(0xFFF97316)
-    "lina" -> Color(0xFF22C55E)
-    else -> listOf(
-        Color(0xFF14B8A6),
-        Color(0xFF8B5CF6),
-        Color(0xFFEF4444),
-        Color(0xFFF97316),
-        Color(0xFF22C55E)
-    )[index.coerceAtLeast(0) % 5]
+private fun pinColorFor(spotId: String): Color = when (spotId) {
+    "dc-library-3f", "e5-collab-lab" -> LibraryGreen
+    "slc-boardroom-2a" -> SLCOrange
+    "dp-library", "mc-atrium" -> DPAtriumRed
+    else -> SoloBlue
 }
 
 private fun iconForFeature(type: SpotFeatureType): ImageVector = when (type) {
@@ -2380,51 +2109,3 @@ private fun Int.asSessionTime(): String {
     val seconds = this % 60
     return "$minutes:${seconds.toString().padStart(2, '0')}"
 }
-
-private val HomeBackground = Color(0xFFF8F7F3)
-private val Ink = Color(0xFF171A3C)
-private val HeaderMuted = Color(0xFFA8A6AA)
-private val MutedText = Color(0xFF96949A)
-private val SwitcherTrack = Color(0xFFEDE9E0)
-private val SoloBlue = Color(0xFF4355E8)
-private val SensorScoreBackground = Color(0xFF293B8E)
-private val GroupGreen = Color(0xFF21A46F)
-private val GroupHeaderGreen = Color(0xFF115C3B)
-private val GroupHeaderChip = Color(0xFF3A7B62)
-private val GroupBackButton = Color(0xFF0D4A31)
-private val GroupHeaderSecondary = Color(0xFFB7D0C3)
-private val GroupMoreAvatar = Color(0xFF6A8176)
-private val GroupBestFitBackground = Color(0xFFEFFAF4)
-private val GroupCardBorder = Color(0xFFEDE9E0)
-private val GroupFeatureChipBackground = Color(0xFFEDE9E0)
-private val GroupSpotIconGreen = Color(0xFFDDF6EA)
-private val GroupSpotIconYellow = Color(0xFFFFF1D2)
-private val ModerateFitBackground = Color(0xFFFFF1D2)
-private val ModerateFitText = Color(0xFF8A5200)
-private val InviteInputBackground = Color(0xFFF1F0ED)
-private val DisabledSend = Color(0xFF9ACFB9)
-private val MapBackground = Color(0xFFEAE6DB)
-private val MapLoadingBackground = Color(0xFFE8E8E8)
-private val MapBlock = Color(0xFFCFC9B6)
-private val CardBackground = Color(0xFFF0F1FF)
-private val QuietPill = Color(0xFFDDF6EA)
-private val QuietText = Color(0xFF137B4B)
-private val LibraryGreen = Color(0xFF249B6C)
-private val SLCOrange = Color(0xFFD89209)
-private val DPAtriumRed = Color(0xFFD83D3C)
-private val NavMuted = Color(0xFFC2BEB5)
-private val StarGold = Color(0xFFF8BC3B)
-private val CheckInHeader = Color(0xFF1B1A31)
-private val HeaderButton = Color(0xFF3A394F)
-private val HeaderSecondary = Color(0xFF9D9AA9)
-private val CheckedInPill = Color(0xFF244F50)
-private val CheckedInDot = Color(0xFF5AE5A0)
-private val CheckedInText = Color(0xFF72E6A7)
-private val SectionLabel = Color(0xFFA5A5A7)
-private val DividerLine = Color(0xFFECE9E3)
-private val SelfRowBackground = Color(0xFFF3F3FD)
-private val SelfPillBackground = Color(0xFFE8E9FF)
-private val BuddyPill = Color(0xFFF0F0FF)
-private val RequestedPill = Color(0xFFE7F8EF)
-private val BodyText = Color(0xFF5F5C62)
-private val PurpleAvatar = Color(0xFFA43CE2)
