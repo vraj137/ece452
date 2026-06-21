@@ -71,3 +71,9 @@ data class HomeSnapshot(
     val groupSpots: List<StudySpotSummary>,
     val mapSpots: List<StudySpotSummary> = emptyList()
 )
+
+data class CompletedSession(
+    val spotName: String,
+    val durationSeconds: Int,
+    val finishedAtMillis: Long
+)

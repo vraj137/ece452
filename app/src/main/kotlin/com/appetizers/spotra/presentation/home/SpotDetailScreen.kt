@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.BookmarkBorder
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarOutline
@@ -53,7 +54,9 @@ internal fun SpotDetailScreen(
     spotId: String,
     accent: Color,
     onBack: () -> Unit,
-    onCheckIn: (StudySpotSummary) -> Unit
+    onCheckIn: (StudySpotSummary) -> Unit,
+    activeCheckInSpotId: String? = null,
+    onEndSession: () -> Unit = {}
 ) {
     val spot = MockData.spotById(spotId)
 
@@ -61,6 +64,8 @@ internal fun SpotDetailScreen(
         LaunchedEffect(Unit) { onBack() }
         return
     }
+
+    val sessionActiveHere = activeCheckInSpotId == spotId
 
     BackHandler(onBack = onBack)
 
@@ -86,7 +91,14 @@ internal fun SpotDetailScreen(
             if (spot.reviews.isNotEmpty()) {
                 item { SpotReviewsSection(reviews = spot.reviews) }
             }
-            item { SpotActionButtons(accent = accent, onCheckIn = { onCheckIn(spot.toSummary()) }) }
+            item {
+                SpotActionButtons(
+                    accent = accent,
+                    sessionActiveHere = sessionActiveHere,
+                    onCheckIn = { onCheckIn(spot.toSummary()) },
+                    onEndSession = onEndSession
+                )
+            }
         }
     }
 }
@@ -357,25 +369,46 @@ private fun ReviewRow(review: MockReview) {
 }
 
 @Composable
-private fun SpotActionButtons(accent: Color, onCheckIn: () -> Unit) {
+private fun SpotActionButtons(
+    accent: Color,
+    sessionActiveHere: Boolean,
+    onCheckIn: () -> Unit,
+    onEndSession: () -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = 20.dp, top = 24.dp, end = 20.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .weight(1f)
-                .height(52.dp)
-                .background(accent, RoundedCornerShape(16.dp))
-                .clickable(onClick = onCheckIn),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
-        ) {
-            Icon(Icons.Rounded.LocationOn, null, tint = Color.White, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Check In", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+        if (sessionActiveHere) {
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(52.dp)
+                    .background(DPAtriumRed, RoundedCornerShape(16.dp))
+                    .clickable(onClick = onEndSession),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Icon(Icons.Rounded.CheckCircle, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("End Session", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+            }
+        } else {
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(52.dp)
+                    .background(accent, RoundedCornerShape(16.dp))
+                    .clickable(onClick = onCheckIn),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Icon(Icons.Rounded.LocationOn, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Start Session", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+            }
         }
         Row(
             modifier = Modifier

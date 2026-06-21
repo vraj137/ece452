@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.appetizers.spotra.domain.model.CheckInSession
+import com.appetizers.spotra.domain.model.CompletedSession
 import com.appetizers.spotra.domain.model.GroupStudySession
 import com.appetizers.spotra.domain.model.StudyMode
 import com.appetizers.spotra.domain.model.StudySpotSummary
@@ -26,6 +27,9 @@ data class HomeUiState(
     val mapSpots: List<StudySpotSummary> = emptyList(),
     val selectedSpotId: String? = null,
     val activeCheckIn: CheckInSession? = null,
+    val sessionStartTimeMillis: Long = 0L,
+    val showLiveSession: Boolean = false,
+    val completedSessions: List<CompletedSession> = emptyList(),
     val requestedBuddyIds: Set<String> = emptySet(),
     val inviteText: String = "",
     val error: String? = null
@@ -88,6 +92,8 @@ class HomeViewModel(
                     _uiState.update {
                         it.copy(
                             activeCheckIn = session,
+                            sessionStartTimeMillis = System.currentTimeMillis(),
+                            showLiveSession = true,
                             requestedBuddyIds = emptySet(),
                             error = null
                         )
@@ -99,17 +105,37 @@ class HomeViewModel(
         }
     }
 
+    fun minimizeSession() {
+        _uiState.update { it.copy(showLiveSession = false, error = null) }
+    }
+
+    fun expandSession() {
+        _uiState.update { it.copy(showLiveSession = true, error = null) }
+    }
+
     fun closeCheckIn() {
-        _uiState.update { it.copy(activeCheckIn = null, error = null) }
+        _uiState.update { it.copy(activeCheckIn = null, showLiveSession = false, error = null) }
     }
 
     fun checkOut() {
         val session = uiState.value.activeCheckIn ?: return
+        val elapsedSeconds = ((System.currentTimeMillis() - uiState.value.sessionStartTimeMillis) / 1000).toInt()
+        val spotName = session.spot.name
         viewModelScope.launch {
             runCatching { repository.checkOut(session.id) }
                 .onSuccess {
+                    val finished = CompletedSession(
+                        spotName = spotName,
+                        durationSeconds = elapsedSeconds,
+                        finishedAtMillis = System.currentTimeMillis()
+                    )
                     _uiState.update { state ->
-                        state.copy(activeCheckIn = null, error = null)
+                        state.copy(
+                            activeCheckIn = null,
+                            showLiveSession = false,
+                            completedSessions = listOf(finished) + state.completedSessions,
+                            error = null
+                        )
                     }
                 }
                 .onFailure { error ->
