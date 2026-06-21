@@ -36,6 +36,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.appetizers.spotra.domain.model.CompletedSession
 import com.appetizers.spotra.domain.model.UserProfile
 import com.appetizers.spotra.domain.repository.AuthRepository
 import com.appetizers.spotra.domain.repository.ProfileRepository
@@ -49,6 +50,35 @@ private data class RecentSession(
     val timeLabel: String,
     val duration: String
 )
+
+private fun CompletedSession.toRecentSession() = RecentSession(
+    spotName = spotName,
+    timeLabel = timeLabel(),
+    duration = durationSeconds.toDurationLabel()
+)
+
+private fun CompletedSession.timeLabel(): String {
+    val elapsed = System.currentTimeMillis() - finishedAtMillis
+    val hours = elapsed / (1000L * 60 * 60)
+    val days = hours / 24
+    return when {
+        hours < 1 -> "Just now"
+        hours < 24 -> "${hours}h ago"
+        days == 1L -> "Yesterday"
+        days < 7 -> "$days days ago"
+        else -> "Last week"
+    }
+}
+
+private fun Int.toDurationLabel(): String {
+    val minutes = this / 60
+    return when {
+        minutes < 1 -> "< 1 min"
+        minutes < 60 -> "${minutes}min"
+        minutes % 60 == 0 -> "${minutes / 60}h"
+        else -> "${minutes / 60}h ${minutes % 60}min"
+    }
+}
 
 private val mockRecentSessions = listOf(
     RecentSession("E7 Study Hall", "Yesterday", "2h 15min"),
@@ -95,6 +125,7 @@ class ProfileViewModel(
 internal fun ProfileTabContent(
     profileRepository: ProfileRepository,
     authRepository: AuthRepository,
+    recentSessions: List<CompletedSession> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     val vm: ProfileViewModel = viewModel(
@@ -109,13 +140,14 @@ internal fun ProfileTabContent(
             .statusBarsPadding()
     ) {
         ProfileHeader(state.profile)
+        val displaySessions = recentSessions.map { it.toRecentSession() } + mockRecentSessions
         LazyColumn(
             modifier = Modifier.fillMaxWidth().weight(1f),
             contentPadding = PaddingValues(bottom = 24.dp)
         ) {
             item { ProfileStats() }
             item { RecentSessionsHeader() }
-            items(mockRecentSessions) { session ->
+            items(displaySessions) { session ->
                 RecentSessionRow(session)
             }
         }
