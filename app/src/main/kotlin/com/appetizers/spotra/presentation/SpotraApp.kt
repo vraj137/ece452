@@ -115,7 +115,13 @@ fun SpotraApp(container: AppContainer) {
             HomeScreen(
                 homeRepository = container.homeRepository,
                 profileRepository = container.profileRepository,
-                authRepository = container.authRepository
+                authRepository = container.authRepository,
+                onSignOut = {
+                    navController.navigate(Routes.Welcome) {
+                        popUpTo(navController.graph.findStartDestination().id) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                }
             )
         }
     }

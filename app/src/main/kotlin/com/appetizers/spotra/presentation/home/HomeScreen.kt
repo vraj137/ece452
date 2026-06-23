@@ -5,6 +5,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -107,16 +108,14 @@ import kotlinx.coroutines.delay
 fun HomeScreen(
     homeRepository: HomeRepository,
     profileRepository: ProfileRepository,
-    authRepository: AuthRepository
+    authRepository: AuthRepository,
+    onSignOut: () -> Unit = {}
 ) {
     val viewModel: HomeViewModel = viewModel(
         factory = HomeViewModel.Factory(homeRepository)
     )
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val accent by animateColorAsState(
-        targetValue = if (state.selectedMode == StudyMode.Solo) SoloBlue else GroupGreen,
-        label = "mode-accent"
-    )
+    val accent = if (state.selectedMode == StudyMode.Solo) SoloBlue else GroupGreen
 
     var viewingSpotId by remember { mutableStateOf<String?>(null) }
 
@@ -230,6 +229,7 @@ fun HomeScreen(
             ProfileTabContent(
                 profileRepository = profileRepository,
                 authRepository = authRepository,
+                onSignOut = onSignOut,
                 recentSessions = state.completedSessions,
                 modifier = Modifier.weight(1f)
             )
@@ -1729,15 +1729,24 @@ private fun ModeSegment(
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
+    val bgColor by animateColorAsState(
+        targetValue = if (selected) selectedColor else Color.Transparent,
+        animationSpec = tween(durationMillis = 200),
+        label = "segment-bg"
+    )
+    val contentColor by animateColorAsState(
+        targetValue = if (selected) Color.White else MutedText,
+        animationSpec = tween(durationMillis = 200),
+        label = "segment-content"
+    )
     Row(
         modifier = modifier
             .fillMaxSize()
-            .background(if (selected) selectedColor else Color.Transparent, RoundedCornerShape(30.dp))
+            .background(bgColor, RoundedCornerShape(30.dp))
             .clickable(onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center
     ) {
-        val contentColor = if (selected) Color.White else MutedText
         Icon(imageVector = icon, contentDescription = label, tint = contentColor, modifier = Modifier.size(24.dp))
         Spacer(Modifier.width(10.dp))
         Text(text = label, color = contentColor, fontSize = 20.sp, fontWeight = FontWeight.Bold)
@@ -1885,8 +1894,6 @@ private fun MapPin(
     )
 
     val pillShape = RoundedCornerShape(18.dp)
-    // Reserve transparent room on top/sides — never the bottom — so the dot stays pinned to
-    // the map coordinate while the pill (and its shadow) render above without being clipped.
     Box(
         modifier = modifier.padding(top = 14.dp, start = 20.dp, end = 20.dp),
         contentAlignment = Alignment.BottomCenter
@@ -1898,7 +1905,6 @@ private fun MapPin(
                     .graphicsLayer {
                         scaleX = pillScale
                         scaleY = pillScale
-                        // Grow up out of the dot.
                         transformOrigin = TransformOrigin(0.5f, 1f)
                     }
                     .shadow(6.dp, pillShape, clip = false)
@@ -1911,7 +1917,6 @@ private fun MapPin(
                 maxLines = 1
             )
             Spacer(Modifier.height(2.dp))
-            // Base marker — a dot that always marks the spot, enlarging slightly when selected.
             Box(
                 modifier = Modifier
                     .graphicsLayer {
@@ -1942,9 +1947,9 @@ private fun StudySpotCard(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(118.dp)
-            .background(CardBackground, RoundedCornerShape(20.dp))
-            .border(3.dp, accent, RoundedCornerShape(20.dp))
+            .shadow(12.dp, RoundedCornerShape(20.dp), clip = false)
+            .background(Color.White, RoundedCornerShape(20.dp))
+            .border(1.5.dp, accent.copy(alpha = 0.35f), RoundedCornerShape(20.dp))
             .then(clickModifier)
             .padding(horizontal = 20.dp, vertical = 18.dp),
         verticalAlignment = Alignment.CenterVertically
