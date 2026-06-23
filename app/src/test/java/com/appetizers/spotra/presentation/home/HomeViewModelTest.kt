@@ -118,11 +118,16 @@ class HomeViewModelTest {
         advanceUntilIdle()
 
         assertEquals("session-e7-study-hall", viewModel.uiState.value.activeCheckIn?.id)
+        assertTrue(viewModel.uiState.value.showLiveSession)
 
         viewModel.checkOut()
         advanceUntilIdle()
 
         assertNull(viewModel.uiState.value.activeCheckIn)
+        assertFalse(viewModel.uiState.value.showLiveSession)
+        assertEquals(1, viewModel.uiState.value.completedSessions.size)
+        assertEquals("E7 Study Hall", viewModel.uiState.value.completedSessions.first().spotName)
+        assertTrue(viewModel.uiState.value.completedSessions.first().durationSeconds >= 0)
     }
 
     @Test

@@ -125,6 +125,7 @@ fun HomeScreen(
     }
     val soloSpot = state.soloSpot ?: return
     val groupSession = state.groupSession ?: return
+    val activeCheckIn = state.activeCheckIn
 
     viewingSpotId?.let { spotId ->
         SpotDetailScreen(
@@ -134,22 +135,28 @@ fun HomeScreen(
             onCheckIn = { spot ->
                 viewModel.startCheckIn(spot, StudyMode.Solo)
                 viewingSpotId = null
+            },
+            activeCheckInSpotId = activeCheckIn?.spot?.id,
+            onEndSession = {
+                viewModel.checkOut()
+                viewingSpotId = null
             }
         )
         return
     }
 
-    state.activeCheckIn?.let { session ->
+    if (activeCheckIn != null && state.showLiveSession) {
         LiveCheckInScreen(
-            session = session,
-            accent = session.mode.accentColor(),
+            session = activeCheckIn,
+            sessionStartTimeMillis = state.sessionStartTimeMillis,
+            accent = activeCheckIn.mode.accentColor(),
             requestedBuddyIds = state.requestedBuddyIds,
             onBuddyRequest = viewModel::sendBuddyRequest,
-            onBack = viewModel::closeCheckIn,
+            onBack = viewModel::minimizeSession,
             onCheckout = viewModel::checkOut,
             selectedSection = state.selectedSection,
             onSectionSelected = { section ->
-                viewModel.closeCheckIn()
+                viewModel.minimizeSession()
                 viewModel.selectSection(section)
             }
         )
@@ -179,6 +186,13 @@ fun HomeScreen(
                 onSpotSelected = { viewingSpotId = it },
                 modifier = Modifier.weight(1f)
             )
+            if (activeCheckIn != null) {
+                ActiveSessionBar(
+                    spotName = activeCheckIn.spot.name,
+                    sessionStartTimeMillis = state.sessionStartTimeMillis,
+                    onClick = viewModel::expandSession
+                )
+            }
             BottomNavigationShell(
                 accent = accent,
                 selectedSection = state.selectedSection,
@@ -196,7 +210,16 @@ fun HomeScreen(
             onSectionSelected = viewModel::selectSection,
             onJoin = { viewModel.startCheckIn(soloSpot, StudyMode.Solo) },
             onAddBuddy = viewModel::sendBuddyRequest,
-            requestedBuddyIds = state.requestedBuddyIds
+            requestedBuddyIds = state.requestedBuddyIds,
+            activeSessionBar = if (activeCheckIn != null) {
+                {
+                    ActiveSessionBar(
+                        spotName = activeCheckIn.spot.name,
+                        sessionStartTimeMillis = state.sessionStartTimeMillis,
+                        onClick = viewModel::expandSession
+                    )
+                }
+            } else null
         )
         return
     }
@@ -207,8 +230,16 @@ fun HomeScreen(
                 profileRepository = profileRepository,
                 authRepository = authRepository,
                 onSignOut = onSignOut,
+                recentSessions = state.completedSessions,
                 modifier = Modifier.weight(1f)
             )
+            if (activeCheckIn != null) {
+                ActiveSessionBar(
+                    spotName = activeCheckIn.spot.name,
+                    sessionStartTimeMillis = state.sessionStartTimeMillis,
+                    onClick = viewModel::expandSession
+                )
+            }
             BottomNavigationShell(
                 accent = accent,
                 selectedSection = state.selectedSection,
@@ -227,6 +258,13 @@ fun HomeScreen(
                 onModeSelected = viewModel::selectMode,
                 onMapSpotSelected = viewModel::selectMapSpot,
                 onSpotSelected = { viewingSpotId = it }
+            )
+        }
+        if (activeCheckIn != null) {
+            ActiveSessionBar(
+                spotName = activeCheckIn.spot.name,
+                sessionStartTimeMillis = state.sessionStartTimeMillis,
+                onClick = viewModel::expandSession
             )
         }
         BottomNavigationShell(
@@ -865,7 +903,8 @@ private fun SocialScreen(
     onSectionSelected: (HomeSection) -> Unit,
     onJoin: () -> Unit,
     onAddBuddy: (String) -> Unit,
-    requestedBuddyIds: Set<String>
+    requestedBuddyIds: Set<String>,
+    activeSessionBar: (@Composable () -> Unit)? = null
 ) {
     Column(
         modifier = Modifier
@@ -938,6 +977,7 @@ private fun SocialScreen(
                 }
             }
         }
+        activeSessionBar?.invoke()
         BottomNavigationShell(
             accent = SoloBlue,
             selectedSection = selectedSection,
@@ -1102,6 +1142,7 @@ private fun StudyStreakCard() {
 @Composable
 private fun LiveCheckInScreen(
     session: CheckInSession,
+    sessionStartTimeMillis: Long,
     accent: Color,
     requestedBuddyIds: Set<String>,
     onBuddyRequest: (String) -> Unit,
@@ -1110,13 +1151,15 @@ private fun LiveCheckInScreen(
     selectedSection: HomeSection,
     onSectionSelected: (HomeSection) -> Unit
 ) {
-    var elapsedSeconds by remember(session.spot.name) { mutableStateOf(0) }
+    var elapsedSeconds by remember(sessionStartTimeMillis) {
+        mutableStateOf(((System.currentTimeMillis() - sessionStartTimeMillis) / 1000).toInt())
+    }
     var selectedBuddy by remember(session.id) { mutableStateOf<CheckedInStudent?>(null) }
 
-    LaunchedEffect(session.spot.name) {
+    LaunchedEffect(sessionStartTimeMillis) {
         while (true) {
             delay(1000)
-            elapsedSeconds += 1
+            elapsedSeconds = ((System.currentTimeMillis() - sessionStartTimeMillis) / 1000).toInt()
         }
     }
 
@@ -1498,6 +1541,56 @@ private fun BuddyRequestSheet(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ActiveSessionBar(
+    spotName: String,
+    sessionStartTimeMillis: Long,
+    onClick: () -> Unit
+) {
+    var elapsed by remember(sessionStartTimeMillis) {
+        mutableStateOf(((System.currentTimeMillis() - sessionStartTimeMillis) / 1000).toInt())
+    }
+    LaunchedEffect(sessionStartTimeMillis) {
+        while (true) {
+            delay(1000)
+            elapsed = ((System.currentTimeMillis() - sessionStartTimeMillis) / 1000).toInt()
+        }
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(CheckInHeader)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(Modifier.size(9.dp).background(CheckedInDot, CircleShape))
+        Spacer(Modifier.width(10.dp))
+        Text(
+            text = "Session · $spotName",
+            color = Color.White,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.ExtraBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = elapsed.asSessionTime(),
+            color = CheckedInText,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.ExtraBold
+        )
+        Spacer(Modifier.width(10.dp))
+        Text(
+            text = "Return ›",
+            color = HeaderSecondary,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold
+        )
     }
 }
 
