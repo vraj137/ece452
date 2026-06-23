@@ -1,6 +1,7 @@
 package com.appetizers.spotra.presentation.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,14 +20,25 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ExitToApp
 import androidx.compose.material.icons.rounded.School
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -81,6 +93,13 @@ class ProfileViewModel(
         }
     }
 
+    fun signOut(onDone: () -> Unit) {
+        viewModelScope.launch {
+            runCatching { authRepository.signOut() }
+            onDone()
+        }
+    }
+
     class Factory(
         private val profileRepository: ProfileRepository,
         private val authRepository: AuthRepository
@@ -91,16 +110,21 @@ class ProfileViewModel(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ProfileTabContent(
     profileRepository: ProfileRepository,
     authRepository: AuthRepository,
+    onSignOut: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val vm: ProfileViewModel = viewModel(
         factory = ProfileViewModel.Factory(profileRepository, authRepository)
     )
     val state by vm.state.collectAsStateWithLifecycle()
+    var showSettings by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState()
+    val scope = rememberCoroutineScope()
 
     Column(
         modifier = modifier
@@ -108,7 +132,7 @@ internal fun ProfileTabContent(
             .background(HomeBackground)
             .statusBarsPadding()
     ) {
-        ProfileHeader(state.profile)
+        ProfileHeader(profile = state.profile, onSettingsClick = { showSettings = true })
         LazyColumn(
             modifier = Modifier.fillMaxWidth().weight(1f),
             contentPadding = PaddingValues(bottom = 24.dp)
@@ -120,10 +144,38 @@ internal fun ProfileTabContent(
             }
         }
     }
+
+    if (showSettings) {
+        ModalBottomSheet(
+            onDismissRequest = { showSettings = false },
+            sheetState = sheetState,
+            containerColor = Color.White
+        ) {
+            Column(modifier = Modifier.padding(bottom = 32.dp)) {
+                Text(
+                    text = "Settings",
+                    modifier = Modifier.padding(start = 24.dp, top = 4.dp, bottom = 16.dp),
+                    color = Ink,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                HorizontalDivider(color = DividerLine)
+                SettingsRow(
+                    icon = Icons.Rounded.ExitToApp,
+                    label = "Sign out",
+                    tint = Color(0xFFD83D3C),
+                    onClick = {
+                        showSettings = false
+                        vm.signOut(onSignOut)
+                    }
+                )
+            }
+        }
+    }
 }
 
 @Composable
-private fun ProfileHeader(profile: UserProfile?) {
+private fun ProfileHeader(profile: UserProfile?, onSettingsClick: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -138,6 +190,21 @@ private fun ProfileHeader(profile: UserProfile?) {
             Text(text = "sp", color = Ink, fontSize = 31.sp, fontWeight = FontWeight.ExtraBold)
             Text(text = "o", color = SoloBlue, fontSize = 31.sp, fontWeight = FontWeight.ExtraBold)
             Text(text = "tra", color = Ink, fontSize = 31.sp, fontWeight = FontWeight.ExtraBold)
+            Spacer(Modifier.weight(1f))
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(HomeBackground, RoundedCornerShape(12.dp))
+                    .clickable(onClick = onSettingsClick),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Settings,
+                    contentDescription = "Settings",
+                    tint = HeaderMuted,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
         }
 
         Spacer(Modifier.height(24.dp))
@@ -313,4 +380,19 @@ private fun RecentSessionRow(session: RecentSession) {
             .padding(start = 78.dp)
             .background(DividerLine)
     )
+}
+
+@Composable
+private fun SettingsRow(icon: ImageVector, label: String, tint: Color, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 18.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(imageVector = icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.width(16.dp))
+        Text(text = label, color = tint, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+    }
 }
