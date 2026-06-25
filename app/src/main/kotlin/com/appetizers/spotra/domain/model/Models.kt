@@ -22,8 +22,8 @@ data class UserProfile(
     val firstName: String,
     val lastName: String,
     val email: String,
-    val program: String,
-    val studyTerm: StudyTerm,
+    val program: String = "",
+    val studyTerm: StudyTerm? = null,
     val onboardingComplete: Boolean = true
 )
 

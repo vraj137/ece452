@@ -280,8 +280,8 @@ private fun ProfileHeader(profile: UserProfile?, onSettingsClick: () -> Unit) {
             )
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ProfileTag(label = profile.program)
-                ProfileTag(label = profile.studyTerm.label)
+                if (profile.program.isNotBlank()) ProfileTag(label = profile.program)
+                profile.studyTerm?.let { ProfileTag(label = it.label) }
             }
         } else {
             Text(

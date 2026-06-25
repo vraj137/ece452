@@ -197,17 +197,17 @@ fun OtpScreen(state: OnboardingUiState, onBack: () -> Unit, viewModel: Onboardin
 @OptIn(ExperimentalLayoutApi::class)
 fun ProgramScreen(state: OnboardingUiState, onBack: () -> Unit, viewModel: OnboardingViewModel) {
     FormScreen(onBack) {
-        StepHeader(4, "Major & year", "Helps you find and connect with classmates.")
+        StepHeader(4, "Major & year", "Optional — helps you find and connect with classmates.")
         Spacer(Modifier.height(22.dp))
         SpotraTextField(
             state.draft.program,
             viewModel::updateProgram,
-            "Major / Program",
+            "Major / Program (optional)",
             placeholder = "Computer Engineering",
             leadingIcon = Icons.Rounded.School
         )
         Spacer(Modifier.height(18.dp))
-        Text("Year of study", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Year of study (optional)", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(10.dp))
         FlowRow(
             modifier = Modifier.fillMaxWidth(),

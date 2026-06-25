@@ -11,8 +11,8 @@ data class UserProfileDto(
     @SerialName("first_name") val firstName: String,
     @SerialName("last_name") val lastName: String,
     @SerialName("email") val email: String,
-    @SerialName("program") val program: String,
-    @SerialName("study_term") val studyTerm: StudyTerm,
+    @SerialName("program") val program: String = "",
+    @SerialName("study_term") val studyTerm: StudyTerm? = null,
     @SerialName("onboarding_complete") val onboardingComplete: Boolean = true
 ) {
     fun toDomain() = UserProfile(

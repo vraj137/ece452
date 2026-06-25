@@ -134,8 +134,6 @@ class OnboardingViewModel(
     fun completeProfile() = runRequest {
         val state = uiState.value
         val draft = state.draft
-        require(OnboardingValidation.isValidProgram(draft.program)) { "Enter your program." }
-        val term = requireNotNull(draft.studyTerm) { "Choose your current study term." }
         val user = requireNotNull(authRepository.currentUser()) {
             "Your session expired. Request a new verification code."
         }
@@ -149,7 +147,7 @@ class OnboardingViewModel(
                 lastName = draft.lastName.trim(),
                 email = user.email,
                 program = draft.program.trim(),
-                studyTerm = term
+                studyTerm = draft.studyTerm
             )
         )
         _events.emit(OnboardingEvent.Navigate(Routes.Complete))
