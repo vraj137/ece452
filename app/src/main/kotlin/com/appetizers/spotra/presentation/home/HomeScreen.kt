@@ -1883,65 +1883,48 @@ private fun MapPin(
     selected: Boolean,
     modifier: Modifier = Modifier
 ) {
-    // Every spot always shows its label pill + dot. Focus is expressed purely through a
-    // draw-time scale and a fading white ring (no re-measure), so the Mapbox ViewAnnotation
-    // never repositions — the pin grows in place, anchored at its dot, instead of shaking.
-    val pillScale by animateFloatAsState(
-        targetValue = if (selected) 1.1f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioNoBouncy,
-            stiffness = Spring.StiffnessMediumLow
-        ),
-        label = "pill-scale"
-    )
-    val borderAlpha by animateFloatAsState(
+    val labelAlpha by animateFloatAsState(
         targetValue = if (selected) 1f else 0f,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "pill-border"
+        animationSpec = tween(durationMillis = 180),
+        label = "pin-label-alpha"
     )
     val dotScale by animateFloatAsState(
-        targetValue = if (selected) 1.25f else 1f,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "dot-scale"
+        targetValue = if (selected) 1.4f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow),
+        label = "pin-dot-scale"
     )
 
     val pillShape = RoundedCornerShape(18.dp)
-    Box(
-        modifier = modifier.padding(top = 14.dp, start = 20.dp, end = 20.dp),
-        contentAlignment = Alignment.BottomCenter
+    // padding(top) reserves space equal to label height so the dot anchor never moves
+    Column(
+        modifier = modifier.padding(horizontal = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text = label,
-                modifier = Modifier
-                    .graphicsLayer {
-                        scaleX = pillScale
-                        scaleY = pillScale
-                        transformOrigin = TransformOrigin(0.5f, 1f)
-                    }
-                    .shadow(6.dp, pillShape, clip = false)
-                    .background(color, pillShape)
-                    .border(2.dp, Color.White.copy(alpha = borderAlpha), pillShape)
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
-                color = Color.White,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.ExtraBold,
-                maxLines = 1
-            )
-            Spacer(Modifier.height(2.dp))
-            Box(
-                modifier = Modifier
-                    .graphicsLayer {
-                        scaleX = dotScale
-                        scaleY = dotScale
-                    }
-                    .size(15.dp)
-                    .shadow(3.dp, CircleShape, clip = false)
-                    .background(Color.White, CircleShape)
-                    .padding(3.dp)
-                    .background(color, CircleShape)
-            )
-        }
+        // Always in layout — alpha-only via graphicsLayer keeps ViewAnnotation size constant
+        // so Mapbox never re-anchors the pin (prevents jank on selection change)
+        Text(
+            text = label,
+            modifier = Modifier
+                .graphicsLayer { alpha = labelAlpha }
+                .shadow(6.dp, pillShape, clip = false)
+                .background(color, pillShape)
+                .border(2.dp, Color.White, pillShape)
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            color = Color.White,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.ExtraBold,
+            maxLines = 1
+        )
+        Spacer(Modifier.height(3.dp))
+        Box(
+            modifier = Modifier
+                .graphicsLayer { scaleX = dotScale; scaleY = dotScale }
+                .size(12.dp)
+                .shadow(3.dp, CircleShape, clip = false)
+                .background(Color.White, CircleShape)
+                .padding(2.5.dp)
+                .background(color, CircleShape)
+        )
     }
 }
 
