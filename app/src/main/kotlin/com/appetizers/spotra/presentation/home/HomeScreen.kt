@@ -109,6 +109,7 @@ fun HomeScreen(
     homeRepository: HomeRepository,
     profileRepository: ProfileRepository,
     authRepository: AuthRepository,
+    spotSubmissionRepository: com.appetizers.spotra.domain.repository.SpotSubmissionRepository,
     onSignOut: () -> Unit = {}
 ) {
     val viewModel: HomeViewModel = viewModel(
@@ -118,6 +119,7 @@ fun HomeScreen(
     val accent = if (state.selectedMode == StudyMode.Solo) SoloBlue else GroupGreen
 
     var viewingSpotId by remember { mutableStateOf<String?>(null) }
+    var showSubmitSpot by remember { mutableStateOf(false) }
 
     if (state.isLoading || state.soloSpot == null || state.groupSession == null) {
         HomeLoadingScreen()
@@ -126,6 +128,15 @@ fun HomeScreen(
     val soloSpot = state.soloSpot ?: return
     val groupSession = state.groupSession ?: return
     val activeCheckIn = state.activeCheckIn
+
+    if (showSubmitSpot) {
+        SubmitSpotScreen(
+            authRepository = authRepository,
+            spotSubmissionRepository = spotSubmissionRepository,
+            onBack = { showSubmitSpot = false }
+        )
+        return
+    }
 
     viewingSpotId?.let { spotId ->
         SpotDetailScreen(
@@ -184,6 +195,7 @@ fun HomeScreen(
             ExploreTabContent(
                 accent = accent,
                 onSpotSelected = { viewingSpotId = it },
+                onSuggestSpot = { showSubmitSpot = true },
                 modifier = Modifier.weight(1f)
             )
             if (activeCheckIn != null) {
