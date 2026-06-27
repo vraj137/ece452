@@ -41,6 +41,7 @@ import com.appetizers.spotra.data.mock.MockSpot
 internal fun ExploreTabContent(
     accent: Color,
     onSpotSelected: (String) -> Unit,
+    onSuggestSpot: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val trendingSpots = remember { MockData.spots.sortedByDescending { it.checkInsThisWeek } }
@@ -51,7 +52,7 @@ internal fun ExploreTabContent(
             .background(HomeBackground)
             .statusBarsPadding()
     ) {
-        ExploreHeader(accent = accent)
+        ExploreHeader(accent = accent, onSuggestSpot = onSuggestSpot)
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 20.dp, top = 8.dp, end = 20.dp, bottom = 24.dp),
@@ -73,7 +74,7 @@ internal fun ExploreTabContent(
 }
 
 @Composable
-private fun ExploreHeader(accent: Color) {
+private fun ExploreHeader(accent: Color, onSuggestSpot: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -92,21 +93,41 @@ private fun ExploreHeader(accent: Color) {
             fontSize = 18.sp,
             fontWeight = FontWeight.Medium
         )
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(12.dp))
         Row(
-            modifier = Modifier
-                .background(SwitcherTrack, RoundedCornerShape(22.dp))
-                .padding(horizontal = 14.dp, vertical = 6.dp),
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(modifier = Modifier.size(8.dp).background(GroupGreen, CircleShape))
-            Spacer(Modifier.width(7.dp))
-            Text(
-                text = "Trending now · Updated live",
-                color = BodyText,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold
-            )
+            Row(
+                modifier = Modifier
+                    .background(SwitcherTrack, RoundedCornerShape(22.dp))
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(modifier = Modifier.size(8.dp).background(GroupGreen, CircleShape))
+                Spacer(Modifier.width(7.dp))
+                Text(
+                    text = "Trending now · Updated live",
+                    color = BodyText,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .background(accent, RoundedCornerShape(22.dp))
+                    .clickable(onClick = onSuggestSpot)
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "+ Suggest a spot",
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+            }
         }
     }
 }

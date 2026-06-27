@@ -1,9 +1,13 @@
 package com.appetizers.spotra.data.remote
 
+import com.appetizers.spotra.domain.model.SpotSubmission
 import com.appetizers.spotra.domain.model.UserProfile
 import com.appetizers.spotra.domain.repository.AuthRepository
 import com.appetizers.spotra.domain.repository.AuthUser
 import com.appetizers.spotra.domain.repository.ProfileRepository
+import com.appetizers.spotra.domain.repository.SpotSubmissionRepository
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.OtpType
 import io.github.jan.supabase.auth.auth
@@ -52,6 +56,42 @@ class SupabaseProfileRepository(
     override suspend fun saveProfile(profile: UserProfile) {
         client.from("profiles").upsert(profile.toDto())
     }
+}
+
+@Serializable
+private data class SpotSubmissionDto(
+    val name: String,
+    val description: String,
+    val latitude: Double,
+    val longitude: Double,
+    val building: String,
+    val floor: String,
+    @SerialName("submitted_by_email") val submittedByEmail: String,
+    @SerialName("submitted_by_user_id") val submittedByUserId: String?,
+    val status: String = "pending"
+)
+
+class SupabaseSpotSubmissionRepository(
+    private val client: SupabaseClient
+) : SpotSubmissionRepository {
+    override suspend fun submitSpot(submission: SpotSubmission) {
+        client.from("user_spot_submissions").insert(
+            SpotSubmissionDto(
+                name = submission.name,
+                description = submission.description,
+                latitude = submission.latitude,
+                longitude = submission.longitude,
+                building = submission.building,
+                floor = submission.floor,
+                submittedByEmail = submission.submittedByEmail,
+                submittedByUserId = submission.submittedByUserId
+            )
+        )
+    }
+}
+
+class DebugSpotSubmissionRepository : SpotSubmissionRepository {
+    override suspend fun submitSpot(submission: SpotSubmission) = Unit
 }
 
 class MissingConfigurationAuthRepository : AuthRepository {
