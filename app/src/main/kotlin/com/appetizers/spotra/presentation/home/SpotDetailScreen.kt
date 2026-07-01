@@ -31,6 +31,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -39,9 +43,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.appetizers.spotra.data.mock.MockData
-import com.appetizers.spotra.data.mock.MockReview
 import com.appetizers.spotra.data.mock.MockSpot
+import com.appetizers.spotra.domain.model.Review
 import com.appetizers.spotra.domain.model.StudySpotSummary
+import com.appetizers.spotra.domain.repository.ReviewRepository
 
 // Friends who happen to be studying at the featured solo spot (display only).
 private val e7StudyingFriends: List<Pair<String, String>> = listOf(
@@ -55,6 +60,8 @@ internal fun SpotDetailScreen(
     accent: Color,
     onBack: () -> Unit,
     onCheckIn: (StudySpotSummary) -> Unit,
+    reviewRepository: ReviewRepository,
+    onReview: () -> Unit,
     activeCheckInSpotId: String? = null,
     onEndSession: () -> Unit = {}
 ) {
@@ -66,6 +73,11 @@ internal fun SpotDetailScreen(
     }
 
     val sessionActiveHere = activeCheckInSpotId == spotId
+
+    var reviews by remember(spotId) { mutableStateOf<List<Review>>(emptyList()) }
+    LaunchedEffect(spotId) {
+        reviews = runCatching { reviewRepository.reviewsFor(spotId) }.getOrDefault(emptyList())
+    }
 
     BackHandler(onBack = onBack)
 
@@ -88,15 +100,16 @@ internal fun SpotDetailScreen(
         ) {
             item { SpotStatTiles(spot = spot) }
             item { SpotAmenitiesSection(amenities = spot.amenities) }
-            if (spot.reviews.isNotEmpty()) {
-                item { SpotReviewsSection(reviews = spot.reviews) }
+            if (reviews.isNotEmpty()) {
+                item { SpotReviewsSection(reviews = reviews) }
             }
             item {
                 SpotActionButtons(
                     accent = accent,
                     sessionActiveHere = sessionActiveHere,
                     onCheckIn = { onCheckIn(spot.toSummary()) },
-                    onEndSession = onEndSession
+                    onEndSession = onEndSession,
+                    onReview = onReview
                 )
             }
         }
@@ -305,7 +318,7 @@ private fun SpotAmenitiesSection(amenities: List<String>) {
 }
 
 @Composable
-private fun SpotReviewsSection(reviews: List<MockReview>) {
+private fun SpotReviewsSection(reviews: List<Review>) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -325,7 +338,7 @@ private fun SpotReviewsSection(reviews: List<MockReview>) {
 }
 
 @Composable
-private fun ReviewRow(review: MockReview) {
+private fun ReviewRow(review: Review) {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Box(
             modifier = Modifier
@@ -373,7 +386,8 @@ private fun SpotActionButtons(
     accent: Color,
     sessionActiveHere: Boolean,
     onCheckIn: () -> Unit,
-    onEndSession: () -> Unit
+    onEndSession: () -> Unit,
+    onReview: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -414,7 +428,8 @@ private fun SpotActionButtons(
             modifier = Modifier
                 .weight(1f)
                 .height(52.dp)
-                .border(1.5.dp, DividerLine, RoundedCornerShape(16.dp)),
+                .border(1.5.dp, DividerLine, RoundedCornerShape(16.dp))
+                .clickable(onClick = onReview),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center
         ) {

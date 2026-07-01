@@ -5,6 +5,8 @@ import com.appetizers.spotra.domain.model.CheckInSession
 import com.appetizers.spotra.domain.model.CheckedInStudent
 import com.appetizers.spotra.domain.model.GroupMember
 import com.appetizers.spotra.domain.model.HomeSnapshot
+import com.appetizers.spotra.domain.model.Review
+import com.appetizers.spotra.domain.model.ReviewDraft
 import com.appetizers.spotra.domain.model.StudyMode
 import com.appetizers.spotra.domain.model.StudySpotSummary
 import com.appetizers.spotra.domain.model.UserProfile
@@ -12,6 +14,7 @@ import com.appetizers.spotra.domain.repository.AuthRepository
 import com.appetizers.spotra.domain.repository.AuthUser
 import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.ProfileRepository
+import com.appetizers.spotra.domain.repository.ReviewRepository
 
 // In-memory debug implementations — used when Supabase credentials are absent.
 // All spot and user data is sourced from MockData so there is a single source
@@ -152,5 +155,46 @@ class DebugHomeRepository : HomeRepository {
         "julia"  -> "ECE 250 - 24 min here"
         "dev"    -> "ECON 101 - 15 min here"
         else     -> "Studying here"
+    }
+}
+
+class DebugReviewRepository : ReviewRepository {
+    // Seeded from MockData reviews; locally submitted reviews are kept in memory
+    // so the debug build reflects new submissions without a backend.
+    private val submitted = mutableListOf<Review>()
+
+    override suspend fun reviewsFor(spotSlug: String): List<Review> {
+        val seed = MockData.spotById(spotSlug)?.reviews.orEmpty().map { review ->
+            Review(
+                id = "mock-$spotSlug-${review.reviewerId}",
+                spotSlug = spotSlug,
+                reviewerName = review.reviewerName,
+                reviewerInitials = review.reviewerInitials,
+                reviewerId = review.reviewerId,
+                rating = review.rating,
+                comment = review.comment
+            )
+        }
+        return submitted.filter { it.spotSlug == spotSlug } + seed
+    }
+
+    override suspend fun submit(draft: ReviewDraft) {
+        submitted.add(
+            0,
+            Review(
+                id = "local-${System.nanoTime()}",
+                spotSlug = draft.spotSlug,
+                reviewerName = if (draft.anonymous) "Anonymous" else "You",
+                reviewerInitials = if (draft.anonymous) "?" else "YO",
+                reviewerId = "you",
+                rating = draft.rating,
+                noiseLevel = draft.noiseLevel,
+                lighting = draft.lighting,
+                wifiQuality = draft.wifiQuality,
+                occupancyPercent = draft.occupancyPercent,
+                comment = draft.comment,
+                anonymous = draft.anonymous
+            )
+        )
     }
 }

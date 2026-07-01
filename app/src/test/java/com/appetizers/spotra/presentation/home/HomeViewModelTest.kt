@@ -110,7 +110,8 @@ class HomeViewModelTest {
 
     @Test
     fun `check in and check out update active session`() = runTest(dispatcher) {
-        val viewModel = HomeViewModel(FakeHomeRepository())
+        val repository = FakeHomeRepository()
+        val viewModel = HomeViewModel(repository)
         advanceUntilIdle()
 
         val spot = requireNotNull(viewModel.uiState.value.soloSpot)
@@ -118,13 +119,18 @@ class HomeViewModelTest {
         advanceUntilIdle()
 
         assertEquals("session-e7-study-hall", viewModel.uiState.value.activeCheckIn?.id)
+        assertNull(repository.lastStartGroupSessionId)
         assertTrue(viewModel.uiState.value.showLiveSession)
 
-        viewModel.checkOut()
+        var checkedOutSpotId: String? = null
+        viewModel.checkOut { session ->
+            checkedOutSpotId = session.spot.id
+        }
         advanceUntilIdle()
 
         assertNull(viewModel.uiState.value.activeCheckIn)
         assertFalse(viewModel.uiState.value.showLiveSession)
+        assertEquals("e7-study-hall", checkedOutSpotId)
         assertEquals(1, viewModel.uiState.value.completedSessions.size)
         assertEquals("E7 Study Hall", viewModel.uiState.value.completedSessions.first().spotName)
         assertTrue(viewModel.uiState.value.completedSessions.first().durationSeconds >= 0)
@@ -143,6 +149,9 @@ class HomeViewModelTest {
 }
 
 private class FakeHomeRepository : HomeRepository {
+    var lastStartGroupSessionId: String? = null
+        private set
+
     private val soloSpot = StudySpotSummary(
         id = "e7-study-hall",
         name = "E7 Study Hall",
@@ -185,8 +194,9 @@ private class FakeHomeRepository : HomeRepository {
         spotId: String,
         mode: StudyMode,
         groupSessionId: String?
-    ): CheckInSession =
-        CheckInSession(
+    ): CheckInSession {
+        lastStartGroupSessionId = groupSessionId
+        return CheckInSession(
             id = "session-$spotId",
             spot = soloSpot,
             mode = mode,
@@ -194,6 +204,7 @@ private class FakeHomeRepository : HomeRepository {
                 CheckedInStudent("you", "VB", "You (Vraj)", "CS 341 - studying now", isSelf = true)
             )
         )
+    }
 
     override suspend fun checkOut(sessionId: String) = Unit
 

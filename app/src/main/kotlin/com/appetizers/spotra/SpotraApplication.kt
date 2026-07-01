@@ -5,16 +5,20 @@ import com.appetizers.spotra.data.local.DataStoreOnboardingDraftRepository
 import com.appetizers.spotra.data.remote.DebugAuthRepository
 import com.appetizers.spotra.data.remote.DebugHomeRepository
 import com.appetizers.spotra.data.remote.DebugProfileRepository
+import com.appetizers.spotra.data.remote.DebugReviewRepository
 import com.appetizers.spotra.data.remote.DebugSpotSubmissionRepository
 import com.appetizers.spotra.data.remote.MissingConfigurationAuthRepository
 import com.appetizers.spotra.data.remote.MissingConfigurationProfileRepository
 import com.appetizers.spotra.data.remote.SupabaseAuthRepository
+import com.appetizers.spotra.data.remote.SupabaseHomeRepository
 import com.appetizers.spotra.data.remote.SupabaseProfileRepository
+import com.appetizers.spotra.data.remote.SupabaseReviewRepository
 import com.appetizers.spotra.data.remote.SupabaseSpotSubmissionRepository
 import com.appetizers.spotra.domain.repository.AuthRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.OnboardingDraftRepository
 import com.appetizers.spotra.domain.repository.ProfileRepository
+import com.appetizers.spotra.domain.repository.ReviewRepository
 import com.appetizers.spotra.domain.repository.SpotSubmissionRepository
 import com.appetizers.spotra.domain.usecase.GetStartRouteUseCase
 import com.mapbox.common.MapboxOptions
@@ -49,6 +53,7 @@ class AppContainer(application: Application) {
     val profileRepository: ProfileRepository
     val homeRepository: HomeRepository
     val spotSubmissionRepository: SpotSubmissionRepository
+    val reviewRepository: ReviewRepository
     val getStartRoute: GetStartRouteUseCase
 
     init {
@@ -66,17 +71,22 @@ class AppContainer(application: Application) {
             authRepository = SupabaseAuthRepository(client)
             profileRepository = SupabaseProfileRepository(client)
             spotSubmissionRepository = SupabaseSpotSubmissionRepository(client)
+            homeRepository = SupabaseHomeRepository(client)
+            reviewRepository = SupabaseReviewRepository(client)
         } else if (BuildConfig.DEBUG) {
             authRepository = DebugAuthRepository()
             profileRepository = DebugProfileRepository()
             spotSubmissionRepository = DebugSpotSubmissionRepository()
+            homeRepository = DebugHomeRepository()
+            reviewRepository = DebugReviewRepository()
         } else {
             authRepository = MissingConfigurationAuthRepository()
             profileRepository = MissingConfigurationProfileRepository()
             spotSubmissionRepository = DebugSpotSubmissionRepository()
+            homeRepository = DebugHomeRepository()
+            reviewRepository = DebugReviewRepository()
         }
 
-        homeRepository = DebugHomeRepository()
         getStartRoute = GetStartRouteUseCase(authRepository, profileRepository)
     }
 }

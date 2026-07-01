@@ -85,9 +85,16 @@ class HomeViewModel(
     }
 
     fun startCheckIn(spot: StudySpotSummary, mode: StudyMode = uiState.value.selectedMode) {
-        val groupSession = uiState.value.groupSession ?: return
+        val groupSessionId = if (mode == StudyMode.Group) {
+            uiState.value.groupSession?.id ?: run {
+                showError("Could not start a group session. Try again.")
+                return
+            }
+        } else {
+            null
+        }
         viewModelScope.launch {
-            runCatching { repository.startCheckIn(spot.id, mode, groupSession.id) }
+            runCatching { repository.startCheckIn(spot.id, mode, groupSessionId) }
                 .onSuccess { session ->
                     _uiState.update {
                         it.copy(
@@ -117,7 +124,7 @@ class HomeViewModel(
         _uiState.update { it.copy(activeCheckIn = null, showLiveSession = false, error = null) }
     }
 
-    fun checkOut() {
+    fun checkOut(onCheckedOut: (CheckInSession) -> Unit = {}) {
         val session = uiState.value.activeCheckIn ?: return
         val elapsedSeconds = ((System.currentTimeMillis() - uiState.value.sessionStartTimeMillis) / 1000).toInt()
         val spotName = session.spot.name
@@ -137,6 +144,7 @@ class HomeViewModel(
                             error = null
                         )
                     }
+                    onCheckedOut(session)
                 }
                 .onFailure { error ->
                     showError(error.message ?: "Could not check out. Try again.")
