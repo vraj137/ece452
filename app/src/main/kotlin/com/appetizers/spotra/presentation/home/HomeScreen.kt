@@ -110,6 +110,7 @@ fun HomeScreen(
     profileRepository: ProfileRepository,
     authRepository: AuthRepository,
     spotSubmissionRepository: com.appetizers.spotra.domain.repository.SpotSubmissionRepository,
+    reviewRepository: com.appetizers.spotra.domain.repository.ReviewRepository,
     onSignOut: () -> Unit = {}
 ) {
     val viewModel: HomeViewModel = viewModel(
@@ -119,6 +120,7 @@ fun HomeScreen(
     val accent = if (state.selectedMode == StudyMode.Solo) SoloBlue else GroupGreen
 
     var viewingSpotId by remember { mutableStateOf<String?>(null) }
+    var reviewingSpotId by remember { mutableStateOf<String?>(null) }
     var showSubmitSpot by remember { mutableStateOf(false) }
 
     if (state.isLoading || state.soloSpot == null || state.groupSession == null) {
@@ -138,6 +140,16 @@ fun HomeScreen(
         return
     }
 
+    reviewingSpotId?.let { slug ->
+        ReviewScreen(
+            spotName = state.mapSpots.firstOrNull { it.id == slug }?.name ?: "this spot",
+            spotSlug = slug,
+            reviewRepository = reviewRepository,
+            onBack = { reviewingSpotId = null }
+        )
+        return
+    }
+
     viewingSpotId?.let { spotId ->
         SpotDetailScreen(
             spotId = spotId,
@@ -147,9 +159,13 @@ fun HomeScreen(
                 viewModel.startCheckIn(spot, StudyMode.Solo)
                 viewingSpotId = null
             },
+            reviewRepository = reviewRepository,
+            onReview = { reviewingSpotId = spotId },
             activeCheckInSpotId = activeCheckIn?.spot?.id,
             onEndSession = {
-                viewModel.checkOut()
+                viewModel.checkOut { session ->
+                    reviewingSpotId = session.spot.id
+                }
                 viewingSpotId = null
             }
         )
@@ -164,7 +180,11 @@ fun HomeScreen(
             requestedBuddyIds = state.requestedBuddyIds,
             onBuddyRequest = viewModel::sendBuddyRequest,
             onBack = viewModel::minimizeSession,
-            onCheckout = viewModel::checkOut,
+            onCheckout = {
+                viewModel.checkOut { session ->
+                    reviewingSpotId = session.spot.id
+                }
+            },
             selectedSection = state.selectedSection,
             onSectionSelected = { section ->
                 viewModel.minimizeSession()
@@ -264,7 +284,10 @@ fun HomeScreen(
     Column(Modifier.fillMaxSize()) {
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             MapTabContent(
-                state = state,
+                userFirstName = state.userFirstName,
+                selectedMode = state.selectedMode,
+                mapSpots = state.mapSpots,
+                selectedSpotId = state.selectedSpotId,
                 soloSpot = soloSpot,
                 accent = accent,
                 onModeSelected = viewModel::selectMode,
@@ -307,7 +330,10 @@ private fun HomeLoadingScreen() {
 
 @Composable
 private fun MapTabContent(
-    state: HomeUiState,
+    userFirstName: String,
+    selectedMode: StudyMode,
+    mapSpots: List<StudySpotSummary>,
+    selectedSpotId: String?,
     soloSpot: StudySpotSummary,
     accent: Color,
     onModeSelected: (StudyMode) -> Unit,
@@ -321,22 +347,24 @@ private fun MapTabContent(
             .statusBarsPadding()
     ) {
         HomeHeader(
-            userFirstName = state.userFirstName,
-            selectedMode = state.selectedMode,
+            userFirstName = userFirstName,
+            selectedMode = selectedMode,
             accent = accent,
             onModeSelected = onModeSelected
         )
         CampusMap(
-            spots = state.mapSpots,
-            selectedSpotId = state.selectedSpotId,
+            spots = mapSpots,
+            selectedSpotId = selectedSpotId,
             onSpotSelected = onMapSpotSelected,
             accent = accent,
-            mode = state.selectedMode,
+            mode = selectedMode,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
         )
-        val displayedSpot = state.mapSpots.firstOrNull { it.id == state.selectedSpotId } ?: soloSpot
+        val displayedSpot = remember(mapSpots, selectedSpotId, soloSpot) {
+            mapSpots.firstOrNull { it.id == selectedSpotId } ?: soloSpot
+        }
         StudySpotCard(
             spot = displayedSpot,
             accent = accent,
@@ -1163,17 +1191,7 @@ private fun LiveCheckInScreen(
     selectedSection: HomeSection,
     onSectionSelected: (HomeSection) -> Unit
 ) {
-    var elapsedSeconds by remember(sessionStartTimeMillis) {
-        mutableStateOf(((System.currentTimeMillis() - sessionStartTimeMillis) / 1000).toInt())
-    }
     var selectedBuddy by remember(session.id) { mutableStateOf<CheckedInStudent?>(null) }
-
-    LaunchedEffect(sessionStartTimeMillis) {
-        while (true) {
-            delay(1000)
-            elapsedSeconds = ((System.currentTimeMillis() - sessionStartTimeMillis) / 1000).toInt()
-        }
-    }
 
     Box(
         modifier = Modifier
@@ -1196,7 +1214,7 @@ private fun LiveCheckInScreen(
                     .weight(1f)
             )
             CheckInSessionPanel(
-                elapsedSeconds = elapsedSeconds,
+                sessionStartTimeMillis = sessionStartTimeMillis,
                 onCheckout = onCheckout
             )
             BottomNavigationShell(
@@ -1562,15 +1580,6 @@ private fun ActiveSessionBar(
     sessionStartTimeMillis: Long,
     onClick: () -> Unit
 ) {
-    var elapsed by remember(sessionStartTimeMillis) {
-        mutableStateOf(((System.currentTimeMillis() - sessionStartTimeMillis) / 1000).toInt())
-    }
-    LaunchedEffect(sessionStartTimeMillis) {
-        while (true) {
-            delay(1000)
-            elapsed = ((System.currentTimeMillis() - sessionStartTimeMillis) / 1000).toInt()
-        }
-    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1590,8 +1599,8 @@ private fun ActiveSessionBar(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f)
         )
-        Text(
-            text = elapsed.asSessionTime(),
+        SessionElapsedText(
+            sessionStartTimeMillis = sessionStartTimeMillis,
             color = CheckedInText,
             fontSize = 14.sp,
             fontWeight = FontWeight.ExtraBold
@@ -1607,7 +1616,7 @@ private fun ActiveSessionBar(
 }
 
 @Composable
-private fun CheckInSessionPanel(elapsedSeconds: Int, onCheckout: () -> Unit) {
+private fun CheckInSessionPanel(sessionStartTimeMillis: Long, onCheckout: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1623,8 +1632,8 @@ private fun CheckInSessionPanel(elapsedSeconds: Int, onCheckout: () -> Unit) {
             Spacer(Modifier.width(12.dp))
             Text(text = "Session time", color = BodyText, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.weight(1f))
-            Text(
-                text = elapsedSeconds.asSessionTime(),
+            SessionElapsedText(
+                sessionStartTimeMillis = sessionStartTimeMillis,
                 color = Ink,
                 fontSize = 26.sp,
                 fontWeight = FontWeight.ExtraBold
@@ -1645,6 +1654,30 @@ private fun CheckInSessionPanel(elapsedSeconds: Int, onCheckout: () -> Unit) {
             Text(text = "Check out & review", color = BodyText, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
         }
     }
+}
+
+@Composable
+private fun SessionElapsedText(
+    sessionStartTimeMillis: Long,
+    color: Color,
+    fontSize: androidx.compose.ui.unit.TextUnit,
+    fontWeight: FontWeight
+) {
+    var elapsedSeconds by remember(sessionStartTimeMillis) {
+        mutableStateOf(((System.currentTimeMillis() - sessionStartTimeMillis) / 1000).toInt())
+    }
+    LaunchedEffect(sessionStartTimeMillis) {
+        while (true) {
+            delay(1000)
+            elapsedSeconds = ((System.currentTimeMillis() - sessionStartTimeMillis) / 1000).toInt()
+        }
+    }
+    Text(
+        text = elapsedSeconds.asSessionTime(),
+        color = color,
+        fontSize = fontSize,
+        fontWeight = fontWeight
+    )
 }
 
 @Composable
@@ -1779,7 +1812,7 @@ private fun CampusMap(
         return
     }
 
-    val located = spots.filter { it.latitude != null && it.longitude != null }
+    val located = remember(spots) { spots.filter { it.latitude != null && it.longitude != null } }
     val mapViewportState = rememberMapViewportState {
         setCameraOptions {
             center(Point.fromLngLat(-80.5430, 43.4720))
@@ -1827,7 +1860,9 @@ private fun CampusMap(
 
 @Composable
 private fun CampusMapPlaceholder(mode: StudyMode, accent: Color, modifier: Modifier = Modifier) {
-    val pins = if (mode == StudyMode.Solo) soloPins(accent) else groupPins(accent)
+    val pins = remember(mode, accent) {
+        if (mode == StudyMode.Solo) soloPins(accent) else groupPins(accent)
+    }
     BoxWithConstraints(modifier = modifier.fillMaxWidth().background(MapBackground)) {
         Canvas(Modifier.fillMaxSize()) {
             drawRect(MapBackground)

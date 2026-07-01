@@ -4,6 +4,8 @@ import com.appetizers.spotra.domain.model.CheckInSession
 import com.appetizers.spotra.domain.model.GroupMember
 import com.appetizers.spotra.domain.model.HomeSnapshot
 import com.appetizers.spotra.domain.model.OnboardingDraft
+import com.appetizers.spotra.domain.model.Review
+import com.appetizers.spotra.domain.model.ReviewDraft
 import com.appetizers.spotra.domain.model.SpotSubmission
 import com.appetizers.spotra.domain.model.StudyMode
 import com.appetizers.spotra.domain.model.UserProfile
@@ -31,6 +33,11 @@ interface OnboardingDraftRepository {
 
 interface SpotSubmissionRepository {
     suspend fun submitSpot(submission: SpotSubmission)
+}
+
+interface ReviewRepository {
+    suspend fun reviewsFor(spotSlug: String): List<Review>
+    suspend fun submit(draft: ReviewDraft)
 }
 
 interface HomeRepository {
