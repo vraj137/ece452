@@ -3,6 +3,7 @@ package com.appetizers.spotra.data.remote
 import com.appetizers.spotra.data.mock.MockData
 import com.appetizers.spotra.domain.model.CheckInSession
 import com.appetizers.spotra.domain.model.CheckedInStudent
+import com.appetizers.spotra.domain.model.FriendProfile
 import com.appetizers.spotra.domain.model.GroupMember
 import com.appetizers.spotra.domain.model.HomeSnapshot
 import com.appetizers.spotra.domain.model.Review
@@ -12,6 +13,7 @@ import com.appetizers.spotra.domain.model.StudySpotSummary
 import com.appetizers.spotra.domain.model.UserProfile
 import com.appetizers.spotra.domain.repository.AuthRepository
 import com.appetizers.spotra.domain.repository.AuthUser
+import com.appetizers.spotra.domain.repository.FriendRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.ProfileRepository
 import com.appetizers.spotra.domain.repository.ReviewRepository
@@ -156,6 +158,45 @@ class DebugHomeRepository : HomeRepository {
         "dev"    -> "ECON 101 - 15 min here"
         else     -> "Studying here"
     }
+}
+
+class DebugFriendRepository : FriendRepository {
+
+    private val mockUsers = listOf(
+        FriendProfile("u1", "Raghav", "Verma",      program = "Computer Engineering",  term = "3B"),
+        FriendProfile("u2", "Pavan",  "Jayasinha",  program = "Software Engineering",  term = "4A"),
+        FriendProfile("u3", "Eric",   "Zhu",        program = "Computer Science",       term = "2B"),
+        FriendProfile("u4", "Edmond", "Yu",         program = "Computer Engineering",  term = "3A"),
+        FriendProfile("u5", "Sarah",  "Kim",        program = "Systems Design Eng.",   term = "3B"),
+        FriendProfile("u6", "Anika",  "Mehta",      program = "Computer Science",       term = "4B"),
+        FriendProfile("u7", "James",  "Park",       program = "Software Engineering",  term = "2A"),
+        FriendProfile("u8", "Priya",  "Nair",       program = "Computer Engineering",  term = "3A")
+    )
+
+    private val sentRequests = mutableSetOf<String>()
+
+    override suspend fun currentUserId(): String? = "debug-self"
+
+    override suspend fun fetchFriendProfiles(): List<FriendProfile> = emptyList()
+
+    override suspend fun searchUsers(query: String, excludeIds: Set<String>): List<FriendProfile> {
+        if (query.isBlank()) return emptyList()
+        val q = query.lowercase()
+        return mockUsers.filter { user ->
+            user.id !in excludeIds &&
+            (user.firstName.lowercase().contains(q) ||
+             user.lastName.lowercase().contains(q) ||
+             user.email.lowercase().contains(q))
+        }
+    }
+
+    override suspend fun fetchSuggested(acceptedFriendIds: Set<String>): List<FriendProfile> =
+        mockUsers.filter { it.id !in acceptedFriendIds }.take(4)
+
+    override suspend fun sendRequest(toUserId: String) { sentRequests.add(toUserId) }
+    override suspend fun acceptRequest(friendshipId: String) = Unit
+    override suspend fun declineRequest(friendshipId: String) = Unit
+    override suspend fun fetchFriendsAtSpot(spotSlug: String): List<FriendProfile> = emptyList()
 }
 
 class DebugReviewRepository : ReviewRepository {

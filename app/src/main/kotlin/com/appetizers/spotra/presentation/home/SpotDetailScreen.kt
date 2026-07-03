@@ -44,15 +44,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.appetizers.spotra.data.mock.MockData
 import com.appetizers.spotra.data.mock.MockSpot
+import com.appetizers.spotra.domain.model.FriendProfile
 import com.appetizers.spotra.domain.model.Review
 import com.appetizers.spotra.domain.model.StudySpotSummary
+import com.appetizers.spotra.domain.repository.FriendRepository
 import com.appetizers.spotra.domain.repository.ReviewRepository
 
-// Friends who happen to be studying at the featured solo spot (display only).
-private val e7StudyingFriends: List<Pair<String, String>> = listOf(
-    "akshat" to "AJ",
-    "you" to MockData.selfInitials
-)
+private enum class ReviewFilter { Friends, All }
 
 @Composable
 internal fun SpotDetailScreen(
@@ -61,6 +59,7 @@ internal fun SpotDetailScreen(
     onBack: () -> Unit,
     onCheckIn: (StudySpotSummary) -> Unit,
     reviewRepository: ReviewRepository,
+    friendRepository: FriendRepository? = null,
     onReview: () -> Unit,
     activeCheckInSpotId: String? = null,
     onEndSession: () -> Unit = {}
@@ -75,8 +74,24 @@ internal fun SpotDetailScreen(
     val sessionActiveHere = activeCheckInSpotId == spotId
 
     var reviews by remember(spotId) { mutableStateOf<List<Review>>(emptyList()) }
+    var friendsAtSpot by remember(spotId) { mutableStateOf<List<FriendProfile>>(emptyList()) }
+    var acceptedFriendIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var selfId by remember { mutableStateOf<String?>(null) }
+    var reviewFilter by remember { mutableStateOf(ReviewFilter.All) }
+
     LaunchedEffect(spotId) {
         reviews = runCatching { reviewRepository.reviewsFor(spotId) }.getOrDefault(emptyList())
+        if (friendRepository != null) {
+            friendsAtSpot = runCatching { friendRepository.fetchFriendsAtSpot(spotId) }.getOrDefault(emptyList())
+            val profiles = runCatching { friendRepository.fetchFriendProfiles() }.getOrNull()
+            selfId = runCatching { friendRepository.currentUserId() }.getOrNull()
+            acceptedFriendIds = profiles?.filter { it.isAccepted }?.map { it.id }?.toSet() ?: emptySet()
+        }
+    }
+
+    val displayedReviews = when (reviewFilter) {
+        ReviewFilter.Friends -> reviews.filter { it.reviewerId == selfId || it.reviewerId in acceptedFriendIds }
+        ReviewFilter.All -> reviews
     }
 
     BackHandler(onBack = onBack)
@@ -88,7 +103,7 @@ internal fun SpotDetailScreen(
     ) {
         SpotDetailHeader(
             spot = spot,
-            friendsStudying = if (spotId == "e7-study-hall") e7StudyingFriends else emptyList(),
+            friendsStudying = friendsAtSpot.map { it.id to it.initials },
             onBack = onBack,
             onCheckIn = { onCheckIn(spot.toSummary()) }
         )
@@ -101,7 +116,14 @@ internal fun SpotDetailScreen(
             item { SpotStatTiles(spot = spot) }
             item { SpotAmenitiesSection(amenities = spot.amenities) }
             if (reviews.isNotEmpty()) {
-                item { SpotReviewsSection(reviews = reviews) }
+                item {
+                    SpotReviewsSection(
+                        reviews = displayedReviews,
+                        reviewFilter = reviewFilter,
+                        onFilterChange = { reviewFilter = it },
+                        showFilter = friendRepository != null
+                    )
+                }
             }
             item {
                 SpotActionButtons(
@@ -318,20 +340,58 @@ private fun SpotAmenitiesSection(amenities: List<String>) {
 }
 
 @Composable
-private fun SpotReviewsSection(reviews: List<Review>) {
+private fun SpotReviewsSection(
+    reviews: List<Review>,
+    reviewFilter: ReviewFilter = ReviewFilter.All,
+    onFilterChange: (ReviewFilter) -> Unit = {},
+    showFilter: Boolean = false
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = 20.dp, top = 20.dp, end = 20.dp)
     ) {
-        Text(text = "Recent reviews", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(text = "Recent reviews", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
+            if (showFilter) {
+                ReviewFilter.entries.forEach { filter ->
+                    val selected = filter == reviewFilter
+                    Text(
+                        text = filter.name,
+                        modifier = Modifier
+                            .background(
+                                if (selected) SoloBlue else HomeBackground,
+                                RoundedCornerShape(20.dp)
+                            )
+                            .clickable { onFilterChange(filter) }
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        color = if (selected) Color.White else HeaderMuted,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    if (filter == ReviewFilter.Friends) Spacer(Modifier.width(6.dp))
+                }
+            }
+        }
         Spacer(Modifier.height(12.dp))
-        reviews.forEachIndexed { index, review ->
-            ReviewRow(review = review)
-            if (index < reviews.lastIndex) {
-                Spacer(Modifier.height(1.dp))
-                Box(Modifier.fillMaxWidth().height(1.dp).background(DividerLine))
-                Spacer(Modifier.height(12.dp))
+        if (reviews.isEmpty()) {
+            Text(
+                text = if (reviewFilter == ReviewFilter.Friends) "No friend reviews yet." else "No reviews yet.",
+                color = HeaderMuted,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium
+            )
+        } else {
+            reviews.forEachIndexed { index, review ->
+                ReviewRow(review = review)
+                if (index < reviews.lastIndex) {
+                    Spacer(Modifier.height(1.dp))
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(DividerLine))
+                    Spacer(Modifier.height(12.dp))
+                }
             }
         }
     }

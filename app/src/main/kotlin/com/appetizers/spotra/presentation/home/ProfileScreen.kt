@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -49,8 +50,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.appetizers.spotra.domain.model.CompletedSession
+import com.appetizers.spotra.domain.model.FriendProfile
 import com.appetizers.spotra.domain.model.UserProfile
 import com.appetizers.spotra.domain.repository.AuthRepository
+import com.appetizers.spotra.domain.repository.FriendRepository
 import com.appetizers.spotra.domain.repository.ProfileRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -102,12 +105,14 @@ private val mockRecentSessions = listOf(
 
 class ProfileViewModel(
     private val profileRepository: ProfileRepository,
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
+    private val friendRepository: FriendRepository?
 ) : ViewModel() {
 
     data class State(
         val isLoading: Boolean = true,
-        val profile: UserProfile? = null
+        val profile: UserProfile? = null,
+        val friends: List<FriendProfile> = emptyList()
     )
 
     private val _state = MutableStateFlow(State())
@@ -119,7 +124,12 @@ class ProfileViewModel(
             val profile = user?.let {
                 runCatching { profileRepository.getProfile(it.id) }.getOrNull()
             }
-            _state.value = State(isLoading = false, profile = profile)
+            val friends = if (friendRepository != null) {
+                runCatching { friendRepository.fetchFriendProfiles() }
+                    .getOrDefault(emptyList())
+                    .filter { it.isAccepted }
+            } else emptyList()
+            _state.value = State(isLoading = false, profile = profile, friends = friends)
         }
     }
 
@@ -132,11 +142,12 @@ class ProfileViewModel(
 
     class Factory(
         private val profileRepository: ProfileRepository,
-        private val authRepository: AuthRepository
+        private val authRepository: AuthRepository,
+        private val friendRepository: FriendRepository?
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            ProfileViewModel(profileRepository, authRepository) as T
+            ProfileViewModel(profileRepository, authRepository, friendRepository) as T
     }
 }
 
@@ -145,12 +156,13 @@ class ProfileViewModel(
 internal fun ProfileTabContent(
     profileRepository: ProfileRepository,
     authRepository: AuthRepository,
+    friendRepository: FriendRepository? = null,
     onSignOut: () -> Unit,
     recentSessions: List<CompletedSession> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     val vm: ProfileViewModel = viewModel(
-        factory = ProfileViewModel.Factory(profileRepository, authRepository)
+        factory = ProfileViewModel.Factory(profileRepository, authRepository, friendRepository)
     )
     val state by vm.state.collectAsStateWithLifecycle()
     var showSettings by remember { mutableStateOf(false) }
@@ -170,6 +182,9 @@ internal fun ProfileTabContent(
             contentPadding = PaddingValues(bottom = 24.dp)
         ) {
             item { ProfileStats() }
+            if (state.friends.isNotEmpty() || friendRepository != null) {
+                item { FriendsSection(friends = state.friends) }
+            }
             item { RecentSessionsHeader() }
             items(displaySessions) { session ->
                 RecentSessionRow(session)
@@ -427,4 +442,59 @@ private fun SettingsRow(icon: ImageVector, label: String, tint: Color, onClick: 
         Spacer(Modifier.width(16.dp))
         Text(text = label, color = tint, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
     }
+}
+
+@Composable
+private fun FriendsSection(friends: List<FriendProfile>) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 16.dp)
+    ) {
+        Text(
+            text = "FRIENDS (${friends.size})",
+            color = SectionLabel,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.ExtraBold
+        )
+        Spacer(Modifier.height(12.dp))
+        if (friends.isEmpty()) {
+            Text(
+                text = "No friends yet — find people on the Social tab.",
+                color = HeaderMuted,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium
+            )
+        } else {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                items(friends) { friend ->
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(
+                            modifier = Modifier
+                                .size(52.dp)
+                                .background(avatarColorFor(friend.id), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = friend.initials,
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = friend.firstName,
+                            color = BodyText,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+    }
+    Box(Modifier.fillMaxWidth().height(1.dp).padding(start = 20.dp).background(DividerLine))
 }
