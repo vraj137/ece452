@@ -3,6 +3,7 @@ package com.appetizers.spotra
 import android.app.Application
 import com.appetizers.spotra.data.local.DataStoreOnboardingDraftRepository
 import com.appetizers.spotra.data.remote.DebugAuthRepository
+import com.appetizers.spotra.data.remote.DebugFriendRepository
 import com.appetizers.spotra.data.remote.DebugHomeRepository
 import com.appetizers.spotra.data.remote.DebugProfileRepository
 import com.appetizers.spotra.data.remote.DebugReviewRepository
@@ -10,11 +11,13 @@ import com.appetizers.spotra.data.remote.DebugSpotSubmissionRepository
 import com.appetizers.spotra.data.remote.MissingConfigurationAuthRepository
 import com.appetizers.spotra.data.remote.MissingConfigurationProfileRepository
 import com.appetizers.spotra.data.remote.SupabaseAuthRepository
+import com.appetizers.spotra.data.remote.SupabaseFriendRepository
 import com.appetizers.spotra.data.remote.SupabaseHomeRepository
 import com.appetizers.spotra.data.remote.SupabaseProfileRepository
 import com.appetizers.spotra.data.remote.SupabaseReviewRepository
 import com.appetizers.spotra.data.remote.SupabaseSpotSubmissionRepository
 import com.appetizers.spotra.domain.repository.AuthRepository
+import com.appetizers.spotra.domain.repository.FriendRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.OnboardingDraftRepository
 import com.appetizers.spotra.domain.repository.ProfileRepository
@@ -54,6 +57,7 @@ class AppContainer(application: Application) {
     val homeRepository: HomeRepository
     val spotSubmissionRepository: SpotSubmissionRepository
     val reviewRepository: ReviewRepository
+    val friendRepository: FriendRepository
     val getStartRoute: GetStartRouteUseCase
 
     init {
@@ -73,18 +77,21 @@ class AppContainer(application: Application) {
             spotSubmissionRepository = SupabaseSpotSubmissionRepository(client)
             homeRepository = SupabaseHomeRepository(client)
             reviewRepository = SupabaseReviewRepository(client)
+            friendRepository = SupabaseFriendRepository(client)
         } else if (BuildConfig.DEBUG) {
             authRepository = DebugAuthRepository()
             profileRepository = DebugProfileRepository()
             spotSubmissionRepository = DebugSpotSubmissionRepository()
             homeRepository = DebugHomeRepository()
             reviewRepository = DebugReviewRepository()
+            friendRepository = DebugFriendRepository()
         } else {
             authRepository = MissingConfigurationAuthRepository()
             profileRepository = MissingConfigurationProfileRepository()
             spotSubmissionRepository = DebugSpotSubmissionRepository()
             homeRepository = DebugHomeRepository()
             reviewRepository = DebugReviewRepository()
+            friendRepository = DebugFriendRepository()
         }
 
         getStartRoute = GetStartRouteUseCase(authRepository, profileRepository)

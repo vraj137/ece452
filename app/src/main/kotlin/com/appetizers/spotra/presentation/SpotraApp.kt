@@ -118,6 +118,7 @@ fun SpotraApp(container: AppContainer) {
                 authRepository = container.authRepository,
                 spotSubmissionRepository = container.spotSubmissionRepository,
                 reviewRepository = container.reviewRepository,
+                friendRepository = container.friendRepository,
                 onSignOut = {
                     navController.navigate(Routes.Welcome) {
                         popUpTo(navController.graph.findStartDestination().id) { inclusive = true }

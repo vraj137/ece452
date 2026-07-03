@@ -44,7 +44,7 @@ enum class HomeSection {
 
 enum class SocialTab {
     Friends,
-    Buddies,
+    Requests,
     Discover
 }
 

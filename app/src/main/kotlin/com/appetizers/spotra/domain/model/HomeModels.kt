@@ -54,7 +54,8 @@ data class CheckedInStudent(
     val name: String,
     val detail: String,
     val isSelf: Boolean = false,
-    val isFriend: Boolean = false
+    val isFriend: Boolean = false,
+    val hasSentMeRequest: Boolean = false
 )
 
 data class CheckInSession(

@@ -69,7 +69,6 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
@@ -90,6 +89,7 @@ import com.appetizers.spotra.domain.model.SpotFeatureType
 import com.appetizers.spotra.domain.model.StudyMode
 import com.appetizers.spotra.domain.model.StudySpotSummary
 import com.appetizers.spotra.domain.repository.AuthRepository
+import com.appetizers.spotra.domain.repository.FriendRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.ProfileRepository
 import com.mapbox.geojson.Point
@@ -111,6 +111,7 @@ fun HomeScreen(
     authRepository: AuthRepository,
     spotSubmissionRepository: com.appetizers.spotra.domain.repository.SpotSubmissionRepository,
     reviewRepository: com.appetizers.spotra.domain.repository.ReviewRepository,
+    friendRepository: FriendRepository,
     onSignOut: () -> Unit = {}
 ) {
     val viewModel: HomeViewModel = viewModel(
@@ -160,6 +161,7 @@ fun HomeScreen(
                 viewingSpotId = null
             },
             reviewRepository = reviewRepository,
+            friendRepository = friendRepository,
             onReview = { reviewingSpotId = spotId },
             activeCheckInSpotId = activeCheckIn?.spot?.id,
             onEndSession = {
@@ -240,9 +242,7 @@ fun HomeScreen(
             onTabSelected = viewModel::selectSocialTab,
             selectedSection = state.selectedSection,
             onSectionSelected = viewModel::selectSection,
-            onJoin = { viewModel.startCheckIn(soloSpot, StudyMode.Solo) },
-            onAddBuddy = viewModel::sendBuddyRequest,
-            requestedBuddyIds = state.requestedBuddyIds,
+            friendRepository = friendRepository,
             activeSessionBar = if (activeCheckIn != null) {
                 {
                     ActiveSessionBar(
@@ -261,6 +261,7 @@ fun HomeScreen(
             ProfileTabContent(
                 profileRepository = profileRepository,
                 authRepository = authRepository,
+                friendRepository = friendRepository,
                 onSignOut = onSignOut,
                 recentSessions = state.completedSessions,
                 modifier = Modifier.weight(1f)
@@ -941,11 +942,12 @@ private fun SocialScreen(
     onTabSelected: (SocialTab) -> Unit,
     selectedSection: HomeSection,
     onSectionSelected: (HomeSection) -> Unit,
-    onJoin: () -> Unit,
-    onAddBuddy: (String) -> Unit,
-    requestedBuddyIds: Set<String>,
+    friendRepository: FriendRepository,
     activeSessionBar: (@Composable () -> Unit)? = null
 ) {
+    val vm: SocialViewModel = viewModel(factory = SocialViewModel.Factory(friendRepository))
+    val state by vm.state.collectAsStateWithLifecycle()
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -957,63 +959,151 @@ private fun SocialScreen(
                 .fillMaxWidth()
                 .padding(start = 30.dp, top = 34.dp, end = 30.dp)
         ) {
-            Text(
-                text = "Social",
-                color = Ink,
-                fontSize = 32.sp,
-                fontWeight = FontWeight.ExtraBold
-            )
+            Text(text = "Social", color = Ink, fontSize = 32.sp, fontWeight = FontWeight.ExtraBold)
             Spacer(Modifier.height(22.dp))
             SocialTabs(selectedTab, onTabSelected)
         }
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            contentPadding = PaddingValues(
-                start = 30.dp,
-                top = 22.dp,
-                end = 30.dp,
-                bottom = 18.dp
-            ),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            when (selectedTab) {
-                SocialTab.Friends -> {
-                    item { SectionHeader("STUDYING NOW") }
-                    itemsIndexed(friendStudyRows()) { _, friend ->
-                        SocialPersonRow(
-                            person = friend,
-                            actionLabel = if (friend.active) "Join" else "Offline",
-                            actionEnabled = friend.active,
-                            onAction = onJoin
-                        )
+
+        if (state.isLoading) {
+            androidx.compose.material3.CircularProgressIndicator(
+                modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 40.dp),
+                color = SoloBlue
+            )
+            Spacer(Modifier.weight(1f))
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                contentPadding = PaddingValues(start = 30.dp, top = 22.dp, end = 30.dp, bottom = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                when (selectedTab) {
+                    SocialTab.Friends -> {
+                        if (state.friends.isEmpty()) {
+                            item {
+                                Text(
+                                    text = "No friends yet — search for people in Discover.",
+                                    color = HeaderMuted,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        } else {
+                            item { SectionHeader("YOUR FRIENDS (${state.friends.size})") }
+                            itemsIndexed(state.friends) { index, friend ->
+                                SocialPersonRow(
+                                    person = SocialPerson(
+                                        id = friend.id,
+                                        initials = friend.initials,
+                                        name = friend.fullName,
+                                        detail = friend.displayDetail
+                                    ),
+                                    actionLabel = "",
+                                    actionEnabled = false,
+                                    onAction = {}
+                                )
+                            }
+                        }
+                        item { StudyStreakCard() }
                     }
-                    item { StudyStreakCard() }
-                }
-                SocialTab.Buddies -> {
-                    item { SectionHeader("CONFIRMED STUDY BUDDIES") }
-                    itemsIndexed(confirmedBuddies()) { _, buddy ->
-                        SocialPersonRow(
-                            person = buddy,
-                            actionLabel = "Message",
-                            actionEnabled = true,
-                            onAction = {}
-                        )
+                    SocialTab.Requests -> {
+                        val badge = state.incomingRequests.size
+                        if (state.incomingRequests.isEmpty() && state.outgoingRequests.isEmpty()) {
+                            item {
+                                Text(
+                                    text = "No pending requests.",
+                                    color = HeaderMuted,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        } else {
+                            if (state.incomingRequests.isNotEmpty()) {
+                                item { SectionHeader("INCOMING ($badge)") }
+                                itemsIndexed(state.incomingRequests) { _, request ->
+                                    IncomingRequestRow(
+                                        profile = request,
+                                        onAccept = { vm.acceptRequest(request) },
+                                        onDecline = { vm.declineRequest(request) }
+                                    )
+                                }
+                            }
+                            if (state.outgoingRequests.isNotEmpty()) {
+                                item { SectionHeader("SENT") }
+                                itemsIndexed(state.outgoingRequests) { _, request ->
+                                    SocialPersonRow(
+                                        person = SocialPerson(
+                                            id = request.id,
+                                            initials = request.initials,
+                                            name = request.fullName,
+                                            detail = request.displayDetail
+                                        ),
+                                        actionLabel = "Pending",
+                                        actionEnabled = false,
+                                        onAction = {}
+                                    )
+                                }
+                            }
+                        }
                     }
-                    item { StudyStreakCard() }
-                }
-                SocialTab.Discover -> {
-                    item { SectionHeader("SUGGESTED FROM YOUR COURSES") }
-                    itemsIndexed(discoverBuddies()) { _, buddy ->
-                        SocialPersonRow(
-                            person = buddy,
-                            actionLabel = if (buddy.id in requestedBuddyIds) "Sent" else "+ Add",
-                            actionEnabled = buddy.id !in requestedBuddyIds,
-                            onAction = { onAddBuddy(buddy.id) }
-                        )
+                    SocialTab.Discover -> {
+                        item {
+                            SearchBar(
+                                query = state.searchQuery,
+                                onQueryChange = vm::updateSearchQuery
+                            )
+                        }
+                        if (state.searchQuery.isNotBlank()) {
+                            if (state.searchResults.isEmpty()) {
+                                item {
+                                    Text(
+                                        text = "No results for \"${state.searchQuery}\".",
+                                        color = HeaderMuted,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            } else {
+                                item { SectionHeader("RESULTS") }
+                                itemsIndexed(state.searchResults) { _, profile ->
+                                    SocialPersonRow(
+                                        person = SocialPerson(
+                                            id = profile.id,
+                                            initials = profile.initials,
+                                            name = profile.fullName,
+                                            detail = profile.displayDetail
+                                        ),
+                                        actionLabel = "+ Add",
+                                        actionEnabled = true,
+                                        onAction = { vm.sendRequest(profile) }
+                                    )
+                                }
+                            }
+                        } else if (state.suggestions.isNotEmpty()) {
+                            item { SectionHeader("PEOPLE YOU MAY KNOW") }
+                            itemsIndexed(state.suggestions) { _, profile ->
+                                SocialPersonRow(
+                                    person = SocialPerson(
+                                        id = profile.id,
+                                        initials = profile.initials,
+                                        name = profile.fullName,
+                                        detail = profile.displayDetail.ifBlank { "UWaterloo student" }
+                                    ),
+                                    actionLabel = "+ Add",
+                                    actionEnabled = true,
+                                    onAction = { vm.sendRequest(profile) }
+                                )
+                            }
+                        } else {
+                            item {
+                                Text(
+                                    text = "Search by name or UWaterloo email to find friends.",
+                                    color = HeaderMuted,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
                     }
-                    item { StudyStreakCard() }
                 }
             }
         }
@@ -1022,6 +1112,94 @@ private fun SocialScreen(
             accent = SoloBlue,
             selectedSection = selectedSection,
             onSectionSelected = onSectionSelected
+        )
+    }
+}
+
+@Composable
+private fun SearchBar(query: String, onQueryChange: (String) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(HomeBackground, androidx.compose.foundation.shape.RoundedCornerShape(14.dp))
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.PersonAdd,
+            contentDescription = null,
+            tint = HeaderMuted,
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(Modifier.width(12.dp))
+        BasicTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            modifier = Modifier.weight(1f),
+            textStyle = androidx.compose.ui.text.TextStyle(
+                color = Ink,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium
+            ),
+            decorationBox = { inner ->
+                if (query.isEmpty()) {
+                    Text("Search by name or email", color = HeaderMuted, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                }
+                inner()
+            },
+            singleLine = true
+        )
+    }
+}
+
+@Composable
+private fun IncomingRequestRow(
+    profile: com.appetizers.spotra.domain.model.FriendProfile,
+    onAccept: () -> Unit,
+    onDecline: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.White, androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(54.dp)
+                .background(avatarColorFor(profile.id), androidx.compose.foundation.shape.CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(profile.initials, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
+        }
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(profile.fullName, color = Ink, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            Spacer(Modifier.height(2.dp))
+            Text(profile.displayDetail, color = HeaderMuted, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = "✓",
+            modifier = Modifier
+                .background(SoloBlue, androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                .clickable(onClick = onAccept)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            color = Color.White,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.ExtraBold
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = "✗",
+            modifier = Modifier
+                .background(HomeBackground, androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                .clickable(onClick = onDecline)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            color = DPAtriumRed,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.ExtraBold
         )
     }
 }
@@ -1041,6 +1219,11 @@ private fun SocialTabs(
     ) {
         SocialTab.entries.forEach { tab ->
             val selected = tab == selectedTab
+            val label = when (tab) {
+                SocialTab.Friends -> "Friends"
+                SocialTab.Requests -> "Requests"
+                SocialTab.Discover -> "Discover"
+            }
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -1050,7 +1233,7 @@ private fun SocialTabs(
                 verticalArrangement = Arrangement.Center
             ) {
                 Text(
-                    text = tab.name,
+                    text = label,
                     color = if (selected) SoloBlue else HeaderMuted,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.ExtraBold
@@ -1534,37 +1717,48 @@ private fun BuddyRequestSheet(
             )
             Spacer(Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    text = "Decline",
+                Box(
                     modifier = Modifier
                         .weight(1f)
                         .height(54.dp)
                         .background(SwitcherTrack, RoundedCornerShape(16.dp))
-                        .clickable(onClick = onDismiss)
-                        .padding(top = 16.dp),
-                    color = HeaderMuted,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
+                        .clickable(onClick = onDismiss),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Decline",
+                        color = HeaderMuted,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
+                val alreadySent = requested
+                val theyRequested = student.hasSentMeRequest
+                val buttonLabel = when {
+                    alreadySent -> "Sent"
+                    theyRequested -> "Accept their request"
+                    else -> "Send buddy request"
+                }
+                val buttonIcon = if (alreadySent) Icons.Rounded.Check else Icons.Rounded.PersonAdd
                 Row(
                     modifier = Modifier
                         .weight(1.45f)
                         .height(54.dp)
-                        .background(if (requested) RequestedPill else SoloBlue, RoundedCornerShape(16.dp))
-                        .clickable(enabled = !requested, onClick = onAccept),
+                        .background(if (alreadySent) RequestedPill else SoloBlue, RoundedCornerShape(16.dp))
+                        .clickable(enabled = !alreadySent, onClick = onAccept),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
                     Icon(
-                        imageVector = if (requested) Icons.Rounded.Check else Icons.Rounded.PersonAdd,
+                        imageVector = buttonIcon,
                         contentDescription = null,
-                        tint = if (requested) QuietText else Color.White,
+                        tint = if (alreadySent) QuietText else Color.White,
                         modifier = Modifier.size(21.dp)
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        text = if (requested) "Request sent" else "Accept buddy",
-                        color = if (requested) QuietText else Color.White,
+                        text = buttonLabel,
+                        color = if (alreadySent) QuietText else Color.White,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.ExtraBold
                     )
@@ -1858,6 +2052,7 @@ private fun CampusMap(
     }
 }
 
+@Suppress("UnusedBoxWithConstraintsScope")
 @Composable
 private fun CampusMapPlaceholder(mode: StudyMode, accent: Color, modifier: Modifier = Modifier) {
     val pins = remember(mode, accent) {
