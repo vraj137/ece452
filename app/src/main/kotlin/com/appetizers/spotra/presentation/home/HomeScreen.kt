@@ -48,9 +48,11 @@ import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PersonAdd
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Wifi
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -71,6 +73,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -216,6 +220,7 @@ fun HomeScreen(
         Column(Modifier.fillMaxSize()) {
             ExploreTabContent(
                 accent = accent,
+                trendingCounts = state.trendingCounts,
                 onSpotSelected = { viewingSpotId = it },
                 onSuggestSpot = { showSubmitSpot = true },
                 modifier = Modifier.weight(1f)
@@ -291,9 +296,11 @@ fun HomeScreen(
                 selectedSpotId = state.selectedSpotId,
                 soloSpot = soloSpot,
                 accent = accent,
+                isRefreshing = state.isRefreshing,
                 onModeSelected = viewModel::selectMode,
                 onMapSpotSelected = viewModel::selectMapSpot,
-                onSpotSelected = { viewingSpotId = it }
+                onSpotSelected = { viewingSpotId = it },
+                onRefresh = viewModel::refresh
             )
         }
         if (activeCheckIn != null) {
@@ -337,9 +344,11 @@ private fun MapTabContent(
     selectedSpotId: String?,
     soloSpot: StudySpotSummary,
     accent: Color,
+    isRefreshing: Boolean,
     onModeSelected: (StudyMode) -> Unit,
     onMapSpotSelected: (String) -> Unit,
-    onSpotSelected: (String) -> Unit
+    onSpotSelected: (String) -> Unit,
+    onRefresh: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -359,6 +368,8 @@ private fun MapTabContent(
             onSpotSelected = onMapSpotSelected,
             accent = accent,
             mode = selectedMode,
+            isRefreshing = isRefreshing,
+            onRefresh = onRefresh,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
@@ -1999,6 +2010,8 @@ private fun CampusMap(
     onSpotSelected: (String) -> Unit,
     accent: Color,
     mode: StudyMode,
+    isRefreshing: Boolean = false,
+    onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     if (BuildConfig.MAPBOX_PUBLIC_TOKEN.isBlank()) {
@@ -2007,6 +2020,7 @@ private fun CampusMap(
     }
 
     val located = remember(spots) { spots.filter { it.latitude != null && it.longitude != null } }
+    // Fixed view of UW campus so the study spots are always framed.
     val mapViewportState = rememberMapViewportState {
         setCameraOptions {
             center(Point.fromLngLat(-80.5430, 43.4720))
@@ -2040,6 +2054,7 @@ private fun CampusMap(
                             label = spot.name,
                             color = accent,
                             selected = spot.id == selectedSpotId,
+                            contentDescription = "${spot.name}, occupancy ${spot.badge}",
                             modifier = Modifier.clickable(
                                 interactionSource = interactionSource,
                                 indication = null
@@ -2048,6 +2063,50 @@ private fun CampusMap(
                     }
                 }
             }
+        }
+
+        // Refresh live occupancy counts.
+        MapCircleButton(
+            icon = Icons.Rounded.Refresh,
+            contentDescription = "Refresh spot occupancy",
+            loading = isRefreshing,
+            onClick = onRefresh,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(14.dp)
+        )
+    }
+}
+
+@Composable
+private fun MapCircleButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    loading: Boolean = false
+) {
+    Box(
+        modifier = modifier
+            .size(44.dp)
+            .shadow(6.dp, CircleShape, clip = false)
+            .background(Color.White, CircleShape)
+            .clickable(enabled = !loading, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        if (loading) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(20.dp),
+                strokeWidth = 2.dp,
+                color = SoloBlue
+            )
+        } else {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = Ink,
+                modifier = Modifier.size(22.dp)
+            )
         }
     }
 }
@@ -2111,7 +2170,8 @@ private fun MapPin(
     label: String,
     color: Color,
     selected: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    contentDescription: String = label
 ) {
     val labelAlpha by animateFloatAsState(
         targetValue = if (selected) 1f else 0f,
@@ -2127,7 +2187,9 @@ private fun MapPin(
     val pillShape = RoundedCornerShape(18.dp)
     // padding(top) reserves space equal to label height so the dot anchor never moves
     Column(
-        modifier = modifier.padding(horizontal = 16.dp),
+        modifier = modifier
+            .semantics { this.contentDescription = contentDescription }
+            .padding(horizontal = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // Always in layout — alpha-only via graphicsLayer keeps ViewAnnotation size constant

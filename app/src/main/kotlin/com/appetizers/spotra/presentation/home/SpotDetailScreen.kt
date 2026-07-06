@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -209,7 +210,12 @@ private fun SpotDetailHeader(
 
         if (spot.isLive) {
             Spacer(Modifier.height(10.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // Group the color dot + text into one focus stop so the live status reads
+            // as a single label to screen readers (status is never color-only).
+            Row(
+                modifier = Modifier.semantics(mergeDescendants = true) {},
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Box(Modifier.size(9.dp).background(CheckedInDot, CircleShape))
                 Spacer(Modifier.width(7.dp))
                 Text(

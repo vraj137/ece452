@@ -147,6 +147,14 @@ private data class OccupancyRow(
     @SerialName("active_count") val activeCount: Int
 )
 
+// 7-day check-in totals from the spot_trending view — counts only, drives the
+// Explore "trending this week" ranking.
+@Serializable
+private data class TrendingRow(
+    @SerialName("spot_slug") val spotSlug: String,
+    @SerialName("checkins_7d") val checkins7d: Int
+)
+
 class SupabaseHomeRepository(
     private val client: SupabaseClient
 ) : HomeRepository {
@@ -160,6 +168,7 @@ class SupabaseHomeRepository(
     override suspend fun loadHome(): HomeSnapshot = coroutineScope {
         val firstNameDeferred = async { currentFirstName() }
         val activeCountsDeferred = async { activeCheckInCounts() }
+        val trendingDeferred = async { trendingCheckInCounts() }
         // Tolerate the spots table not being seeded/created yet — fall back to MockData
         // so the app still launches before the Phase 1 SQL has been applied.
         val dbSpotsDeferred = async {
@@ -170,6 +179,7 @@ class SupabaseHomeRepository(
 
         cachedFirstName = firstNameDeferred.await()
         val activeCounts = activeCountsDeferred.await()
+        val trendingCounts = trendingDeferred.await()
         val dbSpots = dbSpotsDeferred.await()
 
         // Fall back to MockData if the spots table hasn't been seeded yet, so the
@@ -193,7 +203,8 @@ class SupabaseHomeRepository(
             soloSpot = soloSpot,
             groupSession = groupSession,
             groupSpots = groupSpots,
-            mapSpots = summaries
+            mapSpots = summaries,
+            trendingCounts = trendingCounts
         )
     }
 
@@ -265,6 +276,14 @@ class SupabaseHomeRepository(
         runCatching {
             client.from("spot_occupancy").select().decodeList<OccupancyRow>()
                 .associate { it.spotSlug to it.activeCount }
+        }.getOrDefault(emptyMap())
+
+    // 7-day check-in totals per spot from the spot_trending view (counts only).
+    // Resilient to the view not existing yet — Explore just falls back to no ranking.
+    private suspend fun trendingCheckInCounts(): Map<String, Int> =
+        runCatching {
+            client.from("spot_trending").select().decodeList<TrendingRow>()
+                .associate { it.spotSlug to it.checkins7d }
         }.getOrDefault(emptyMap())
 
     private fun SpotDto.toSummary(activeCount: Int) = StudySpotSummary(
