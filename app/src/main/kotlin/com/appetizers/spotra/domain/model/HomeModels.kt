@@ -70,7 +70,9 @@ data class HomeSnapshot(
     val soloSpot: StudySpotSummary,
     val groupSession: GroupStudySession,
     val groupSpots: List<StudySpotSummary>,
-    val mapSpots: List<StudySpotSummary> = emptyList()
+    val mapSpots: List<StudySpotSummary> = emptyList(),
+    // Real check-in counts per spot slug over the last 7 days (Explore ranking).
+    val trendingCounts: Map<String, Int> = emptyMap()
 )
 
 data class CompletedSession(

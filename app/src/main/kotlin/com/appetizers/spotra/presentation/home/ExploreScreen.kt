@@ -40,11 +40,16 @@ import com.appetizers.spotra.data.mock.MockSpot
 @Composable
 internal fun ExploreTabContent(
     accent: Color,
+    trendingCounts: Map<String, Int>,
     onSpotSelected: (String) -> Unit,
     onSuggestSpot: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val trendingSpots = remember { MockData.spots.sortedByDescending { it.checkInsThisWeek } }
+    // Rank by real check-in activity (last 7 days). Before the trending view is
+    // populated the map is empty → counts default to 0 and the seeded order shows.
+    val trendingSpots = remember(trendingCounts) {
+        MockData.spots.sortedByDescending { trendingCounts[it.id] ?: 0 }
+    }
 
     Column(
         modifier = modifier
@@ -65,6 +70,7 @@ internal fun ExploreTabContent(
                 TrendingSpotCard(
                     spot = spot,
                     rank = index + 1,
+                    checkIns = trendingCounts[spot.id] ?: 0,
                     accent = accent,
                     onClick = { onSpotSelected(spot.id) }
                 )
@@ -136,6 +142,7 @@ private fun ExploreHeader(accent: Color, onSuggestSpot: () -> Unit) {
 private fun TrendingSpotCard(
     spot: MockSpot,
     rank: Int,
+    checkIns: Int,
     accent: Color,
     onClick: () -> Unit
 ) {
@@ -179,7 +186,7 @@ private fun TrendingSpotCard(
             Spacer(Modifier.width(8.dp))
             Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    text = "${spot.checkInsThisWeek}",
+                    text = "$checkIns",
                     color = accent,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.ExtraBold

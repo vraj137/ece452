@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 
 data class HomeUiState(
     val isLoading: Boolean = true,
+    val isRefreshing: Boolean = false,
     val userFirstName: String = "",
     val selectedMode: StudyMode = StudyMode.Solo,
     val selectedSection: HomeSection = HomeSection.Map,
@@ -25,6 +26,7 @@ data class HomeUiState(
     val groupSession: GroupStudySession? = null,
     val groupSpots: List<StudySpotSummary> = emptyList(),
     val mapSpots: List<StudySpotSummary> = emptyList(),
+    val trendingCounts: Map<String, Int> = emptyMap(),
     val selectedSpotId: String? = null,
     val activeCheckIn: CheckInSession? = null,
     val sessionStartTimeMillis: Long = 0L,
@@ -211,6 +213,7 @@ class HomeViewModel(
                             groupSession = snapshot.groupSession,
                             groupSpots = snapshot.groupSpots,
                             mapSpots = snapshot.mapSpots,
+                            trendingCounts = snapshot.trendingCounts,
                             selectedSpotId = snapshot.soloSpot.id,
                             error = null
                         )
@@ -221,6 +224,38 @@ class HomeViewModel(
                         it.copy(
                             isLoading = false,
                             error = error.message ?: "Could not load study spots."
+                        )
+                    }
+                }
+        }
+    }
+
+    // Re-pull live occupancy (and spot list) without the full-screen loading state.
+    // Unlike loadHome() this preserves the user's current map selection.
+    fun refresh() {
+        if (uiState.value.isRefreshing) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isRefreshing = true, error = null) }
+            runCatching { repository.loadHome() }
+                .onSuccess { snapshot ->
+                    _uiState.update {
+                        it.copy(
+                            isRefreshing = false,
+                            userFirstName = snapshot.userFirstName,
+                            soloSpot = snapshot.soloSpot,
+                            groupSession = snapshot.groupSession,
+                            groupSpots = snapshot.groupSpots,
+                            mapSpots = snapshot.mapSpots,
+                            trendingCounts = snapshot.trendingCounts,
+                            error = null
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(
+                            isRefreshing = false,
+                            error = error.message ?: "Could not refresh spots."
                         )
                     }
                 }

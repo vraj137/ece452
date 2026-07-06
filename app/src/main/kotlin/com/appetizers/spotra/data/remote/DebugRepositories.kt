@@ -61,7 +61,8 @@ class DebugHomeRepository : HomeRepository {
         soloSpot = MockData.spotById("e7-study-hall")!!.toSummary(),
         groupSession = groupSession,
         groupSpots = MockData.groupSpots.map { it.toSummary() },
-        mapSpots = mapSpots()
+        mapSpots = mapSpots(),
+        trendingCounts = MockData.spots.associate { it.id to it.checkInsThisWeek }
     )
 
     override suspend fun startCheckIn(
