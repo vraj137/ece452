@@ -41,6 +41,7 @@ import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.Groups
@@ -91,6 +92,7 @@ import com.appetizers.spotra.domain.model.GroupStudySession
 import com.appetizers.spotra.domain.model.SpotFeature
 import com.appetizers.spotra.domain.model.SpotFeatureType
 import com.appetizers.spotra.domain.model.StudyMode
+import com.appetizers.spotra.domain.model.StudySpotDetail
 import com.appetizers.spotra.domain.model.StudySpotSummary
 import com.appetizers.spotra.domain.repository.AuthRepository
 import com.appetizers.spotra.domain.repository.FriendRepository
@@ -156,6 +158,20 @@ fun HomeScreen(
     }
 
     viewingSpotId?.let { spotId ->
+        val parentSpot = state.mapSpots.firstOrNull { it.id == spotId && it.childCount > 0 }
+        if (parentSpot != null) {
+            BuildingSpacesScreen(
+                parentSpot = parentSpot,
+                homeRepository = homeRepository,
+                accent = accent,
+                onBack = { viewingSpotId = null },
+                onSpaceSelected = { child ->
+                    viewingSpotId = child.id
+                }
+            )
+            return
+        }
+
         SpotDetailScreen(
             spotId = spotId,
             accent = accent,
@@ -164,6 +180,7 @@ fun HomeScreen(
                 viewModel.startCheckIn(spot, StudyMode.Solo)
                 viewingSpotId = null
             },
+            homeRepository = homeRepository,
             reviewRepository = reviewRepository,
             friendRepository = friendRepository,
             onReview = { reviewingSpotId = spotId },
@@ -2216,6 +2233,199 @@ private fun MapPin(
                 .background(Color.White, CircleShape)
                 .padding(2.5.dp)
                 .background(color, CircleShape)
+        )
+    }
+}
+
+@Composable
+private fun BuildingSpacesScreen(
+    parentSpot: StudySpotSummary,
+    homeRepository: HomeRepository,
+    accent: Color,
+    onBack: () -> Unit,
+    onSpaceSelected: (StudySpotDetail) -> Unit
+) {
+    var spaces by remember(parentSpot.id) { mutableStateOf<List<StudySpotDetail>>(emptyList()) }
+    var isLoading by remember(parentSpot.id) { mutableStateOf(true) }
+    var error by remember(parentSpot.id) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(parentSpot.id) {
+        isLoading = true
+        error = null
+        runCatching { homeRepository.childSpots(parentSpot.id) }
+            .onSuccess { spaces = it }
+            .onFailure { error = it.message ?: "Could not load spaces." }
+        isLoading = false
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(HomeBackground)
+            .statusBarsPadding()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color.White)
+                .padding(start = 22.dp, top = 16.dp, end = 22.dp, bottom = 20.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .background(HomeBackground, RoundedCornerShape(12.dp))
+                    .clickable(onClick = onBack),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                    contentDescription = "Back",
+                    tint = Ink,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+            Spacer(Modifier.height(18.dp))
+            Text(
+                text = parentSpot.name,
+                color = Ink,
+                fontSize = 28.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "${parentSpot.childCount} study spaces",
+                color = HeaderMuted,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
+
+        when {
+            isLoading -> {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = accent)
+                }
+            }
+            error != null -> {
+                Text(
+                    text = error.orEmpty(),
+                    modifier = Modifier.padding(24.dp),
+                    color = DPAtriumRed,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            else -> {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 28.dp),
+                    verticalArrangement = Arrangement.spacedBy(18.dp)
+                ) {
+                    spaces
+                        .groupBy { it.floor ?: "Building" }
+                        .forEach { (floor, floorSpaces) ->
+                            item { SectionHeader(label = floor) }
+                            itemsIndexed(
+                                items = floorSpaces,
+                                key = { _, space -> space.id }
+                            ) { _, space ->
+                                BuildingSpaceRow(
+                                    space = space,
+                                    accent = accent,
+                                    onClick = { onSpaceSelected(space) }
+                                )
+                            }
+                        }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BuildingSpaceRow(
+    space: StudySpotDetail,
+    accent: Color,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.White, RoundedCornerShape(20.dp))
+            .border(1.5.dp, DividerLine, RoundedCornerShape(20.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(52.dp)
+                .background(accent.copy(alpha = 0.12f), RoundedCornerShape(16.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = if (space.studyContextLabel == "Group-friendly") Icons.Rounded.Group else Icons.Rounded.School,
+                contentDescription = null,
+                tint = accent,
+                modifier = Modifier.size(26.dp)
+            )
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = space.name,
+                color = Ink,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(5.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                space.capacity?.let { capacity ->
+                    Text(
+                        text = "Capacity $capacity",
+                        color = HeaderMuted,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+                if (space.capacity != null && space.studyContextLabel != null) {
+                    Text(text = " - ", color = HeaderMuted, fontSize = 14.sp)
+                }
+                space.studyContextLabel?.let { label ->
+                    Text(
+                        text = label,
+                        color = HeaderMuted,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                text = space.occupancyPercent?.let { "$it%" } ?: "0%",
+                color = if ((space.occupancyPercent ?: 0) > 70) DPAtriumRed else GroupGreen,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+            Text(
+                text = "live full",
+                color = HeaderMuted,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Icon(
+            imageVector = Icons.Rounded.ChevronRight,
+            contentDescription = null,
+            tint = NavMuted,
+            modifier = Modifier.size(22.dp)
         )
     }
 }

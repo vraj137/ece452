@@ -25,6 +25,8 @@ data class StudySpotSummary(
     val id: String,
     val name: String,
     val badge: String,
+    val parentSlug: String? = null,
+    val childCount: Int = 0,
     val distanceMeters: Int? = null,
     val rating: Double? = null,
     val studyContextLabel: String? = null,
@@ -33,6 +35,47 @@ data class StudySpotSummary(
     val latitude: Double? = null,
     val longitude: Double? = null
 )
+
+data class StudySpotDetail(
+    val id: String,
+    val name: String,
+    val building: String,
+    val floor: String? = null,
+    val badge: String,
+    val parentSlug: String? = null,
+    val childCount: Int = 0,
+    val distanceMeters: Int? = null,
+    val rating: Double? = null,
+    val studyContextLabel: String? = null,
+    val noiseLevel: String? = null,
+    val lighting: String? = null,
+    val wifiQuality: String? = null,
+    val capacity: Int? = null,
+    val occupancyPercent: Int? = null,
+    val occupancyPercentIsLive: Boolean = false,
+    val reportedOccupancyPercent: Int? = null,
+    val peopleHere: Int = 0,
+    val amenities: List<String> = emptyList(),
+    val features: List<SpotFeature> = emptyList(),
+    val bestFit: Boolean = false,
+    val latitude: Double? = null,
+    val longitude: Double? = null
+) {
+    fun toSummary() = StudySpotSummary(
+        id = id,
+        name = name,
+        badge = badge,
+        parentSlug = parentSlug,
+        childCount = childCount,
+        distanceMeters = distanceMeters,
+        rating = rating,
+        studyContextLabel = studyContextLabel,
+        features = features,
+        bestFit = bestFit,
+        latitude = latitude,
+        longitude = longitude
+    )
+}
 
 data class GroupMember(
     val id: String,

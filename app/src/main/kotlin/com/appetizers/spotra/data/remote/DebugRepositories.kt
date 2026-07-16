@@ -9,6 +9,7 @@ import com.appetizers.spotra.domain.model.HomeSnapshot
 import com.appetizers.spotra.domain.model.Review
 import com.appetizers.spotra.domain.model.ReviewDraft
 import com.appetizers.spotra.domain.model.StudyMode
+import com.appetizers.spotra.domain.model.StudySpotDetail
 import com.appetizers.spotra.domain.model.StudySpotSummary
 import com.appetizers.spotra.domain.model.UserProfile
 import com.appetizers.spotra.domain.repository.AuthRepository
@@ -64,6 +65,12 @@ class DebugHomeRepository : HomeRepository {
         mapSpots = mapSpots(),
         trendingCounts = MockData.spots.associate { it.id to it.checkInsThisWeek }
     )
+
+    override suspend fun spotDetail(spotId: String): StudySpotDetail =
+        MockData.spotById(spotId)?.toDetail()
+            ?: error("Unknown study spot: $spotId")
+
+    override suspend fun childSpots(parentSpotId: String): List<StudySpotDetail> = emptyList()
 
     override suspend fun startCheckIn(
         spotId: String,
