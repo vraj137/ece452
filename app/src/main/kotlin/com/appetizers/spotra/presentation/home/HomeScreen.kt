@@ -38,6 +38,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -50,6 +51,7 @@ import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PersonAdd
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Wifi
@@ -101,10 +103,12 @@ import com.appetizers.spotra.domain.repository.ProfileRepository
 import com.mapbox.geojson.Point
 import com.mapbox.maps.Style
 import com.mapbox.maps.ViewAnnotationAnchor
+import com.mapbox.maps.dsl.cameraOptions
 import com.mapbox.maps.extension.compose.MapboxMap
 import com.mapbox.maps.extension.compose.animation.viewport.rememberMapViewportState
 import com.mapbox.maps.extension.compose.annotation.ViewAnnotation
 import com.mapbox.maps.extension.compose.style.MapStyle
+import com.mapbox.maps.plugin.animation.MapAnimationOptions
 import com.mapbox.maps.viewannotation.annotationAnchor
 import com.mapbox.maps.viewannotation.geometry
 import com.mapbox.maps.viewannotation.viewAnnotationOptions
@@ -2044,6 +2048,19 @@ private fun CampusMap(
             zoom(14.6)
         }
     }
+    val zoomBy: (Double) -> Unit = { delta ->
+        val cameraState = mapViewportState.cameraState
+        val nextZoom = ((cameraState?.zoom ?: 14.6) + delta).coerceIn(13.0, 18.5)
+        mapViewportState.easeTo(
+            cameraOptions {
+                center(cameraState?.center ?: Point.fromLngLat(-80.5430, 43.4720))
+                zoom(nextZoom)
+                bearing(cameraState?.bearing ?: 0.0)
+                pitch(cameraState?.pitch ?: 0.0)
+            },
+            MapAnimationOptions.mapAnimationOptions { duration(180) }
+        )
+    }
 
     Box(modifier = modifier.background(MapLoadingBackground)) {
         MapboxMap(
@@ -2082,16 +2099,29 @@ private fun CampusMap(
             }
         }
 
-        // Refresh live occupancy counts.
-        MapCircleButton(
-            icon = Icons.Rounded.Refresh,
-            contentDescription = "Refresh spot occupancy",
-            loading = isRefreshing,
-            onClick = onRefresh,
+        Column(
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(14.dp)
-        )
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            MapCircleButton(
+                icon = Icons.Rounded.Add,
+                contentDescription = "Zoom in",
+                onClick = { zoomBy(1.0) }
+            )
+            MapCircleButton(
+                icon = Icons.Rounded.Remove,
+                contentDescription = "Zoom out",
+                onClick = { zoomBy(-1.0) }
+            )
+            MapCircleButton(
+                icon = Icons.Rounded.Refresh,
+                contentDescription = "Refresh spot occupancy",
+                loading = isRefreshing,
+                onClick = onRefresh
+            )
+        }
     }
 }
 
