@@ -6,6 +6,7 @@ import com.appetizers.spotra.domain.model.GroupMember
 import com.appetizers.spotra.domain.model.GroupStudySession
 import com.appetizers.spotra.domain.model.HomeSnapshot
 import com.appetizers.spotra.domain.model.StudyMode
+import com.appetizers.spotra.domain.model.StudySpotDetail
 import com.appetizers.spotra.domain.model.StudySpotSummary
 import com.appetizers.spotra.domain.repository.HomeRepository
 import kotlinx.coroutines.Dispatchers
@@ -189,6 +190,29 @@ private class FakeHomeRepository : HomeRepository {
             groupSpots = emptyList(),
             mapSpots = listOf(soloSpot, secondaryMapSpot)
         )
+
+    override suspend fun spotDetail(spotId: String): StudySpotDetail =
+        StudySpotDetail(
+            id = spotId,
+            name = soloSpot.name,
+            building = "Engineering 7",
+            floor = "Room 2101",
+            badge = soloSpot.badge,
+            distanceMeters = soloSpot.distanceMeters,
+            rating = soloSpot.rating,
+            studyContextLabel = soloSpot.studyContextLabel,
+            noiseLevel = "Low",
+            lighting = "Good",
+            capacity = 24,
+            occupancyPercent = 26,
+            occupancyPercentIsLive = true,
+            reportedOccupancyPercent = 26,
+            peopleHere = 6,
+            latitude = soloSpot.latitude,
+            longitude = soloSpot.longitude
+        )
+
+    override suspend fun childSpots(parentSpotId: String): List<StudySpotDetail> = emptyList()
 
     override suspend fun startCheckIn(
         spotId: String,

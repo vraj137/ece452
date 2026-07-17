@@ -4,6 +4,7 @@ import com.appetizers.spotra.domain.model.GroupMember
 import com.appetizers.spotra.domain.model.GroupStudySession
 import com.appetizers.spotra.domain.model.SpotFeature
 import com.appetizers.spotra.domain.model.SpotFeatureType
+import com.appetizers.spotra.domain.model.StudySpotDetail
 import com.appetizers.spotra.domain.model.StudySpotSummary
 import com.appetizers.spotra.domain.model.StudyTerm
 import com.appetizers.spotra.domain.model.UserProfile
@@ -42,6 +43,27 @@ data class MockSpot(
         distanceMeters = distanceMeters,
         rating = rating,
         studyContextLabel = studyContextLabel,
+        features = features,
+        bestFit = bestFit,
+        latitude = latitude,
+        longitude = longitude
+    )
+
+    fun toDetail() = StudySpotDetail(
+        id = id,
+        name = name,
+        building = building.substringBefore(",").trim(),
+        floor = building.substringAfter(",", missingDelimiterValue = "").trim().ifBlank { null },
+        badge = badge,
+        distanceMeters = distanceMeters,
+        rating = rating,
+        studyContextLabel = studyContextLabel,
+        noiseLevel = noiseLevel,
+        lighting = lighting,
+        occupancyPercent = fullPercent,
+        reportedOccupancyPercent = fullPercent,
+        peopleHere = peopleHere,
+        amenities = amenities,
         features = features,
         bestFit = bestFit,
         latitude = latitude,

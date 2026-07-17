@@ -8,6 +8,7 @@ import com.appetizers.spotra.domain.model.Review
 import com.appetizers.spotra.domain.model.ReviewDraft
 import com.appetizers.spotra.domain.model.SpotSubmission
 import com.appetizers.spotra.domain.model.StudyMode
+import com.appetizers.spotra.domain.model.StudySpotDetail
 import com.appetizers.spotra.domain.model.UserProfile
 import kotlinx.coroutines.flow.Flow
 
@@ -42,6 +43,8 @@ interface ReviewRepository {
 
 interface HomeRepository {
     suspend fun loadHome(): HomeSnapshot
+    suspend fun spotDetail(spotId: String): StudySpotDetail
+    suspend fun childSpots(parentSpotId: String): List<StudySpotDetail>
     suspend fun startCheckIn(
         spotId: String,
         mode: StudyMode,

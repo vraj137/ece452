@@ -43,12 +43,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.appetizers.spotra.data.mock.MockData
-import com.appetizers.spotra.data.mock.MockSpot
 import com.appetizers.spotra.domain.model.FriendProfile
 import com.appetizers.spotra.domain.model.Review
+import com.appetizers.spotra.domain.model.StudySpotDetail
 import com.appetizers.spotra.domain.model.StudySpotSummary
 import com.appetizers.spotra.domain.repository.FriendRepository
+import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.ReviewRepository
 
 private enum class ReviewFilter { Friends, All }
@@ -59,29 +59,31 @@ internal fun SpotDetailScreen(
     accent: Color,
     onBack: () -> Unit,
     onCheckIn: (StudySpotSummary) -> Unit,
+    homeRepository: HomeRepository,
     reviewRepository: ReviewRepository,
     friendRepository: FriendRepository? = null,
     onReview: () -> Unit,
     activeCheckInSpotId: String? = null,
     onEndSession: () -> Unit = {}
 ) {
-    val spot = MockData.spotById(spotId)
-
-    if (spot == null) {
-        LaunchedEffect(Unit) { onBack() }
-        return
-    }
-
     val sessionActiveHere = activeCheckInSpotId == spotId
 
+    var spot by remember(spotId) { mutableStateOf<StudySpotDetail?>(null) }
     var reviews by remember(spotId) { mutableStateOf<List<Review>>(emptyList()) }
     var friendsAtSpot by remember(spotId) { mutableStateOf<List<FriendProfile>>(emptyList()) }
     var acceptedFriendIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var selfId by remember { mutableStateOf<String?>(null) }
     var reviewFilter by remember { mutableStateOf(ReviewFilter.All) }
+    var error by remember(spotId) { mutableStateOf<String?>(null) }
 
     LaunchedEffect(spotId) {
-        reviews = runCatching { reviewRepository.reviewsFor(spotId) }.getOrDefault(emptyList())
+        error = null
+        runCatching { homeRepository.spotDetail(spotId) }
+            .onSuccess { spot = it }
+            .onFailure { error = it.message ?: "Could not load this spot." }
+
+        reviews = runCatching { reviewRepository.reviewsFor(spotId) }
+            .getOrDefault(emptyList())
         if (friendRepository != null) {
             friendsAtSpot = runCatching { friendRepository.fetchFriendsAtSpot(spotId) }.getOrDefault(emptyList())
             val profiles = runCatching { friendRepository.fetchFriendProfiles() }.getOrNull()
@@ -97,16 +99,25 @@ internal fun SpotDetailScreen(
 
     BackHandler(onBack = onBack)
 
+    val detail = spot
+    if (detail == null) {
+        SpotDetailLoadingOrError(
+            message = error,
+            onBack = onBack
+        )
+        return
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.White)
     ) {
         SpotDetailHeader(
-            spot = spot,
-            friendsStudying = friendsAtSpot.map { it.id to it.initials },
+            spot = detail,
+            friendsStudying = friendsAtSpot,
             onBack = onBack,
-            onCheckIn = { onCheckIn(spot.toSummary()) }
+            onCheckIn = { onCheckIn(detail.toSummary()) }
         )
         LazyColumn(
             modifier = Modifier
@@ -114,8 +125,8 @@ internal fun SpotDetailScreen(
                 .weight(1f),
             contentPadding = PaddingValues(bottom = 32.dp)
         ) {
-            item { SpotStatTiles(spot = spot) }
-            item { SpotAmenitiesSection(amenities = spot.amenities) }
+            item { SpotStatTiles(spot = detail) }
+            item { SpotAmenitiesSection(amenities = detail.amenities) }
             if (reviews.isNotEmpty()) {
                 item {
                     SpotReviewsSection(
@@ -130,7 +141,7 @@ internal fun SpotDetailScreen(
                 SpotActionButtons(
                     accent = accent,
                     sessionActiveHere = sessionActiveHere,
-                    onCheckIn = { onCheckIn(spot.toSummary()) },
+                    onCheckIn = { onCheckIn(detail.toSummary()) },
                     onEndSession = onEndSession,
                     onReview = onReview
                 )
@@ -140,9 +151,42 @@ internal fun SpotDetailScreen(
 }
 
 @Composable
+private fun SpotDetailLoadingOrError(message: String?, onBack: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.White)
+            .statusBarsPadding()
+            .padding(22.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .background(HomeBackground, RoundedCornerShape(12.dp))
+                .clickable(onClick = onBack),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                contentDescription = "Back",
+                tint = Ink,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+        Spacer(Modifier.height(28.dp))
+        Text(
+            text = message ?: "Loading spot...",
+            color = if (message == null) HeaderMuted else DPAtriumRed,
+            fontSize = 17.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
+@Composable
 private fun SpotDetailHeader(
-    spot: MockSpot,
-    friendsStudying: List<Pair<String, String>>,
+    spot: StudySpotDetail,
+    friendsStudying: List<FriendProfile>,
     onBack: () -> Unit,
     onCheckIn: () -> Unit
 ) {
@@ -200,8 +244,14 @@ private fun SpotDetailHeader(
 
         Spacer(Modifier.height(4.dp))
 
+        val locationLabel = listOfNotNull(
+            spot.building,
+            spot.floor,
+            spot.distanceMeters?.let { "${it}m away" }
+        ).filter { it.isNotBlank() }.joinToString(" · ")
+
         Text(
-            text = "${spot.building} · ${spot.distanceMeters}m away",
+            text = locationLabel,
             color = HeaderSecondary,
             fontSize = 15.sp,
             fontWeight = FontWeight.Medium,
@@ -210,8 +260,6 @@ private fun SpotDetailHeader(
 
         if (spot.isLive) {
             Spacer(Modifier.height(10.dp))
-            // Group the color dot + text into one focus stop so the live status reads
-            // as a single label to screen readers (status is never color-only).
             Row(
                 modifier = Modifier.semantics(mergeDescendants = true) {},
                 verticalAlignment = Alignment.CenterVertically
@@ -231,16 +279,16 @@ private fun SpotDetailHeader(
             Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Row(horizontalArrangement = Arrangement.spacedBy((-6).dp)) {
-                    friendsStudying.forEach { (id, initials) ->
+                    friendsStudying.take(3).forEach { friend ->
                         Box(
                             modifier = Modifier
                                 .size(30.dp)
-                                .background(avatarColorFor(id), CircleShape)
+                                .background(avatarColorFor(friend.id), CircleShape)
                                 .border(2.dp, CheckInHeader, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = initials,
+                                text = friend.initials,
                                 color = Color.White,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.ExtraBold
@@ -250,7 +298,7 @@ private fun SpotDetailHeader(
                 }
                 Spacer(Modifier.width(10.dp))
                 Text(
-                    text = "Akshat and ${MockData.user.firstName} are studying here",
+                    text = friendsStudying.friendStatusLabel(),
                     color = HeaderSecondary,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
@@ -263,25 +311,25 @@ private fun SpotDetailHeader(
 }
 
 @Composable
-private fun SpotStatTiles(spot: MockSpot) {
+private fun SpotStatTiles(spot: StudySpotDetail) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp, vertical = 20.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        StatTile(emoji = "🤫", value = spot.noiseLevel, label = "NOISE", modifier = Modifier.weight(1f))
-        StatTile(emoji = "☀️", value = spot.lighting, label = "LIGHTING", modifier = Modifier.weight(1f))
+        StatTile(emoji = "🤫", value = spot.noiseLevel ?: "No data", label = "NOISE", modifier = Modifier.weight(1f))
+        StatTile(emoji = "☀️", value = spot.lighting ?: "No data", label = "LIGHTING", modifier = Modifier.weight(1f))
         StatTile(
-            value = String.format("%.1f", spot.rating),
+            value = spot.rating?.let { String.format("%.1f", it) } ?: "New",
             label = "RATING",
             valueColor = SoloBlue,
             modifier = Modifier.weight(1f)
         )
         StatTile(
-            value = "${spot.fullPercent}%",
-            label = "FULL",
-            valueColor = if (spot.fullPercent > 70) DPAtriumRed else GroupGreen,
+            value = spot.occupancyPercent?.let { "$it%" } ?: "No data",
+            label = if (spot.occupancyPercentIsLive) "LIVE FULL" else "FULL",
+            valueColor = if ((spot.occupancyPercent ?: 0) > 70) DPAtriumRed else GroupGreen,
             modifier = Modifier.weight(1f)
         )
     }
@@ -506,6 +554,11 @@ private fun SpotActionButtons(
     }
 }
 
-// Needed by SpotDetailHeader but not in scope from HomeColors since it uses
-// a field from MockSpot rather than a raw Boolean.
-private val MockSpot.isLive: Boolean get() = peopleHere > 0
+private val StudySpotDetail.isLive: Boolean get() = peopleHere > 0
+
+private fun List<FriendProfile>.friendStatusLabel(): String = when (size) {
+    0 -> ""
+    1 -> "${first().firstName} is studying here"
+    2 -> "${this[0].firstName} and ${this[1].firstName} are studying here"
+    else -> "${this[0].firstName}, ${this[1].firstName}, and ${size - 2} more are studying here"
+}

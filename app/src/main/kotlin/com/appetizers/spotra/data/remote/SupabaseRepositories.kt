@@ -9,6 +9,7 @@ import com.appetizers.spotra.domain.model.Review
 import com.appetizers.spotra.domain.model.ReviewDraft
 import com.appetizers.spotra.domain.model.SpotSubmission
 import com.appetizers.spotra.domain.model.StudyMode
+import com.appetizers.spotra.domain.model.StudySpotDetail
 import com.appetizers.spotra.domain.model.StudySpotSummary
 import com.appetizers.spotra.domain.model.UserProfile
 import com.appetizers.spotra.domain.repository.AuthRepository
@@ -121,7 +122,9 @@ private data class SpotDto(
     val longitude: Double,
     @SerialName("solo_friendly") val soloFriendly: Boolean = true,
     @SerialName("group_friendly") val groupFriendly: Boolean = true,
-    val amenities: List<String> = emptyList()
+    val amenities: List<String> = emptyList(),
+    val capacity: Int? = null,
+    @SerialName("parent_slug") val parentSlug: String? = null
 )
 
 @Serializable
@@ -139,16 +142,14 @@ private data class CheckInRow(
     @SerialName("ended_at") val endedAt: String? = null
 )
 
-// Aggregated occupancy from the spot_occupancy view — exposes only counts, never
-// who is checked in (the underlying check_ins rows stay private to each user).
+// Active occupancy counts.
 @Serializable
 private data class OccupancyRow(
     @SerialName("spot_slug") val spotSlug: String,
     @SerialName("active_count") val activeCount: Int
 )
 
-// 7-day check-in totals from the spot_trending view — counts only, drives the
-// Explore "trending this week" ranking.
+// Weekly trend counts.
 @Serializable
 private data class TrendingRow(
     @SerialName("spot_slug") val spotSlug: String,
@@ -158,9 +159,7 @@ private data class TrendingRow(
 class SupabaseHomeRepository(
     private val client: SupabaseClient
 ) : HomeRepository {
-    // Group sessions and the buddy/invite social graph are not in the database
-    // yet (Phase 4). Until then they are sourced from MockData so the group UI
-    // keeps working; spots and check-ins below are fully real.
+    // TODO: Move group and social data to Supabase.
     private var groupSession = MockData.groupSession
     private var cachedFirstName: String = "there"
     private var spotCache: Map<String, StudySpotSummary> = emptyMap()
@@ -169,8 +168,7 @@ class SupabaseHomeRepository(
         val firstNameDeferred = async { currentFirstName() }
         val activeCountsDeferred = async { activeCheckInCounts() }
         val trendingDeferred = async { trendingCheckInCounts() }
-        // Tolerate the spots table not being seeded/created yet — fall back to MockData
-        // so the app still launches before the Phase 1 SQL has been applied.
+        // Empty DB fallback for first-run setup.
         val dbSpotsDeferred = async {
             runCatching {
                 client.from("spots").select().decodeList<SpotDto>()
@@ -181,19 +179,32 @@ class SupabaseHomeRepository(
         val activeCounts = activeCountsDeferred.await()
         val trendingCounts = trendingDeferred.await()
         val dbSpots = dbSpotsDeferred.await()
+        val childCounts = dbSpots.childCountsByParentSlug()
+        val parentSpots = dbSpots.filter { it.parentSlug == null }
 
-        // Fall back to MockData if the spots table hasn't been seeded yet, so the
-        // app still runs before the Phase 1 SQL is applied.
-        val summaries = if (dbSpots.isNotEmpty()) {
-            dbSpots.map { it.toSummary(activeCounts[it.slug] ?: 0) }
+        // Mock fallback for local setup.
+        val summaries = if (parentSpots.isNotEmpty()) {
+            parentSpots.map { spot ->
+                spot.toSummary(
+                    activeCount = activeCounts[spot.slug] ?: 0,
+                    childCount = childCounts[spot.slug] ?: 0
+                )
+            }
         } else {
             MockData.spots.map { it.toSummary() }
         }
         spotCache = summaries.associateBy { it.id }
 
         val soloSpot = summaries.firstOrNull() ?: error("No study spots available.")
-        val groupSpots = if (dbSpots.isNotEmpty()) {
-            dbSpots.filter { it.groupFriendly }.map { it.toSummary(activeCounts[it.slug] ?: 0) }
+        val groupSpots = if (parentSpots.isNotEmpty()) {
+            parentSpots
+                .filter { it.groupFriendly }
+                .map { spot ->
+                    spot.toSummary(
+                        activeCount = activeCounts[spot.slug] ?: 0,
+                        childCount = childCounts[spot.slug] ?: 0
+                    )
+                }
         } else {
             MockData.groupSpots.map { it.toSummary() }
         }
@@ -206,6 +217,51 @@ class SupabaseHomeRepository(
             mapSpots = summaries,
             trendingCounts = trendingCounts
         )
+    }
+
+    override suspend fun spotDetail(spotId: String): StudySpotDetail = coroutineScope {
+        val spotDeferred = async {
+            runCatching {
+                client.from("spots")
+                    .select { filter { eq("slug", spotId) } }
+                    .decodeSingleOrNull<SpotDto>()
+            }.getOrNull()
+        }
+        val activeCountsDeferred = async { activeCheckInCounts() }
+        val reviewsDeferred = async { reviewRowsForSpot(spotId) }
+
+        val activeCount = activeCountsDeferred.await()[spotId] ?: 0
+        val reviews = reviewsDeferred.await()
+        val dbSpot = spotDeferred.await()
+
+        when {
+            dbSpot != null -> dbSpot.toDetail(activeCount, reviews)
+            else -> MockData.spotById(spotId)?.toDetail()
+                ?: error("Unknown study spot: $spotId")
+        }
+    }
+
+    override suspend fun childSpots(parentSpotId: String): List<StudySpotDetail> = coroutineScope {
+        val childrenDeferred = async {
+            runCatching {
+                client.from("spots")
+                    .select { filter { eq("parent_slug", parentSpotId) } }
+                    .decodeList<SpotDto>()
+            }.getOrDefault(emptyList())
+        }
+        val activeCountsDeferred = async { activeCheckInCounts() }
+
+        val children = childrenDeferred.await()
+        val activeCounts = activeCountsDeferred.await()
+
+        children
+            .sortedWith(compareBy<SpotDto> { it.floor.orEmpty() }.thenBy { it.name })
+            .map { spot ->
+                spot.toDetail(
+                    activeCount = activeCounts[spot.slug] ?: 0,
+                    reviews = emptyList()
+                )
+            }
     }
 
     override suspend fun startCheckIn(
@@ -225,6 +281,7 @@ class SupabaseHomeRepository(
         ) { select() }.decodeSingle<CheckInRow>()
 
         val spot = spotCache[spotId]
+            ?: dbSpotSummary(spotId)
             ?: MockData.spotById(spotId)?.toSummary()
             ?: error("Unknown study spot: $spotId")
         val self = CheckedInStudent(
@@ -245,7 +302,7 @@ class SupabaseHomeRepository(
         }
     }
 
-    // Phase 4 — social graph not in DB yet.
+    // TODO: Back with Supabase social graph.
     override suspend fun sendBuddyRequest(studentId: String) = Unit
 
     override suspend fun inviteToGroup(groupSessionId: String, inviteText: String): GroupMember {
@@ -269,31 +326,105 @@ class SupabaseHomeRepository(
             ?: "there"
     }
 
-    // Active visits per spot, read from the privacy-preserving spot_occupancy view
-    // (counts only). Resilient to the view not existing yet so the home screen
-    // still loads before the migration is applied.
+    // Active visits per spot from spot_occupancy.
     private suspend fun activeCheckInCounts(): Map<String, Int> =
         runCatching {
             client.from("spot_occupancy").select().decodeList<OccupancyRow>()
                 .associate { it.spotSlug to it.activeCount }
         }.getOrDefault(emptyMap())
 
-    // 7-day check-in totals per spot from the spot_trending view (counts only).
-    // Resilient to the view not existing yet — Explore just falls back to no ranking.
+    // Weekly check-in counts from spot_trending.
     private suspend fun trendingCheckInCounts(): Map<String, Int> =
         runCatching {
             client.from("spot_trending").select().decodeList<TrendingRow>()
                 .associate { it.spotSlug to it.checkins7d }
         }.getOrDefault(emptyMap())
 
-    private fun SpotDto.toSummary(activeCount: Int) = StudySpotSummary(
+    private suspend fun reviewRowsForSpot(spotSlug: String): List<ReviewRow> =
+        runCatching {
+            client.from("reviews")
+                .select {
+                    filter { eq("spot_slug", spotSlug) }
+                    order("created_at", Order.DESCENDING)
+                }
+                .decodeList<ReviewRow>()
+        }.getOrDefault(emptyList())
+
+    private suspend fun dbSpotSummary(spotId: String): StudySpotSummary? {
+        val activeCount = activeCheckInCounts()[spotId] ?: 0
+        return runCatching {
+            client.from("spots")
+                .select { filter { eq("slug", spotId) } }
+                .decodeSingleOrNull<SpotDto>()
+                ?.toSummary(activeCount = activeCount, childCount = 0)
+        }.getOrNull()
+    }
+
+    private fun SpotDto.toSummary(activeCount: Int, childCount: Int = 0) = StudySpotSummary(
         id = slug,
         name = name,
         badge = occupancyBadge(activeCount),
+        parentSlug = parentSlug,
+        childCount = childCount,
         latitude = latitude,
         longitude = longitude
     )
+
+    private fun SpotDto.toDetail(
+        activeCount: Int,
+        reviews: List<ReviewRow>
+    ): StudySpotDetail {
+        val averageRating = reviews
+            .takeIf { it.isNotEmpty() }
+            ?.map { it.rating }
+            ?.average()
+            ?.roundToSingleDecimal()
+        val reportedOccupancyPercent = reviews.firstNotNullOfOrNull { it.occupancyPercent }
+        val liveOccupancyPercent = liveOccupancyPercent(activeCount, capacity)
+
+        return StudySpotDetail(
+            id = slug,
+            name = name,
+            building = building,
+            floor = floor,
+            badge = occupancyBadge(activeCount),
+            parentSlug = parentSlug,
+            rating = averageRating,
+            studyContextLabel = studyContextLabel(),
+            noiseLevel = reviews.firstNotNullOfOrNull { it.noiseLevel },
+            lighting = reviews.firstNotNullOfOrNull { it.lighting },
+            wifiQuality = reviews.firstNotNullOfOrNull { it.wifiQuality },
+            capacity = capacity,
+            occupancyPercent = liveOccupancyPercent ?: reportedOccupancyPercent,
+            occupancyPercentIsLive = liveOccupancyPercent != null,
+            reportedOccupancyPercent = reportedOccupancyPercent,
+            peopleHere = activeCount,
+            amenities = amenities,
+            latitude = latitude,
+            longitude = longitude
+        )
+    }
+
+    private fun SpotDto.studyContextLabel(): String? = when {
+        soloFriendly && groupFriendly -> "Solo or group"
+        soloFriendly -> "Solo-friendly"
+        groupFriendly -> "Group-friendly"
+        else -> null
+    }
 }
+
+private fun List<SpotDto>.childCountsByParentSlug(): Map<String, Int> =
+    mapNotNull { it.parentSlug }
+        .groupingBy { it }
+        .eachCount()
+
+private fun Double.roundToSingleDecimal(): Double =
+    kotlin.math.round(this * 10.0) / 10.0
+
+private fun liveOccupancyPercent(activeCount: Int, capacity: Int?): Int? =
+    capacity
+        ?.takeIf { it > 0 }
+        ?.let { kotlin.math.round((activeCount.toDouble() / it) * 100).toInt().coerceIn(0, 100) }
 
 private fun occupancyBadge(activeCount: Int): String = when {
     activeCount <= 0 -> "Quiet"
