@@ -5,6 +5,7 @@ import com.appetizers.spotra.domain.model.BadgeId
 import com.appetizers.spotra.domain.model.CheckInSession
 import com.appetizers.spotra.domain.model.CheckedInStudent
 import com.appetizers.spotra.domain.model.GroupMember
+import com.appetizers.spotra.domain.model.GroupStudySession
 import com.appetizers.spotra.domain.model.HomeSnapshot
 import com.appetizers.spotra.domain.model.Review
 import com.appetizers.spotra.domain.model.ReviewDraft
@@ -131,7 +132,8 @@ private data class SpotDto(
     @SerialName("group_friendly") val groupFriendly: Boolean = true,
     val amenities: List<String> = emptyList(),
     val capacity: Int? = null,
-    @SerialName("parent_slug") val parentSlug: String? = null
+    @SerialName("parent_slug") val parentSlug: String? = null,
+    @SerialName("booking_url") val bookingUrl: String? = null,
 )
 
 @Serializable
@@ -147,6 +149,38 @@ private data class CheckInRow(
     val id: String,
     @SerialName("spot_slug") val spotSlug: String,
     @SerialName("ended_at") val endedAt: String? = null
+)
+
+// ── Group sessions ──────────────────────────────────────────────────────────
+
+@Serializable
+private data class GroupSessionDto(
+    val id: String,
+    val title: String,
+    val subtitle: String? = null,
+    @SerialName("created_by") val createdBy: String,
+    @SerialName("ended_at") val endedAt: String? = null,
+)
+
+@Serializable
+private data class GroupSessionInsert(
+    val title: String,
+    val subtitle: String? = null,
+    @SerialName("created_by") val createdBy: String,
+)
+
+@Serializable
+private data class GroupSessionMemberInsert(
+    @SerialName("session_id") val sessionId: String,
+    @SerialName("user_id") val userId: String,
+    val role: String = "member",
+)
+
+@Serializable
+private data class GroupSessionMemberRow(
+    @SerialName("session_id") val sessionId: String,
+    @SerialName("user_id") val userId: String,
+    val role: String,
 )
 
 // Active occupancy counts.
@@ -166,8 +200,8 @@ private data class TrendingRow(
 class SupabaseHomeRepository(
     private val client: SupabaseClient
 ) : HomeRepository {
-    // TODO: Move group and social data to Supabase.
     private var groupSession = MockData.groupSession
+    private var activeGroupSessionId: String? = null
     private var cachedFirstName: String = "there"
     private var spotCache: Map<String, StudySpotSummary> = emptyMap()
 
@@ -175,11 +209,13 @@ class SupabaseHomeRepository(
         val firstNameDeferred = async { currentFirstName() }
         val activeCountsDeferred = async { activeCheckInCounts() }
         val trendingDeferred = async { trendingCheckInCounts() }
-        // Empty DB fallback for first-run setup.
         val dbSpotsDeferred = async {
             runCatching {
                 client.from("spots").select().decodeList<SpotDto>()
             }.getOrDefault(emptyList())
+        }
+        val groupSessionDeferred = async {
+            runCatching { loadOrCreateGroupSession() }.getOrDefault(MockData.groupSession)
         }
 
         cachedFirstName = firstNameDeferred.await()
@@ -189,7 +225,6 @@ class SupabaseHomeRepository(
         val childCounts = dbSpots.childCountsByParentSlug()
         val parentSpots = dbSpots.filter { it.parentSlug == null }
 
-        // Mock fallback for local setup.
         val summaries = if (parentSpots.isNotEmpty()) {
             parentSpots.map { spot ->
                 spot.toSummary(
@@ -215,6 +250,8 @@ class SupabaseHomeRepository(
         } else {
             MockData.groupSpots.map { it.toSummary() }
         }
+
+        groupSession = groupSessionDeferred.await()
 
         HomeSnapshot(
             userFirstName = cachedFirstName,
@@ -313,14 +350,114 @@ class SupabaseHomeRepository(
     override suspend fun sendBuddyRequest(studentId: String) = Unit
 
     override suspend fun inviteToGroup(groupSessionId: String, inviteText: String): GroupMember {
-        val initials = initialsOf(inviteText)
-        return GroupMember(
+        val sessionId = activeGroupSessionId ?: return fallbackInvite(inviteText)
+
+        // If inviteText looks like an email, try to find the matching profile.
+        val profile = if (inviteText.contains("@")) {
+            runCatching {
+                client.from("profiles")
+                    .select { filter { eq("email", inviteText.trim()) } }
+                    .decodeSingleOrNull<UserProfileDto>()
+            }.getOrNull()
+        } else null
+
+        return if (profile != null) {
+            runCatching {
+                client.from("group_session_members").insert(
+                    GroupSessionMemberInsert(sessionId = sessionId, userId = profile.userId)
+                )
+            }
+            val initials = buildString {
+                append(profile.firstName.firstOrNull()?.uppercaseChar() ?: '?')
+                append(profile.lastName.firstOrNull()?.uppercaseChar() ?: '?')
+            }
+            val displayName = "${profile.firstName} ${profile.lastName.first()}."
+            GroupMember(id = profile.userId, name = displayName, initials = initials)
+                .also { member ->
+                    groupSession = groupSession.copy(members = groupSession.members + member)
+                }
+        } else {
+            fallbackInvite(inviteText)
+        }
+    }
+
+    private fun fallbackInvite(inviteText: String): GroupMember =
+        GroupMember(
             id = "invite-${inviteText.lowercase().replace(" ", "-")}-${groupSession.members.size}",
             name = inviteText,
-            initials = initials
+            initials = initialsOf(inviteText)
         ).also { member ->
             groupSession = groupSession.copy(members = groupSession.members + member)
         }
+
+    private suspend fun loadOrCreateGroupSession(): GroupStudySession = coroutineScope {
+        val userId = client.auth.currentUserOrNull()?.id
+            ?: return@coroutineScope MockData.groupSession
+
+        // RLS ensures we only see sessions we're a member of; grab the newest active one.
+        val existingSession = runCatching {
+            client.from("group_sessions")
+                .select { order("created_at", Order.DESCENDING) }
+                .decodeList<GroupSessionDto>()
+                .firstOrNull { it.endedAt == null }
+        }.getOrNull()
+
+        val session = existingSession ?: run {
+            val created = client.from("group_sessions").insert(
+                GroupSessionInsert(
+                    title = "Study sesh",
+                    subtitle = "Let's find a spot!",
+                    createdBy = userId
+                )
+            ) { select() }.decodeSingle<GroupSessionDto>()
+            client.from("group_session_members").insert(
+                GroupSessionMemberInsert(
+                    sessionId = created.id,
+                    userId = userId,
+                    role = "owner"
+                )
+            )
+            created
+        }
+        activeGroupSessionId = session.id
+
+        val memberUserIds = runCatching {
+            client.from("group_session_members")
+                .select { filter { eq("session_id", session.id) } }
+                .decodeList<GroupSessionMemberRow>()
+                .map { it.userId }
+        }.getOrDefault(emptyList())
+
+        val profileDeferreds = memberUserIds.map { memberId ->
+            async {
+                runCatching {
+                    client.from("profiles")
+                        .select { filter { eq("id", memberId) } }
+                        .decodeSingleOrNull<UserProfileDto>()
+                }.getOrNull()
+            }
+        }
+        val profiles = profileDeferreds.map { it.await() }.filterNotNull()
+
+        val members = profiles.map { profile ->
+            val isSelf = profile.userId == userId
+            val initials = buildString {
+                append(profile.firstName.firstOrNull()?.uppercaseChar() ?: '?')
+                append(profile.lastName.firstOrNull()?.uppercaseChar() ?: '?')
+            }
+            val displayName = if (isSelf) "You" else "${profile.firstName} ${profile.lastName.first()}."
+            GroupMember(id = profile.userId, name = displayName, initials = initials)
+        }.ifEmpty {
+            listOf(GroupMember("you", cachedFirstName, initialsOf(cachedFirstName)))
+        }
+
+        GroupStudySession(
+            id = session.id,
+            title = session.title,
+            subtitle = session.subtitle ?: "Study session",
+            proximityLabel = "all within 10 min",
+            members = members
+        )
     }
 
     private suspend fun currentFirstName(): String {
@@ -374,7 +511,8 @@ class SupabaseHomeRepository(
         parentSlug = parentSlug,
         childCount = childCount,
         latitude = latitude,
-        longitude = longitude
+        longitude = longitude,
+        occupancyPercent = liveOccupancyPercent(activeCount, capacity),
     )
 
     private fun SpotDto.toDetail(
@@ -408,7 +546,8 @@ class SupabaseHomeRepository(
             peopleHere = activeCount,
             amenities = amenities,
             latitude = latitude,
-            longitude = longitude
+            longitude = longitude,
+            bookingUrl = bookingUrl,
         )
     }
 

@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,8 +26,13 @@ import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -37,6 +43,13 @@ import androidx.compose.ui.unit.sp
 import com.appetizers.spotra.data.mock.MockData
 import com.appetizers.spotra.data.mock.MockSpot
 
+private enum class LeaderboardCategory(val label: String, val subtitle: String) {
+    Trending("Trending", "Top spots this week"),
+    Quietest("Quietest", "Lowest noise levels"),
+    BestLighting("Best Lighting", "Best-lit study spots"),
+    TopRated("Top Rated", "Highest rated by students"),
+}
+
 @Composable
 internal fun ExploreTabContent(
     accent: Color,
@@ -45,10 +58,24 @@ internal fun ExploreTabContent(
     onSuggestSpot: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    // Rank by real check-in activity (last 7 days). Before the trending view is
-    // populated the map is empty → counts default to 0 and the seeded order shows.
-    val trendingSpots = remember(trendingCounts) {
-        MockData.spots.sortedByDescending { trendingCounts[it.id] ?: 0 }
+    var selectedCategory by remember { mutableStateOf(LeaderboardCategory.Trending) }
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(selectedCategory) {
+        listState.scrollToItem(0)
+    }
+
+    val rankedSpots = remember(trendingCounts, selectedCategory) {
+        when (selectedCategory) {
+            LeaderboardCategory.Trending ->
+                MockData.spots.sortedByDescending { trendingCounts[it.id] ?: 0 }
+            LeaderboardCategory.Quietest ->
+                MockData.spots.sortedBy { noiseSortKey(it.noiseLevel) }
+            LeaderboardCategory.BestLighting ->
+                MockData.spots.sortedBy { lightingSortKey(it.lighting) }
+            LeaderboardCategory.TopRated ->
+                MockData.spots.sortedByDescending { it.rating }
+        }
     }
 
     Column(
@@ -57,19 +84,26 @@ internal fun ExploreTabContent(
             .background(HomeBackground)
             .statusBarsPadding()
     ) {
-        ExploreHeader(accent = accent, onSuggestSpot = onSuggestSpot)
+        ExploreHeader(
+            accent = accent,
+            selectedCategory = selectedCategory,
+            onCategorySelected = { selectedCategory = it },
+            onSuggestSpot = onSuggestSpot
+        )
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 20.dp, top = 8.dp, end = 20.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             itemsIndexed(
-                items = trendingSpots,
+                items = rankedSpots,
                 key = { _, spot -> spot.id }
             ) { index, spot ->
-                TrendingSpotCard(
+                LeaderboardSpotCard(
                     spot = spot,
                     rank = index + 1,
+                    category = selectedCategory,
                     checkIns = trendingCounts[spot.id] ?: 0,
                     accent = accent,
                     onClick = { onSpotSelected(spot.id) }
@@ -80,12 +114,17 @@ internal fun ExploreTabContent(
 }
 
 @Composable
-private fun ExploreHeader(accent: Color, onSuggestSpot: () -> Unit) {
+private fun ExploreHeader(
+    accent: Color,
+    selectedCategory: LeaderboardCategory,
+    onCategorySelected: (LeaderboardCategory) -> Unit,
+    onSuggestSpot: () -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(Color.White)
-            .padding(start = 22.dp, top = 18.dp, end = 22.dp, bottom = 18.dp)
+            .padding(start = 22.dp, top = 18.dp, end = 22.dp, bottom = 14.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(text = "sp", color = Ink, fontSize = 31.sp, fontWeight = FontWeight.ExtraBold)
@@ -94,31 +133,48 @@ private fun ExploreHeader(accent: Color, onSuggestSpot: () -> Unit) {
         }
         Spacer(Modifier.height(4.dp))
         Text(
-            text = "Top spots this week",
+            text = selectedCategory.subtitle,
             color = HeaderMuted,
             fontSize = 18.sp,
             fontWeight = FontWeight.Medium
         )
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(14.dp))
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            LeaderboardCategory.entries.forEach { category ->
+                item(key = category.name) {
+                    CategoryChip(
+                        label = category.label,
+                        selected = category == selectedCategory,
+                        accent = accent,
+                        onClick = { onCategorySelected(category) }
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(10.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier
-                    .background(SwitcherTrack, RoundedCornerShape(22.dp))
-                    .padding(horizontal = 14.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(modifier = Modifier.size(8.dp).background(GroupGreen, CircleShape))
-                Spacer(Modifier.width(7.dp))
-                Text(
-                    text = "Trending now · Updated live",
-                    color = BodyText,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
+            if (selectedCategory == LeaderboardCategory.Trending) {
+                Row(
+                    modifier = Modifier
+                        .background(SwitcherTrack, RoundedCornerShape(22.dp))
+                        .padding(horizontal = 14.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(modifier = Modifier.size(8.dp).background(GroupGreen, CircleShape))
+                    Spacer(Modifier.width(7.dp))
+                    Text(
+                        text = "Updated live",
+                        color = BodyText,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            } else {
+                Spacer(Modifier.width(0.dp))
             }
             Row(
                 modifier = Modifier
@@ -139,9 +195,36 @@ private fun ExploreHeader(accent: Color, onSuggestSpot: () -> Unit) {
 }
 
 @Composable
-private fun TrendingSpotCard(
+private fun CategoryChip(
+    label: String,
+    selected: Boolean,
+    accent: Color,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .background(
+                if (selected) accent else SwitcherTrack,
+                RoundedCornerShape(22.dp)
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 7.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label,
+            color = if (selected) Color.White else BodyText,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.ExtraBold
+        )
+    }
+}
+
+@Composable
+private fun LeaderboardSpotCard(
     spot: MockSpot,
     rank: Int,
+    category: LeaderboardCategory,
     checkIns: Int,
     accent: Color,
     onClick: () -> Unit
@@ -184,19 +267,72 @@ private fun TrendingSpotCard(
                 )
             }
             Spacer(Modifier.width(8.dp))
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = "$checkIns",
-                    color = accent,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
-                Text(
-                    text = "check-ins",
-                    color = HeaderMuted,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium
-                )
+            when (category) {
+                LeaderboardCategory.Trending -> {
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = "$checkIns",
+                            color = accent,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        Text(
+                            text = "check-ins",
+                            color = HeaderMuted,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+                LeaderboardCategory.Quietest -> {
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = spot.noiseLevel,
+                            color = accent,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        Text(
+                            text = "noise",
+                            color = HeaderMuted,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+                LeaderboardCategory.BestLighting -> {
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = spot.lighting,
+                            color = accent,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        Text(
+                            text = "lighting",
+                            color = HeaderMuted,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+                LeaderboardCategory.TopRated -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Rounded.Star,
+                            contentDescription = null,
+                            tint = StarGold,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = String.format("%.1f", spot.rating),
+                            color = accent,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                }
             }
             Spacer(Modifier.width(6.dp))
             Icon(
@@ -303,4 +439,20 @@ private fun FullnessPill(percent: Int) {
         fontWeight = FontWeight.ExtraBold,
         maxLines = 1
     )
+}
+
+private fun noiseSortKey(noiseLevel: String): Int = when (noiseLevel.lowercase()) {
+    "silent" -> 0
+    "low" -> 1
+    "moderate" -> 2
+    "lively" -> 3
+    else -> 4
+}
+
+private fun lightingSortKey(lighting: String): Int = when (lighting.lowercase()) {
+    "bright" -> 0
+    "natural" -> 1
+    "good" -> 2
+    "poor" -> 3
+    else -> 4
 }

@@ -1,6 +1,7 @@
 package com.appetizers.spotra.presentation.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -109,6 +110,20 @@ private val mockRecentSessions = listOf(
     RecentSession("DP Library", "Last week", "1h 10min")
 )
 
+enum class LocationVisibility {
+    Visible, Approximate, Hidden;
+    val label get() = when (this) {
+        Visible -> "Visible to friends"
+        Approximate -> "Approximate only"
+        Hidden -> "Hidden"
+    }
+    val description get() = when (this) {
+        Visible -> "Friends can see which spot you're at"
+        Approximate -> "Friends see your general area only"
+        Hidden -> "Your activity is private"
+    }
+}
+
 class ProfileViewModel(
     private val profileRepository: ProfileRepository,
     private val authRepository: AuthRepository,
@@ -121,6 +136,7 @@ class ProfileViewModel(
         val profile: UserProfile? = null,
         val friends: List<FriendProfile> = emptyList(),
         val badges: List<UserBadge> = emptyList(),
+        val locationVisibility: LocationVisibility = LocationVisibility.Hidden,
     )
 
     private val _state = MutableStateFlow(State())
@@ -150,6 +166,10 @@ class ProfileViewModel(
             val badges = runCatching { badgeRepository.getBadges(userId) }.getOrDefault(emptyList())
             _state.value = _state.value.copy(badges = badges)
         }
+    }
+
+    fun setLocationVisibility(visibility: LocationVisibility) {
+        _state.value = _state.value.copy(locationVisibility = visibility)
     }
 
     fun signOut(onDone: () -> Unit) {
@@ -203,7 +223,7 @@ internal fun ProfileTabContent(
             modifier = Modifier.fillMaxWidth().weight(1f),
             contentPadding = PaddingValues(bottom = 24.dp)
         ) {
-            item { ProfileStats() }
+            item { ProfileStats(sessions = recentSessions) }
             item { BadgesSection(badges = state.badges) }
             if (state.friends.isNotEmpty() || friendRepository != null) {
                 item { FriendsSection(friends = state.friends) }
@@ -221,7 +241,7 @@ internal fun ProfileTabContent(
             sheetState = sheetState,
             containerColor = Color.White
         ) {
-            Column(modifier = Modifier.padding(bottom = 32.dp)) {
+            Column(modifier = Modifier.padding(bottom = 40.dp)) {
                 Text(
                     text = "Settings",
                     modifier = Modifier.padding(start = 24.dp, top = 4.dp, bottom = 16.dp),
@@ -229,6 +249,23 @@ internal fun ProfileTabContent(
                     fontSize = 20.sp,
                     fontWeight = FontWeight.ExtraBold
                 )
+                HorizontalDivider(color = DividerLine)
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = "LOCATION VISIBILITY",
+                    modifier = Modifier.padding(start = 24.dp, bottom = 10.dp),
+                    color = SectionLabel,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                LocationVisibility.entries.forEach { option ->
+                    PrivacyOptionRow(
+                        option = option,
+                        selected = state.locationVisibility == option,
+                        onClick = { vm.setLocationVisibility(option) }
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
                 HorizontalDivider(color = DividerLine)
                 SettingsRow(
                     icon = Icons.Rounded.ExitToApp,
@@ -279,7 +316,7 @@ private fun ProfileHeader(profile: UserProfile?, onSettingsClick: () -> Unit) {
 
         Spacer(Modifier.height(24.dp))
 
-        val firstName = profile?.firstName ?: "—"
+        val firstName = profile?.firstName ?: ""
         val lastName = profile?.lastName ?: ""
         val initials = buildString {
             if (firstName.isNotEmpty()) append(firstName.first().uppercaseChar())
@@ -348,16 +385,26 @@ private fun ProfileTag(label: String) {
 }
 
 @Composable
-private fun ProfileStats() {
+private fun ProfileStats(sessions: List<CompletedSession>) {
+    val totalMinutes = sessions.sumOf { it.durationSeconds } / 60
+    val totalDisplay = when {
+        totalMinutes >= 60 -> "${totalMinutes / 60}h ${totalMinutes % 60}m"
+        totalMinutes > 0 -> "${totalMinutes}m"
+        else -> "0m"
+    }
+    val uniqueSpots = sessions.map { it.spotName }.distinct().size
+    val weekAgo = System.currentTimeMillis() - 7L * 24 * 60 * 60 * 1000
+    val thisWeek = sessions.count { it.finishedAtMillis >= weekAgo }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp, vertical = 20.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        StatCard(value = "24h", label = "STUDIED", modifier = Modifier.weight(1f))
-        StatCard(value = "8", label = "SPOTS", modifier = Modifier.weight(1f))
-        StatCard(value = "3", label = "THIS WEEK", modifier = Modifier.weight(1f))
+        StatCard(value = totalDisplay, label = "STUDIED", modifier = Modifier.weight(1f))
+        StatCard(value = "$uniqueSpots", label = "SPOTS", modifier = Modifier.weight(1f))
+        StatCard(value = "$thisWeek", label = "THIS WEEK", modifier = Modifier.weight(1f))
     }
 }
 
@@ -468,6 +515,49 @@ private fun SettingsRow(icon: ImageVector, label: String, tint: Color, onClick: 
 }
 
 @Composable
+private fun PrivacyOptionRow(
+    option: LocationVisibility,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(22.dp)
+                .background(
+                    if (selected) SoloBlue else Color.Transparent,
+                    androidx.compose.foundation.shape.CircleShape
+                )
+                .border(
+                    2.dp,
+                    if (selected) SoloBlue else DividerLine,
+                    androidx.compose.foundation.shape.CircleShape
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            if (selected) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .background(Color.White, androidx.compose.foundation.shape.CircleShape)
+                )
+            }
+        }
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(text = option.label, color = Ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            Text(text = option.description, color = HeaderMuted, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        }
+    }
+}
+
+@Composable
 private fun BadgesSection(badges: List<UserBadge>) {
     Column(
         modifier = Modifier
@@ -535,7 +625,7 @@ private fun FriendsSection(friends: List<FriendProfile>) {
         Spacer(Modifier.height(12.dp))
         if (friends.isEmpty()) {
             Text(
-                text = "No friends yet — find people on the Social tab.",
+                text = "No friends yet. Find people on the Social tab.",
                 color = HeaderMuted,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium

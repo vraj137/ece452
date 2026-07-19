@@ -48,6 +48,7 @@ data class HomeUiState(
     val showReviewPrompt: Boolean = false,
     val pendingReviewSpotId: String? = null,
     val pendingReviewSpotName: String? = null,
+    val noiseFilter: String? = null,
 )
 
 enum class HomeSection {
@@ -268,6 +269,10 @@ class HomeViewModel(
                     showError(error.message ?: "Could not send buddy request.")
                 }
         }
+    }
+
+    fun setNoiseFilter(filter: String?) {
+        _uiState.update { it.copy(noiseFilter = filter, error = null) }
     }
 
     fun updateInviteText(value: String) {

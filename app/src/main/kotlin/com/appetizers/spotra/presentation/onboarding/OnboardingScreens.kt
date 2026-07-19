@@ -197,7 +197,7 @@ fun OtpScreen(state: OnboardingUiState, onBack: () -> Unit, viewModel: Onboardin
 @OptIn(ExperimentalLayoutApi::class)
 fun ProgramScreen(state: OnboardingUiState, onBack: () -> Unit, viewModel: OnboardingViewModel) {
     FormScreen(onBack) {
-        StepHeader(4, "Major & year", "Optional — helps you find and connect with classmates.")
+        StepHeader(4, "Major & year", "Optional · helps you find and connect with classmates.")
         Spacer(Modifier.height(22.dp))
         SpotraTextField(
             state.draft.program,
