@@ -40,7 +40,12 @@ import com.appetizers.spotra.presentation.onboarding.WelcomeScreen
 fun SpotraApp(container: AppContainer) {
     val navController = rememberNavController()
     val appViewModel: AppViewModel = viewModel(
-        factory = AppViewModel.Factory(container.getStartRoute)
+        factory = AppViewModel.Factory(
+            container.getStartRoute,
+            container.authRepository,
+            container.streakRepository,
+            container.awardBadgesUseCase,
+        )
     )
     val onboardingViewModel: OnboardingViewModel = viewModel(
         factory = OnboardingViewModel.Factory(
@@ -50,6 +55,7 @@ fun SpotraApp(container: AppContainer) {
         )
     )
     val startRoute by appViewModel.startRoute.collectAsStateWithLifecycle()
+    val loginStreak by appViewModel.loginStreak.collectAsStateWithLifecycle()
     val state by onboardingViewModel.uiState.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -119,6 +125,10 @@ fun SpotraApp(container: AppContainer) {
                 spotSubmissionRepository = container.spotSubmissionRepository,
                 reviewRepository = container.reviewRepository,
                 friendRepository = container.friendRepository,
+                badgeRepository = container.badgeRepository,
+                streakRepository = container.streakRepository,
+                awardBadgesUseCase = container.awardBadgesUseCase,
+                loginStreak = loginStreak,
                 onSignOut = {
                     navController.navigate(Routes.Welcome) {
                         popUpTo(navController.graph.findStartDestination().id) { inclusive = true }

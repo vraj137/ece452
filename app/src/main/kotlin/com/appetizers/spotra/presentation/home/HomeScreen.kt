@@ -97,9 +97,12 @@ import com.appetizers.spotra.domain.model.StudyMode
 import com.appetizers.spotra.domain.model.StudySpotDetail
 import com.appetizers.spotra.domain.model.StudySpotSummary
 import com.appetizers.spotra.domain.repository.AuthRepository
+import com.appetizers.spotra.domain.repository.BadgeRepository
 import com.appetizers.spotra.domain.repository.FriendRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.ProfileRepository
+import com.appetizers.spotra.domain.repository.StreakRepository
+import com.appetizers.spotra.domain.usecase.AwardBadgesUseCase
 import com.mapbox.geojson.Point
 import com.mapbox.maps.Style
 import com.mapbox.maps.ViewAnnotationAnchor
@@ -112,8 +115,18 @@ import com.mapbox.maps.plugin.animation.MapAnimationOptions
 import com.mapbox.maps.viewannotation.annotationAnchor
 import com.mapbox.maps.viewannotation.geometry
 import com.mapbox.maps.viewannotation.viewAnnotationOptions
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.rememberModalBottomSheetState
+import com.appetizers.spotra.domain.model.BadgeId
 import kotlinx.coroutines.delay
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     homeRepository: HomeRepository,
@@ -122,10 +135,21 @@ fun HomeScreen(
     spotSubmissionRepository: com.appetizers.spotra.domain.repository.SpotSubmissionRepository,
     reviewRepository: com.appetizers.spotra.domain.repository.ReviewRepository,
     friendRepository: FriendRepository,
+    badgeRepository: BadgeRepository,
+    streakRepository: StreakRepository,
+    awardBadgesUseCase: AwardBadgesUseCase,
+    loginStreak: Int = 0,
     onSignOut: () -> Unit = {}
 ) {
     val viewModel: HomeViewModel = viewModel(
-        factory = HomeViewModel.Factory(homeRepository)
+        factory = HomeViewModel.Factory(
+            homeRepository,
+            authRepository,
+            streakRepository,
+            badgeRepository,
+            reviewRepository,
+            awardBadgesUseCase,
+        )
     )
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val accent = if (state.selectedMode == StudyMode.Solo) SoloBlue else GroupGreen
@@ -133,6 +157,25 @@ fun HomeScreen(
     var viewingSpotId by remember { mutableStateOf<String?>(null) }
     var reviewingSpotId by remember { mutableStateOf<String?>(null) }
     var showSubmitSpot by remember { mutableStateOf(false) }
+
+    val snackbarHostState = remember { SnackbarHostState() }
+    val reviewSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    LaunchedEffect(state.newBadge) {
+        state.newBadge?.let { badge ->
+            snackbarHostState.showSnackbar("Badge earned: ${badge.label}!")
+            viewModel.clearNewBadge()
+        }
+    }
+
+    if (state.showReviewPrompt && state.pendingReviewSpotId != null) {
+        PostCheckoutReviewSheet(
+            spotName = state.pendingReviewSpotName ?: "this spot",
+            sheetState = reviewSheetState,
+            onSubmit = { rating, comment -> viewModel.submitPostCheckoutReview(rating, comment) },
+            onDismiss = viewModel::dismissReviewPrompt,
+        )
+    }
 
     if (state.isLoading || state.soloSpot == null || state.groupSession == null) {
         HomeLoadingScreen()
@@ -190,9 +233,7 @@ fun HomeScreen(
             onReview = { reviewingSpotId = spotId },
             activeCheckInSpotId = activeCheckIn?.spot?.id,
             onEndSession = {
-                viewModel.checkOut { session ->
-                    reviewingSpotId = session.spot.id
-                }
+                viewModel.checkOut()
                 viewingSpotId = null
             }
         )
@@ -207,11 +248,7 @@ fun HomeScreen(
             requestedBuddyIds = state.requestedBuddyIds,
             onBuddyRequest = viewModel::sendBuddyRequest,
             onBack = viewModel::minimizeSession,
-            onCheckout = {
-                viewModel.checkOut { session ->
-                    reviewingSpotId = session.spot.id
-                }
-            },
+            onCheckout = { viewModel.checkOut() },
             selectedSection = state.selectedSection,
             onSectionSelected = { section ->
                 viewModel.minimizeSession()
@@ -269,6 +306,7 @@ fun HomeScreen(
             selectedSection = state.selectedSection,
             onSectionSelected = viewModel::selectSection,
             friendRepository = friendRepository,
+            loginStreak = loginStreak,
             activeSessionBar = if (activeCheckIn != null) {
                 {
                     ActiveSessionBar(
@@ -288,6 +326,7 @@ fun HomeScreen(
                 profileRepository = profileRepository,
                 authRepository = authRepository,
                 friendRepository = friendRepository,
+                badgeRepository = badgeRepository,
                 onSignOut = onSignOut,
                 recentSessions = state.completedSessions,
                 modifier = Modifier.weight(1f)
@@ -308,33 +347,39 @@ fun HomeScreen(
         return
     }
 
-    Column(Modifier.fillMaxSize()) {
-        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-            MapTabContent(
-                userFirstName = state.userFirstName,
-                selectedMode = state.selectedMode,
-                mapSpots = state.mapSpots,
-                selectedSpotId = state.selectedSpotId,
-                soloSpot = soloSpot,
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                MapTabContent(
+                    userFirstName = state.userFirstName,
+                    selectedMode = state.selectedMode,
+                    mapSpots = state.mapSpots,
+                    selectedSpotId = state.selectedSpotId,
+                    soloSpot = soloSpot,
+                    accent = accent,
+                    isRefreshing = state.isRefreshing,
+                    onModeSelected = viewModel::selectMode,
+                    onMapSpotSelected = viewModel::selectMapSpot,
+                    onSpotSelected = { viewingSpotId = it },
+                    onRefresh = viewModel::refresh
+                )
+            }
+            if (activeCheckIn != null) {
+                ActiveSessionBar(
+                    spotName = activeCheckIn.spot.name,
+                    sessionStartTimeMillis = state.sessionStartTimeMillis,
+                    onClick = viewModel::expandSession
+                )
+            }
+            BottomNavigationShell(
                 accent = accent,
-                isRefreshing = state.isRefreshing,
-                onModeSelected = viewModel::selectMode,
-                onMapSpotSelected = viewModel::selectMapSpot,
-                onSpotSelected = { viewingSpotId = it },
-                onRefresh = viewModel::refresh
+                selectedSection = state.selectedSection,
+                onSectionSelected = viewModel::selectSection
             )
         }
-        if (activeCheckIn != null) {
-            ActiveSessionBar(
-                spotName = activeCheckIn.spot.name,
-                sessionStartTimeMillis = state.sessionStartTimeMillis,
-                onClick = viewModel::expandSession
-            )
-        }
-        BottomNavigationShell(
-            accent = accent,
-            selectedSection = state.selectedSection,
-            onSectionSelected = viewModel::selectSection
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding()
         )
     }
 }
@@ -975,6 +1020,7 @@ private fun SocialScreen(
     selectedSection: HomeSection,
     onSectionSelected: (HomeSection) -> Unit,
     friendRepository: FriendRepository,
+    loginStreak: Int = 0,
     activeSessionBar: (@Composable () -> Unit)? = null
 ) {
     val vm: SocialViewModel = viewModel(factory = SocialViewModel.Factory(friendRepository))
@@ -1035,7 +1081,7 @@ private fun SocialScreen(
                                 )
                             }
                         }
-                        item { StudyStreakCard() }
+                        item { StudyStreakCard(streakCount = loginStreak) }
                     }
                     SocialTab.Requests -> {
                         val badge = state.incomingRequests.size
@@ -1355,7 +1401,7 @@ private fun SocialPersonRow(
 }
 
 @Composable
-private fun StudyStreakCard() {
+private fun StudyStreakCard(streakCount: Int) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1379,17 +1425,95 @@ private fun StudyStreakCard() {
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                text = "4 day study streak",
+                text = if (streakCount > 0) "$streakCount day login streak" else "No streak yet",
                 color = Ink,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.ExtraBold
             )
             Text(
-                text = "Check in tomorrow to keep it alive.",
+                text = if (streakCount > 0) "Open the app tomorrow to keep it going." else "Come back tomorrow to start your streak!",
                 color = HeaderMuted,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PostCheckoutReviewSheet(
+    spotName: String,
+    sheetState: androidx.compose.material3.SheetState,
+    onSubmit: (rating: Int, comment: String?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var rating by remember { mutableStateOf(0) }
+    var comment by remember { mutableStateOf("") }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = Color.White,
+    ) {
+        Column(
+            modifier = androidx.compose.ui.Modifier
+                .fillMaxWidth()
+                .padding(start = 24.dp, end = 24.dp, bottom = 40.dp)
+        ) {
+            Text(
+                text = "How was your session?",
+                color = Ink,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+            Spacer(androidx.compose.ui.Modifier.height(4.dp))
+            Text(text = spotName, color = HeaderMuted, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            Spacer(androidx.compose.ui.Modifier.height(20.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                (1..5).forEach { star ->
+                    Icon(
+                        imageVector = Icons.Rounded.Star,
+                        contentDescription = "Rate $star stars",
+                        tint = if (star <= rating) StarGold else Color(0xFFE0DDDA),
+                        modifier = androidx.compose.ui.Modifier
+                            .size(40.dp)
+                            .clickable { rating = star }
+                    )
+                }
+            }
+            Spacer(androidx.compose.ui.Modifier.height(16.dp))
+            BasicTextField(
+                value = comment,
+                onValueChange = { comment = it },
+                modifier = androidx.compose.ui.Modifier
+                    .fillMaxWidth()
+                    .background(HomeBackground, RoundedCornerShape(12.dp))
+                    .padding(14.dp),
+                textStyle = TextStyle(color = Ink, fontSize = 15.sp),
+                decorationBox = { inner ->
+                    if (comment.isEmpty()) {
+                        Text("Any tips for other students? (optional)", color = HeaderMuted, fontSize = 15.sp)
+                    }
+                    inner()
+                }
+            )
+            Spacer(androidx.compose.ui.Modifier.height(20.dp))
+            Row(
+                modifier = androidx.compose.ui.Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = androidx.compose.ui.Modifier.weight(1f)
+                ) { Text("Skip") }
+                Button(
+                    onClick = { if (rating > 0) onSubmit(rating, comment.ifBlank { null }) },
+                    enabled = rating > 0,
+                    modifier = androidx.compose.ui.Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = SoloBlue)
+                ) { Text("Submit") }
+            }
         }
     }
 }

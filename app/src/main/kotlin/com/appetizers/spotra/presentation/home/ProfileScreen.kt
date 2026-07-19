@@ -21,9 +21,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.ExitToApp
 import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -31,6 +33,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,10 +52,13 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.appetizers.spotra.domain.model.BadgeId
 import com.appetizers.spotra.domain.model.CompletedSession
 import com.appetizers.spotra.domain.model.FriendProfile
+import com.appetizers.spotra.domain.model.UserBadge
 import com.appetizers.spotra.domain.model.UserProfile
 import com.appetizers.spotra.domain.repository.AuthRepository
+import com.appetizers.spotra.domain.repository.BadgeRepository
 import com.appetizers.spotra.domain.repository.FriendRepository
 import com.appetizers.spotra.domain.repository.ProfileRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -106,13 +112,15 @@ private val mockRecentSessions = listOf(
 class ProfileViewModel(
     private val profileRepository: ProfileRepository,
     private val authRepository: AuthRepository,
-    private val friendRepository: FriendRepository?
+    private val friendRepository: FriendRepository?,
+    private val badgeRepository: BadgeRepository,
 ) : ViewModel() {
 
     data class State(
         val isLoading: Boolean = true,
         val profile: UserProfile? = null,
-        val friends: List<FriendProfile> = emptyList()
+        val friends: List<FriendProfile> = emptyList(),
+        val badges: List<UserBadge> = emptyList(),
     )
 
     private val _state = MutableStateFlow(State())
@@ -129,7 +137,18 @@ class ProfileViewModel(
                     .getOrDefault(emptyList())
                     .filter { it.isAccepted }
             } else emptyList()
-            _state.value = State(isLoading = false, profile = profile, friends = friends)
+            val badges = user?.let {
+                runCatching { badgeRepository.getBadges(it.id) }.getOrDefault(emptyList())
+            } ?: emptyList()
+            _state.value = State(isLoading = false, profile = profile, friends = friends, badges = badges)
+        }
+    }
+
+    fun refreshBadges() {
+        viewModelScope.launch {
+            val userId = authRepository.currentUser()?.id ?: return@launch
+            val badges = runCatching { badgeRepository.getBadges(userId) }.getOrDefault(emptyList())
+            _state.value = _state.value.copy(badges = badges)
         }
     }
 
@@ -143,11 +162,12 @@ class ProfileViewModel(
     class Factory(
         private val profileRepository: ProfileRepository,
         private val authRepository: AuthRepository,
-        private val friendRepository: FriendRepository?
+        private val friendRepository: FriendRepository?,
+        private val badgeRepository: BadgeRepository,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            ProfileViewModel(profileRepository, authRepository, friendRepository) as T
+            ProfileViewModel(profileRepository, authRepository, friendRepository, badgeRepository) as T
     }
 }
 
@@ -157,14 +177,16 @@ internal fun ProfileTabContent(
     profileRepository: ProfileRepository,
     authRepository: AuthRepository,
     friendRepository: FriendRepository? = null,
+    badgeRepository: BadgeRepository,
     onSignOut: () -> Unit,
     recentSessions: List<CompletedSession> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     val vm: ProfileViewModel = viewModel(
-        factory = ProfileViewModel.Factory(profileRepository, authRepository, friendRepository)
+        factory = ProfileViewModel.Factory(profileRepository, authRepository, friendRepository, badgeRepository)
     )
     val state by vm.state.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { vm.refreshBadges() }
     var showSettings by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState()
     val scope = rememberCoroutineScope()
@@ -182,6 +204,7 @@ internal fun ProfileTabContent(
             contentPadding = PaddingValues(bottom = 24.dp)
         ) {
             item { ProfileStats() }
+            item { BadgesSection(badges = state.badges) }
             if (state.friends.isNotEmpty() || friendRepository != null) {
                 item { FriendsSection(friends = state.friends) }
             }
@@ -441,6 +464,58 @@ private fun SettingsRow(icon: ImageVector, label: String, tint: Color, onClick: 
         Icon(imageVector = icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
         Spacer(Modifier.width(16.dp))
         Text(text = label, color = tint, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun BadgesSection(badges: List<UserBadge>) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 16.dp)
+    ) {
+        Text(
+            text = "BADGES",
+            color = SectionLabel,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.ExtraBold
+        )
+        Spacer(Modifier.height(12.dp))
+        if (badges.isEmpty()) {
+            Text(
+                text = "Complete study sessions and write reviews to earn badges.",
+                color = HeaderMuted,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium
+            )
+        } else {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(badges) { badge -> BadgePill(badge) }
+            }
+        }
+    }
+    Box(Modifier.fillMaxWidth().height(1.dp).padding(start = 20.dp).background(DividerLine))
+}
+
+@Composable
+private fun BadgePill(badge: UserBadge) {
+    val (icon, tint) = when (badge.id) {
+        BadgeId.LOGIN_STREAK_2, BadgeId.LOGIN_STREAK_5, BadgeId.LOGIN_STREAK_14 ->
+            Icons.Rounded.Bolt to StarGold
+        BadgeId.FIRST_CHECKOUT, BadgeId.SESSION_VETERAN ->
+            Icons.Rounded.School to SoloBlue
+        BadgeId.FIRST_REVIEW, BadgeId.QUALITY_REVIEWER, BadgeId.PROLIFIC_REVIEWER ->
+            Icons.Rounded.Star to Color(0xFF4CAF50)
+    }
+    Row(
+        modifier = Modifier
+            .background(tint.copy(alpha = 0.12f), RoundedCornerShape(50.dp))
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(16.dp))
+        Text(badge.id.label, color = tint, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
     }
 }
 

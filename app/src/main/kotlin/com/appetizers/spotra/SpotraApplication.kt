@@ -3,26 +3,33 @@ package com.appetizers.spotra
 import android.app.Application
 import com.appetizers.spotra.data.local.DataStoreOnboardingDraftRepository
 import com.appetizers.spotra.data.remote.DebugAuthRepository
+import com.appetizers.spotra.data.remote.DebugBadgeRepository
 import com.appetizers.spotra.data.remote.DebugFriendRepository
 import com.appetizers.spotra.data.remote.DebugHomeRepository
 import com.appetizers.spotra.data.remote.DebugProfileRepository
 import com.appetizers.spotra.data.remote.DebugReviewRepository
 import com.appetizers.spotra.data.remote.DebugSpotSubmissionRepository
+import com.appetizers.spotra.data.remote.DebugStreakRepository
 import com.appetizers.spotra.data.remote.MissingConfigurationAuthRepository
 import com.appetizers.spotra.data.remote.MissingConfigurationProfileRepository
 import com.appetizers.spotra.data.remote.SupabaseAuthRepository
+import com.appetizers.spotra.data.remote.SupabaseBadgeRepository
 import com.appetizers.spotra.data.remote.SupabaseFriendRepository
 import com.appetizers.spotra.data.remote.SupabaseHomeRepository
 import com.appetizers.spotra.data.remote.SupabaseProfileRepository
 import com.appetizers.spotra.data.remote.SupabaseReviewRepository
 import com.appetizers.spotra.data.remote.SupabaseSpotSubmissionRepository
+import com.appetizers.spotra.data.remote.SupabaseStreakRepository
 import com.appetizers.spotra.domain.repository.AuthRepository
+import com.appetizers.spotra.domain.repository.BadgeRepository
 import com.appetizers.spotra.domain.repository.FriendRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.OnboardingDraftRepository
 import com.appetizers.spotra.domain.repository.ProfileRepository
 import com.appetizers.spotra.domain.repository.ReviewRepository
 import com.appetizers.spotra.domain.repository.SpotSubmissionRepository
+import com.appetizers.spotra.domain.repository.StreakRepository
+import com.appetizers.spotra.domain.usecase.AwardBadgesUseCase
 import com.appetizers.spotra.domain.usecase.GetStartRouteUseCase
 import com.mapbox.common.MapboxOptions
 import io.github.jan.supabase.auth.Auth
@@ -58,6 +65,9 @@ class AppContainer(application: Application) {
     val spotSubmissionRepository: SpotSubmissionRepository
     val reviewRepository: ReviewRepository
     val friendRepository: FriendRepository
+    val streakRepository: StreakRepository
+    val badgeRepository: BadgeRepository
+    val awardBadgesUseCase: AwardBadgesUseCase
     val getStartRoute: GetStartRouteUseCase
 
     init {
@@ -78,6 +88,8 @@ class AppContainer(application: Application) {
             homeRepository = SupabaseHomeRepository(client)
             reviewRepository = SupabaseReviewRepository(client)
             friendRepository = SupabaseFriendRepository(client)
+            streakRepository = SupabaseStreakRepository(client)
+            badgeRepository = SupabaseBadgeRepository(client)
         } else if (BuildConfig.DEBUG) {
             authRepository = DebugAuthRepository()
             profileRepository = DebugProfileRepository()
@@ -85,6 +97,8 @@ class AppContainer(application: Application) {
             homeRepository = DebugHomeRepository()
             reviewRepository = DebugReviewRepository()
             friendRepository = DebugFriendRepository()
+            streakRepository = DebugStreakRepository()
+            badgeRepository = DebugBadgeRepository()
         } else {
             authRepository = MissingConfigurationAuthRepository()
             profileRepository = MissingConfigurationProfileRepository()
@@ -92,8 +106,11 @@ class AppContainer(application: Application) {
             homeRepository = DebugHomeRepository()
             reviewRepository = DebugReviewRepository()
             friendRepository = DebugFriendRepository()
+            streakRepository = DebugStreakRepository()
+            badgeRepository = DebugBadgeRepository()
         }
 
+        awardBadgesUseCase = AwardBadgesUseCase(badgeRepository, reviewRepository)
         getStartRoute = GetStartRouteUseCase(authRepository, profileRepository)
     }
 }
