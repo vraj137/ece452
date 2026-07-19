@@ -1,5 +1,7 @@
 package com.appetizers.spotra.presentation.home
 
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -22,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.BookmarkBorder
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.LocationOn
@@ -38,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -59,6 +63,7 @@ internal fun SpotDetailScreen(
     accent: Color,
     onBack: () -> Unit,
     onCheckIn: (StudySpotSummary) -> Unit,
+    checkInLabel: String = "Start Session",
     homeRepository: HomeRepository,
     reviewRepository: ReviewRepository,
     friendRepository: FriendRepository? = null,
@@ -127,6 +132,9 @@ internal fun SpotDetailScreen(
         ) {
             item { SpotStatTiles(spot = detail) }
             item { SpotAmenitiesSection(amenities = detail.amenities) }
+            detail.bookingUrl?.let { url ->
+                item { BookRoomBanner(url = url) }
+            }
             if (reviews.isNotEmpty()) {
                 item {
                     SpotReviewsSection(
@@ -141,6 +149,7 @@ internal fun SpotDetailScreen(
                 SpotActionButtons(
                     accent = accent,
                     sessionActiveHere = sessionActiveHere,
+                    checkInLabel = checkInLabel,
                     onCheckIn = { onCheckIn(detail.toSummary()) },
                     onEndSession = onEndSession,
                     onReview = onReview
@@ -312,26 +321,37 @@ private fun SpotDetailHeader(
 
 @Composable
 private fun SpotStatTiles(spot: StudySpotDetail) {
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp, vertical = 20.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        StatTile(emoji = "🤫", value = spot.noiseLevel ?: "No data", label = "NOISE", modifier = Modifier.weight(1f))
-        StatTile(emoji = "☀️", value = spot.lighting ?: "No data", label = "LIGHTING", modifier = Modifier.weight(1f))
-        StatTile(
-            value = spot.rating?.let { String.format("%.1f", it) } ?: "New",
-            label = "RATING",
-            valueColor = SoloBlue,
-            modifier = Modifier.weight(1f)
-        )
-        StatTile(
-            value = spot.occupancyPercent?.let { "$it%" } ?: "No data",
-            label = if (spot.occupancyPercentIsLive) "LIVE FULL" else "FULL",
-            valueColor = if ((spot.occupancyPercent ?: 0) > 70) DPAtriumRed else GroupGreen,
-            modifier = Modifier.weight(1f)
-        )
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            StatTile(emoji = "🤫", value = spot.noiseLevel ?: "No data", label = "NOISE", modifier = Modifier.weight(1f))
+            StatTile(emoji = "☀️", value = spot.lighting ?: "No data", label = "LIGHTING", modifier = Modifier.weight(1f))
+            StatTile(
+                emoji = "📶",
+                value = spot.wifiQuality ?: "No data",
+                label = "WI-FI",
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            StatTile(
+                value = spot.rating?.let { String.format("%.1f", it) } ?: "New",
+                label = "RATING",
+                valueColor = SoloBlue,
+                modifier = Modifier.weight(1f)
+            )
+            StatTile(
+                value = spot.occupancyPercent?.let { "$it%" } ?: "No data",
+                label = if (spot.occupancyPercentIsLive) "LIVE FULL" else "FULL",
+                valueColor = if ((spot.occupancyPercent ?: 0) > 70) DPAtriumRed else GroupGreen,
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(Modifier.weight(1f))
+        }
     }
 }
 
@@ -499,6 +519,7 @@ private fun ReviewRow(review: Review) {
 private fun SpotActionButtons(
     accent: Color,
     sessionActiveHere: Boolean,
+    checkInLabel: String = "Start Session",
     onCheckIn: () -> Unit,
     onEndSession: () -> Unit,
     onReview: () -> Unit
@@ -535,7 +556,7 @@ private fun SpotActionButtons(
             ) {
                 Icon(Icons.Rounded.LocationOn, null, tint = Color.White, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Start Session", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                Text(checkInLabel, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
             }
         }
         Row(
@@ -551,6 +572,44 @@ private fun SpotActionButtons(
             Spacer(Modifier.width(8.dp))
             Text("Review", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
         }
+    }
+}
+
+@Composable
+private fun BookRoomBanner(url: String) {
+    val context = LocalContext.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 20.dp, top = 20.dp, end = 20.dp)
+            .background(CardBackground, RoundedCornerShape(16.dp))
+            .clickable {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                context.startActivity(intent)
+            }
+            .padding(horizontal = 18.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Book this room",
+                color = SoloBlue,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+            Text(
+                text = "Reserve via the official booking page",
+                color = HeaderMuted,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
+        Icon(
+            imageVector = Icons.AutoMirrored.Rounded.OpenInNew,
+            contentDescription = "Open booking page",
+            tint = SoloBlue,
+            modifier = Modifier.size(20.dp)
+        )
     }
 }
 
