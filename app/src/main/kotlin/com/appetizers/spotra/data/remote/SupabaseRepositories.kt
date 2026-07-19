@@ -1,6 +1,7 @@
 package com.appetizers.spotra.data.remote
 
 import com.appetizers.spotra.data.mock.MockData
+import com.appetizers.spotra.domain.model.BadgeId
 import com.appetizers.spotra.domain.model.CheckInSession
 import com.appetizers.spotra.domain.model.CheckedInStudent
 import com.appetizers.spotra.domain.model.GroupMember
@@ -11,13 +12,17 @@ import com.appetizers.spotra.domain.model.SpotSubmission
 import com.appetizers.spotra.domain.model.StudyMode
 import com.appetizers.spotra.domain.model.StudySpotDetail
 import com.appetizers.spotra.domain.model.StudySpotSummary
+import com.appetizers.spotra.domain.model.UserBadge
 import com.appetizers.spotra.domain.model.UserProfile
 import com.appetizers.spotra.domain.repository.AuthRepository
 import com.appetizers.spotra.domain.repository.AuthUser
+import com.appetizers.spotra.domain.repository.BadgeRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.ProfileRepository
 import com.appetizers.spotra.domain.repository.ReviewRepository
 import com.appetizers.spotra.domain.repository.SpotSubmissionRepository
+import com.appetizers.spotra.domain.repository.StreakRepository
+import com.appetizers.spotra.domain.usecase.ReviewQualityScorer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import io.github.jan.supabase.SupabaseClient
@@ -27,6 +32,8 @@ import io.github.jan.supabase.auth.providers.builtin.OTP
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Order
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 
@@ -453,7 +460,8 @@ private data class ReviewInsert(
     @SerialName("wifi_quality") val wifiQuality: String?,
     @SerialName("occupancy_percent") val occupancyPercent: Int?,
     val comment: String?,
-    val anonymous: Boolean
+    val anonymous: Boolean,
+    @SerialName("quality_score") val qualityScore: Int = 0,
 )
 
 @Serializable
@@ -468,7 +476,8 @@ private data class ReviewRow(
     @SerialName("wifi_quality") val wifiQuality: String? = null,
     @SerialName("occupancy_percent") val occupancyPercent: Int? = null,
     val comment: String? = null,
-    val anonymous: Boolean = false
+    val anonymous: Boolean = false,
+    @SerialName("quality_score") val qualityScore: Int = 0,
 ) {
     fun toReview(): Review {
         val displayName = if (anonymous || reviewerName.isNullOrBlank()) "Anonymous" else reviewerName
@@ -525,9 +534,144 @@ class SupabaseReviewRepository(
                 wifiQuality = draft.wifiQuality,
                 occupancyPercent = draft.occupancyPercent,
                 comment = draft.comment,
-                anonymous = draft.anonymous
+                anonymous = draft.anonymous,
+                qualityScore = ReviewQualityScorer.score(draft.comment),
             )
         )
+    }
+
+    override suspend fun getReviewCount(userId: String): Int =
+        runCatching {
+            client.from("reviews")
+                .select { filter { eq("user_id", userId) } }
+                .decodeList<ReviewRow>()
+                .size
+        }.getOrDefault(0)
+
+    override suspend fun getQualityReviewCount(userId: String): Int =
+        runCatching {
+            client.from("reviews")
+                .select { filter { eq("user_id", userId); gte("quality_score", 5) } }
+                .decodeList<ReviewRow>()
+                .size
+        }.getOrDefault(0)
+}
+
+@Serializable
+private data class StreakDto(
+    @SerialName("id") val userId: String,
+    @SerialName("login_streak") val loginStreak: Int = 0,
+    @SerialName("last_login_date") val lastLoginDate: String? = null,
+    @SerialName("longest_login_streak") val longestLoginStreak: Int = 0,
+    @SerialName("checkout_count") val checkoutCount: Int = 0,
+)
+
+@Serializable
+private data class StudySessionInsert(
+    @SerialName("user_id") val userId: String,
+    @SerialName("spot_id") val spotId: String,
+    @SerialName("spot_name") val spotName: String,
+    @SerialName("duration_seconds") val durationSeconds: Int,
+)
+
+class SupabaseStreakRepository(
+    private val client: SupabaseClient
+) : StreakRepository {
+    override suspend fun recordLogin(userId: String): Int {
+        val dto = runCatching {
+            client.from("profiles")
+                .select { filter { eq("id", userId) } }
+                .decodeSingleOrNull<StreakDto>()
+        }.getOrNull() ?: return 0
+
+        val today = LocalDate.now(ZoneOffset.UTC)
+        val lastLogin = dto.lastLoginDate?.let {
+            runCatching { LocalDate.parse(it) }.getOrNull()
+        }
+
+        if (lastLogin == today) return dto.loginStreak
+
+        val newStreak = when {
+            lastLogin == null -> 1
+            lastLogin == today.minusDays(1) -> dto.loginStreak + 1
+            else -> 1
+        }
+        val newLongest = maxOf(newStreak, dto.longestLoginStreak)
+
+        runCatching {
+            client.from("profiles").update({
+                set("login_streak", newStreak)
+                set("last_login_date", today.toString())
+                set("longest_login_streak", newLongest)
+            }) { filter { eq("id", userId) } }
+        }
+        return newStreak
+    }
+
+    override suspend fun recordCheckout(
+        userId: String,
+        spotId: String,
+        spotName: String,
+        durationSeconds: Int,
+    ): Int {
+        runCatching {
+            client.from("study_sessions").insert(
+                StudySessionInsert(userId, spotId, spotName, durationSeconds)
+            )
+        }
+        val current = runCatching {
+            client.from("profiles")
+                .select { filter { eq("id", userId) } }
+                .decodeSingleOrNull<StreakDto>()
+                ?.checkoutCount ?: 0
+        }.getOrDefault(0)
+        val newCount = current + 1
+        runCatching {
+            client.from("profiles").update({
+                set("checkout_count", newCount)
+            }) { filter { eq("id", userId) } }
+        }
+        return newCount
+    }
+}
+
+@Serializable
+private data class UserBadgeInsert(
+    @SerialName("user_id") val userId: String,
+    @SerialName("badge_id") val badgeId: String,
+)
+
+@Serializable
+private data class UserBadgeRow(
+    @SerialName("user_id") val userId: String,
+    @SerialName("badge_id") val badgeId: String,
+    @SerialName("earned_at") val earnedAt: String,
+)
+
+class SupabaseBadgeRepository(
+    private val client: SupabaseClient
+) : BadgeRepository {
+    override suspend fun getBadges(userId: String): List<UserBadge> =
+        runCatching {
+            client.from("user_badges")
+                .select { filter { eq("user_id", userId) } }
+                .decodeList<UserBadgeRow>()
+                .mapNotNull { row ->
+                    val badgeId = runCatching { BadgeId.valueOf(row.badgeId) }.getOrNull()
+                        ?: return@mapNotNull null
+                    UserBadge(
+                        id = badgeId,
+                        earnedAtMillis = runCatching {
+                            Instant.parse(row.earnedAt).toEpochMilli()
+                        }.getOrDefault(0L)
+                    )
+                }
+        }.getOrDefault(emptyList())
+
+    override suspend fun awardBadge(userId: String, badgeId: BadgeId) {
+        runCatching {
+            client.from("user_badges").insert(UserBadgeInsert(userId, badgeId.name))
+        }
     }
 }
 

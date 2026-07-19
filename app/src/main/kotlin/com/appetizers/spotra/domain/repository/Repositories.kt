@@ -1,5 +1,6 @@
 package com.appetizers.spotra.domain.repository
 
+import com.appetizers.spotra.domain.model.BadgeId
 import com.appetizers.spotra.domain.model.CheckInSession
 import com.appetizers.spotra.domain.model.GroupMember
 import com.appetizers.spotra.domain.model.HomeSnapshot
@@ -9,6 +10,7 @@ import com.appetizers.spotra.domain.model.ReviewDraft
 import com.appetizers.spotra.domain.model.SpotSubmission
 import com.appetizers.spotra.domain.model.StudyMode
 import com.appetizers.spotra.domain.model.StudySpotDetail
+import com.appetizers.spotra.domain.model.UserBadge
 import com.appetizers.spotra.domain.model.UserProfile
 import kotlinx.coroutines.flow.Flow
 
@@ -39,6 +41,18 @@ interface SpotSubmissionRepository {
 interface ReviewRepository {
     suspend fun reviewsFor(spotSlug: String): List<Review>
     suspend fun submit(draft: ReviewDraft)
+    suspend fun getReviewCount(userId: String): Int
+    suspend fun getQualityReviewCount(userId: String): Int
+}
+
+interface StreakRepository {
+    suspend fun recordLogin(userId: String): Int
+    suspend fun recordCheckout(userId: String, spotId: String, spotName: String, durationSeconds: Int): Int
+}
+
+interface BadgeRepository {
+    suspend fun getBadges(userId: String): List<UserBadge>
+    suspend fun awardBadge(userId: String, badgeId: BadgeId)
 }
 
 interface HomeRepository {

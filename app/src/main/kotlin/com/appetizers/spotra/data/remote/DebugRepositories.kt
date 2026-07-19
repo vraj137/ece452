@@ -12,12 +12,16 @@ import com.appetizers.spotra.domain.model.StudyMode
 import com.appetizers.spotra.domain.model.StudySpotDetail
 import com.appetizers.spotra.domain.model.StudySpotSummary
 import com.appetizers.spotra.domain.model.UserProfile
+import com.appetizers.spotra.domain.model.BadgeId
+import com.appetizers.spotra.domain.model.UserBadge
 import com.appetizers.spotra.domain.repository.AuthRepository
 import com.appetizers.spotra.domain.repository.AuthUser
+import com.appetizers.spotra.domain.repository.BadgeRepository
 import com.appetizers.spotra.domain.repository.FriendRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.ProfileRepository
 import com.appetizers.spotra.domain.repository.ReviewRepository
+import com.appetizers.spotra.domain.repository.StreakRepository
 
 // In-memory debug implementations — used when Supabase credentials are absent.
 // All spot and user data is sourced from MockData so there is a single source
@@ -246,4 +250,18 @@ class DebugReviewRepository : ReviewRepository {
             )
         )
     }
+
+    override suspend fun getReviewCount(userId: String): Int = submitted.size
+
+    override suspend fun getQualityReviewCount(userId: String): Int = 0
+}
+
+class DebugStreakRepository : StreakRepository {
+    override suspend fun recordLogin(userId: String): Int = 0
+    override suspend fun recordCheckout(userId: String, spotId: String, spotName: String, durationSeconds: Int): Int = 0
+}
+
+class DebugBadgeRepository : BadgeRepository {
+    override suspend fun getBadges(userId: String): List<UserBadge> = emptyList()
+    override suspend fun awardBadge(userId: String, badgeId: BadgeId) = Unit
 }

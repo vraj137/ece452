@@ -13,7 +13,10 @@ data class UserProfileDto(
     @SerialName("email") val email: String,
     @SerialName("program") val program: String = "",
     @SerialName("study_term") val studyTerm: StudyTerm? = null,
-    @SerialName("onboarding_complete") val onboardingComplete: Boolean = true
+    @SerialName("onboarding_complete") val onboardingComplete: Boolean = true,
+    @SerialName("login_streak") val loginStreak: Int = 0,
+    @SerialName("longest_login_streak") val longestLoginStreak: Int = 0,
+    @SerialName("checkout_count") val checkoutCount: Int = 0,
 ) {
     fun toDomain() = UserProfile(
         userId = userId,
@@ -22,7 +25,10 @@ data class UserProfileDto(
         email = email,
         program = program,
         studyTerm = studyTerm,
-        onboardingComplete = onboardingComplete
+        onboardingComplete = onboardingComplete,
+        loginStreak = loginStreak,
+        longestLoginStreak = longestLoginStreak,
+        checkoutCount = checkoutCount,
     )
 }
 
@@ -33,5 +39,8 @@ fun UserProfile.toDto() = UserProfileDto(
     email = email,
     program = program,
     studyTerm = studyTerm,
-    onboardingComplete = onboardingComplete
+    onboardingComplete = onboardingComplete,
+    loginStreak = loginStreak,
+    longestLoginStreak = longestLoginStreak,
+    checkoutCount = checkoutCount,
 )

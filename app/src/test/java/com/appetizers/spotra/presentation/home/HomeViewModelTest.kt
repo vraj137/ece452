@@ -1,14 +1,24 @@
 package com.appetizers.spotra.presentation.home
 
+import com.appetizers.spotra.domain.model.BadgeId
 import com.appetizers.spotra.domain.model.CheckInSession
 import com.appetizers.spotra.domain.model.CheckedInStudent
 import com.appetizers.spotra.domain.model.GroupMember
 import com.appetizers.spotra.domain.model.GroupStudySession
 import com.appetizers.spotra.domain.model.HomeSnapshot
+import com.appetizers.spotra.domain.model.Review
+import com.appetizers.spotra.domain.model.ReviewDraft
 import com.appetizers.spotra.domain.model.StudyMode
 import com.appetizers.spotra.domain.model.StudySpotDetail
 import com.appetizers.spotra.domain.model.StudySpotSummary
+import com.appetizers.spotra.domain.model.UserBadge
+import com.appetizers.spotra.domain.repository.AuthRepository
+import com.appetizers.spotra.domain.repository.AuthUser
+import com.appetizers.spotra.domain.repository.BadgeRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
+import com.appetizers.spotra.domain.repository.ReviewRepository
+import com.appetizers.spotra.domain.repository.StreakRepository
+import com.appetizers.spotra.domain.usecase.AwardBadgesUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -38,9 +48,18 @@ class HomeViewModelTest {
         Dispatchers.resetMain()
     }
 
+    private fun buildViewModel(home: HomeRepository = FakeHomeRepository()) = HomeViewModel(
+        repository = home,
+        authRepository = NullAuthRepository(),
+        streakRepository = NoOpStreakRepository(),
+        badgeRepository = NoOpBadgeRepository(),
+        reviewRepository = NoOpReviewRepository(),
+        awardBadgesUseCase = AwardBadgesUseCase(NoOpBadgeRepository(), NoOpReviewRepository()),
+    )
+
     @Test
     fun `loads home snapshot into ui state`() = runTest(dispatcher) {
-        val viewModel = HomeViewModel(FakeHomeRepository())
+        val viewModel = buildViewModel()
         advanceUntilIdle()
 
         val state = viewModel.uiState.value
@@ -52,7 +71,7 @@ class HomeViewModelTest {
 
     @Test
     fun `map spots load and default selection is solo spot`() = runTest(dispatcher) {
-        val viewModel = HomeViewModel(FakeHomeRepository())
+        val viewModel = buildViewModel()
         advanceUntilIdle()
 
         val state = viewModel.uiState.value
@@ -62,7 +81,7 @@ class HomeViewModelTest {
 
     @Test
     fun `selectMapSpot updates selected spot id`() = runTest(dispatcher) {
-        val viewModel = HomeViewModel(FakeHomeRepository())
+        val viewModel = buildViewModel()
         advanceUntilIdle()
 
         viewModel.selectMapSpot("dc-library")
@@ -72,7 +91,7 @@ class HomeViewModelTest {
 
     @Test
     fun `selectSection updates active home section`() = runTest(dispatcher) {
-        val viewModel = HomeViewModel(FakeHomeRepository())
+        val viewModel = buildViewModel()
         advanceUntilIdle()
 
         viewModel.selectSection(HomeSection.Explore)
@@ -84,7 +103,7 @@ class HomeViewModelTest {
 
     @Test
     fun `selectSocialTab opens social section and selects tab`() = runTest(dispatcher) {
-        val viewModel = HomeViewModel(FakeHomeRepository())
+        val viewModel = buildViewModel()
         advanceUntilIdle()
 
         viewModel.selectSocialTab(SocialTab.Discover)
@@ -96,7 +115,7 @@ class HomeViewModelTest {
 
     @Test
     fun `group invite appends member and clears input`() = runTest(dispatcher) {
-        val viewModel = HomeViewModel(FakeHomeRepository())
+        val viewModel = buildViewModel()
         advanceUntilIdle()
 
         viewModel.updateInviteText("Maya R")
@@ -112,7 +131,7 @@ class HomeViewModelTest {
     @Test
     fun `check in and check out update active session`() = runTest(dispatcher) {
         val repository = FakeHomeRepository()
-        val viewModel = HomeViewModel(repository)
+        val viewModel = buildViewModel(repository)
         advanceUntilIdle()
 
         val spot = requireNotNull(viewModel.uiState.value.soloSpot)
@@ -139,7 +158,7 @@ class HomeViewModelTest {
 
     @Test
     fun `buddy request records requested student`() = runTest(dispatcher) {
-        val viewModel = HomeViewModel(FakeHomeRepository())
+        val viewModel = buildViewModel()
         advanceUntilIdle()
 
         viewModel.sendBuddyRequest("akshat")
@@ -239,4 +258,28 @@ private class FakeHomeRepository : HomeRepository {
         inviteText: String
     ): GroupMember =
         GroupMember("invite-2", inviteText, "MR")
+}
+
+private class NullAuthRepository : AuthRepository {
+    override suspend fun currentUser(): AuthUser? = null
+    override suspend fun sendOtp(email: String, createUser: Boolean) = Unit
+    override suspend fun verifyOtp(email: String, token: String): AuthUser = error("not used")
+    override suspend fun signOut() = Unit
+}
+
+private class NoOpStreakRepository : StreakRepository {
+    override suspend fun recordLogin(userId: String) = 0
+    override suspend fun recordCheckout(userId: String, spotId: String, spotName: String, durationSeconds: Int) = 0
+}
+
+private class NoOpBadgeRepository : BadgeRepository {
+    override suspend fun getBadges(userId: String): List<UserBadge> = emptyList()
+    override suspend fun awardBadge(userId: String, badgeId: BadgeId) = Unit
+}
+
+private class NoOpReviewRepository : ReviewRepository {
+    override suspend fun reviewsFor(spotSlug: String): List<Review> = emptyList()
+    override suspend fun submit(draft: ReviewDraft) = Unit
+    override suspend fun getReviewCount(userId: String) = 0
+    override suspend fun getQualityReviewCount(userId: String) = 0
 }
