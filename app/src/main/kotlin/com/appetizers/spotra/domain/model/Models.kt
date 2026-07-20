@@ -27,6 +27,26 @@ data class UserProfile(
     val onboardingComplete: Boolean = true
 )
 
+/** A peer shown in the social directory. Profiles are intentionally limited to
+ * name, program, and term; email addresses are never exposed to other users. */
+data class SocialUser(
+    val id: String,
+    val name: String,
+    val program: String,
+    val studyTerm: StudyTerm
+) {
+    val initials: String
+        get() = name.split(" ").filter(String::isNotBlank).take(2)
+            .joinToString("") { it.first().uppercase() }.ifBlank { "?" }
+}
+
+data class SocialSnapshot(
+    val friends: List<SocialUser> = emptyList(),
+    val incomingRequests: List<SocialUser> = emptyList(),
+    val suggestedUsers: List<SocialUser> = emptyList(),
+    val outgoingRequestIds: Set<String> = emptySet()
+)
+
 @Serializable
 data class OnboardingDraft(
     val firstName: String = "",

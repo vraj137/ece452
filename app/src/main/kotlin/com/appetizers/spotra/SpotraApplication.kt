@@ -9,10 +9,13 @@ import com.appetizers.spotra.data.remote.MissingConfigurationAuthRepository
 import com.appetizers.spotra.data.remote.MissingConfigurationProfileRepository
 import com.appetizers.spotra.data.remote.SupabaseAuthRepository
 import com.appetizers.spotra.data.remote.SupabaseProfileRepository
+import com.appetizers.spotra.data.remote.SupabaseSocialRepository
+import com.appetizers.spotra.data.remote.DebugSocialRepository
 import com.appetizers.spotra.domain.repository.AuthRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.OnboardingDraftRepository
 import com.appetizers.spotra.domain.repository.ProfileRepository
+import com.appetizers.spotra.domain.repository.SocialRepository
 import com.appetizers.spotra.domain.usecase.GetStartRouteUseCase
 import com.mapbox.common.MapboxOptions
 import io.github.jan.supabase.auth.Auth
@@ -45,6 +48,7 @@ class AppContainer(application: Application) {
     val authRepository: AuthRepository
     val profileRepository: ProfileRepository
     val homeRepository: HomeRepository
+    val socialRepository: SocialRepository
     val getStartRoute: GetStartRouteUseCase
 
     init {
@@ -61,12 +65,15 @@ class AppContainer(application: Application) {
             }
             authRepository = SupabaseAuthRepository(client)
             profileRepository = SupabaseProfileRepository(client)
+            socialRepository = SupabaseSocialRepository(client)
         } else if (BuildConfig.DEBUG) {
             authRepository = DebugAuthRepository()
             profileRepository = DebugProfileRepository()
+            socialRepository = DebugSocialRepository()
         } else {
             authRepository = MissingConfigurationAuthRepository()
             profileRepository = MissingConfigurationProfileRepository()
+            socialRepository = DebugSocialRepository()
         }
 
         homeRepository = DebugHomeRepository()

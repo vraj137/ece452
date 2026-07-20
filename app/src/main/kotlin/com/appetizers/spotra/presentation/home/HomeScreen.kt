@@ -88,6 +88,9 @@ import com.appetizers.spotra.domain.model.SpotFeatureType
 import com.appetizers.spotra.domain.model.StudyMode
 import com.appetizers.spotra.domain.model.StudySpotSummary
 import com.appetizers.spotra.domain.repository.HomeRepository
+import com.appetizers.spotra.domain.repository.SocialRepository
+import com.appetizers.spotra.domain.model.SocialSnapshot
+import com.appetizers.spotra.domain.model.SocialUser
 import com.mapbox.geojson.Point
 import com.mapbox.maps.Style
 import com.mapbox.maps.ViewAnnotationAnchor
@@ -101,9 +104,9 @@ import com.mapbox.maps.viewannotation.viewAnnotationOptions
 import kotlinx.coroutines.delay
 
 @Composable
-fun HomeScreen(homeRepository: HomeRepository) {
+fun HomeScreen(homeRepository: HomeRepository, socialRepository: SocialRepository) {
     val viewModel: HomeViewModel = viewModel(
-        factory = HomeViewModel.Factory(homeRepository)
+        factory = HomeViewModel.Factory(homeRepository, socialRepository)
     )
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val accent by animateColorAsState(
@@ -175,7 +178,10 @@ fun HomeScreen(homeRepository: HomeRepository) {
                 viewModel.startCheckIn(soloSpot, StudyMode.Solo)
             },
             onAddBuddy = viewModel::sendBuddyRequest,
-            requestedBuddyIds = state.requestedBuddyIds
+            requestedBuddyIds = state.requestedBuddyIds,
+            social = state.social,
+            onSendFriendRequest = viewModel::sendFriendRequest,
+            onAcceptFriendRequest = viewModel::acceptFriendRequest
         )
         return
     }
@@ -841,7 +847,10 @@ private fun SocialScreen(
     onSectionSelected: (HomeSection) -> Unit,
     onJoin: () -> Unit,
     onAddBuddy: (String) -> Unit,
-    requestedBuddyIds: Set<String>
+    requestedBuddyIds: Set<String>,
+    social: SocialSnapshot,
+    onSendFriendRequest: (String) -> Unit,
+    onAcceptFriendRequest: (String) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -877,37 +886,40 @@ private fun SocialScreen(
         ) {
             when (selectedTab) {
                 SocialTab.Friends -> {
-                    item { SectionHeader("STUDYING NOW") }
-                    itemsIndexed(friendStudyRows()) { _, friend ->
+                    item { SectionHeader("YOUR FRIENDS") }
+                    if (social.friends.isEmpty()) item { EmptySocialState("No friends yet — find classmates in Discover.") }
+                    itemsIndexed(social.friends) { _, friend ->
                         SocialPersonRow(
-                            person = friend,
-                            actionLabel = if (friend.active) "Join" else "Offline",
-                            actionEnabled = friend.active,
+                            person = friend.toSocialPerson("${friend.program} · ${friend.studyTerm.label}"),
+                            actionLabel = "Friend",
+                            actionEnabled = false,
                             onAction = onJoin
                         )
                     }
                     item { StudyStreakCard() }
                 }
                 SocialTab.Buddies -> {
-                    item { SectionHeader("CONFIRMED STUDY BUDDIES") }
-                    itemsIndexed(confirmedBuddies()) { _, buddy ->
+                    item { SectionHeader("FRIEND REQUESTS") }
+                    if (social.incomingRequests.isEmpty()) item { EmptySocialState("No pending friend requests.") }
+                    itemsIndexed(social.incomingRequests) { _, buddy ->
                         SocialPersonRow(
-                            person = buddy,
-                            actionLabel = "Message",
+                            person = buddy.toSocialPerson("${buddy.program} · ${buddy.studyTerm.label}"),
+                            actionLabel = "Accept",
                             actionEnabled = true,
-                            onAction = {}
+                            onAction = { onAcceptFriendRequest(buddy.id) }
                         )
                     }
                     item { StudyStreakCard() }
                 }
                 SocialTab.Discover -> {
-                    item { SectionHeader("SUGGESTED FROM YOUR COURSES") }
-                    itemsIndexed(discoverBuddies()) { _, buddy ->
+                    item { SectionHeader("CLASSMATES IN YOUR PROGRAM & TERM") }
+                    if (social.suggestedUsers.isEmpty()) item { EmptySocialState("No new classmates to suggest right now.") }
+                    itemsIndexed(social.suggestedUsers) { _, buddy ->
                         SocialPersonRow(
-                            person = buddy,
-                            actionLabel = if (buddy.id in requestedBuddyIds) "Sent" else "+ Add",
-                            actionEnabled = buddy.id !in requestedBuddyIds,
-                            onAction = { onAddBuddy(buddy.id) }
+                            person = buddy.toSocialPerson("${buddy.program} · ${buddy.studyTerm.label}"),
+                            actionLabel = if (buddy.id in social.outgoingRequestIds) "Sent" else "+ Add",
+                            actionEnabled = buddy.id !in social.outgoingRequestIds,
+                            onAction = { onSendFriendRequest(buddy.id) }
                         )
                     }
                     item { StudyStreakCard() }
@@ -920,6 +932,11 @@ private fun SocialScreen(
             onSectionSelected = onSectionSelected
         )
     }
+}
+
+@Composable
+private fun EmptySocialState(message: String) {
+    Text(message, color = HeaderMuted, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
 }
 
 @Composable
@@ -2241,6 +2258,13 @@ private data class SocialPerson(
     val name: String,
     val detail: String,
     val active: Boolean = true
+)
+
+private fun SocialUser.toSocialPerson(detail: String) = SocialPerson(
+    id = id,
+    initials = initials,
+    name = name,
+    detail = detail
 )
 
 private fun StudyMode.accentColor(): Color = when (this) {

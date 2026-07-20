@@ -14,6 +14,10 @@ import com.appetizers.spotra.domain.repository.AuthRepository
 import com.appetizers.spotra.domain.repository.AuthUser
 import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.ProfileRepository
+import com.appetizers.spotra.domain.repository.SocialRepository
+import com.appetizers.spotra.domain.model.SocialSnapshot
+import com.appetizers.spotra.domain.model.SocialUser
+import com.appetizers.spotra.domain.model.StudyTerm
 
 /**
  * Used in DEBUG builds when Supabase credentials are absent.
@@ -45,6 +49,33 @@ class DebugProfileRepository : ProfileRepository {
 
     override suspend fun saveProfile(profile: UserProfile) {
         this.profile = profile
+    }
+}
+
+class DebugSocialRepository : SocialRepository {
+    private val friends = mutableListOf(
+        SocialUser("raghav", "Raghav Verma", "Computer Engineering", StudyTerm.TWO_A)
+    )
+    private val incoming = mutableListOf(
+        SocialUser("vishvam", "Vishvam Patel", "Computer Engineering", StudyTerm.TWO_A)
+    )
+    private val suggestions = mutableListOf(
+        SocialUser("edmond", "Edmond Yang", "Computer Engineering", StudyTerm.TWO_A),
+        SocialUser("akshat", "Akshat Jawne", "Computer Engineering", StudyTerm.TWO_A)
+    )
+    private val outgoing = mutableSetOf<String>()
+
+    override suspend fun loadSocial() = SocialSnapshot(friends, incoming, suggestions, outgoing)
+
+    override suspend fun sendFriendRequest(recipientId: String) {
+        outgoing += recipientId
+    }
+
+    override suspend fun acceptFriendRequest(requesterId: String) {
+        incoming.firstOrNull { it.id == requesterId }?.let { friend ->
+            incoming.remove(friend)
+            friends += friend
+        }
     }
 }
 

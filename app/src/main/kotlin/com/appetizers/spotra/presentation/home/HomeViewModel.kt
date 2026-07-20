@@ -8,6 +8,9 @@ import com.appetizers.spotra.domain.model.GroupStudySession
 import com.appetizers.spotra.domain.model.StudyMode
 import com.appetizers.spotra.domain.model.StudySpotSummary
 import com.appetizers.spotra.domain.repository.HomeRepository
+import com.appetizers.spotra.domain.repository.SocialRepository
+import com.appetizers.spotra.domain.repository.EmptySocialRepository
+import com.appetizers.spotra.domain.model.SocialSnapshot
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,6 +31,8 @@ data class HomeUiState(
     val activeCheckIn: CheckInSession? = null,
     val requestedBuddyIds: Set<String> = emptySet(),
     val inviteText: String = "",
+    val social: SocialSnapshot = SocialSnapshot(),
+    val isSocialLoading: Boolean = false,
     val error: String? = null
 )
 
@@ -45,7 +50,8 @@ enum class SocialTab {
 }
 
 class HomeViewModel(
-    private val repository: HomeRepository
+    private val repository: HomeRepository,
+    private val socialRepository: SocialRepository = EmptySocialRepository
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
@@ -66,10 +72,12 @@ class HomeViewModel(
                 error = null
             )
         }
+        if (section == HomeSection.Social) loadSocial()
     }
 
     fun selectSocialTab(tab: SocialTab) {
         _uiState.update { it.copy(selectedSocialTab = tab, selectedSection = HomeSection.Social, error = null) }
+        loadSocial()
     }
 
     fun selectMapSpot(id: String) {
@@ -136,6 +144,34 @@ class HomeViewModel(
         }
     }
 
+    fun sendFriendRequest(userId: String) {
+        viewModelScope.launch {
+            runCatching { socialRepository.sendFriendRequest(userId) }
+                .onSuccess { loadSocial() }
+                .onFailure { showError(it.message ?: "Could not send friend request.") }
+        }
+    }
+
+    fun acceptFriendRequest(userId: String) {
+        viewModelScope.launch {
+            runCatching { socialRepository.acceptFriendRequest(userId) }
+                .onSuccess { loadSocial() }
+                .onFailure { showError(it.message ?: "Could not accept friend request.") }
+        }
+    }
+
+    private fun loadSocial() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSocialLoading = true) }
+            runCatching { socialRepository.loadSocial() }
+                .onSuccess { snapshot -> _uiState.update { it.copy(social = snapshot, isSocialLoading = false) } }
+                .onFailure { error ->
+                    _uiState.update { it.copy(isSocialLoading = false) }
+                    showError(error.message ?: "Could not load friends.")
+                }
+        }
+    }
+
     fun updateInviteText(value: String) {
         _uiState.update { it.copy(inviteText = value, error = null) }
     }
@@ -198,10 +234,11 @@ class HomeViewModel(
     }
 
     class Factory(
-        private val repository: HomeRepository
+        private val repository: HomeRepository,
+        private val socialRepository: SocialRepository
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            HomeViewModel(repository) as T
+            HomeViewModel(repository, socialRepository) as T
     }
 }
