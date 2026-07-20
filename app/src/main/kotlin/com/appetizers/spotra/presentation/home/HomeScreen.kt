@@ -100,6 +100,9 @@ import com.appetizers.spotra.domain.repository.AuthRepository
 import com.appetizers.spotra.domain.repository.BadgeRepository
 import com.appetizers.spotra.domain.repository.FriendRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
+import com.appetizers.spotra.domain.repository.SocialRepository
+import com.appetizers.spotra.domain.model.SocialSnapshot
+import com.appetizers.spotra.domain.model.SocialUser
 import com.appetizers.spotra.domain.repository.ProfileRepository
 import com.appetizers.spotra.domain.repository.StreakRepository
 import com.appetizers.spotra.domain.usecase.AwardBadgesUseCase
@@ -2691,6 +2694,13 @@ private data class SocialPerson(
     val name: String,
     val detail: String,
     val active: Boolean = true
+)
+
+private fun SocialUser.toSocialPerson(detail: String) = SocialPerson(
+    id = id,
+    initials = initials,
+    name = name,
+    detail = detail
 )
 
 private fun buddyMeta(student: CheckedInStudent): String = when (student.id) {
