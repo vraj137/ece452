@@ -3,14 +3,23 @@ package com.appetizers.spotra.presentation.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.appetizers.spotra.domain.model.BadgeId
 import com.appetizers.spotra.domain.model.CheckInSession
+import com.appetizers.spotra.domain.model.CompletedSession
 import com.appetizers.spotra.domain.model.GroupStudySession
+import com.appetizers.spotra.domain.model.ReviewDraft
 import com.appetizers.spotra.domain.model.StudyMode
 import com.appetizers.spotra.domain.model.StudySpotSummary
+import com.appetizers.spotra.domain.repository.AuthRepository
+import com.appetizers.spotra.domain.repository.BadgeRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.SocialRepository
 import com.appetizers.spotra.domain.repository.EmptySocialRepository
 import com.appetizers.spotra.domain.model.SocialSnapshot
+import com.appetizers.spotra.domain.repository.ReviewRepository
+import com.appetizers.spotra.domain.repository.StreakRepository
+import com.appetizers.spotra.domain.usecase.AwardBadgesUseCase
+import com.appetizers.spotra.domain.usecase.ReviewQualityScorer
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,6 +28,7 @@ import kotlinx.coroutines.launch
 
 data class HomeUiState(
     val isLoading: Boolean = true,
+    val isRefreshing: Boolean = false,
     val userFirstName: String = "",
     val selectedMode: StudyMode = StudyMode.Solo,
     val selectedSection: HomeSection = HomeSection.Map,
@@ -27,13 +37,24 @@ data class HomeUiState(
     val groupSession: GroupStudySession? = null,
     val groupSpots: List<StudySpotSummary> = emptyList(),
     val mapSpots: List<StudySpotSummary> = emptyList(),
+    val trendingCounts: Map<String, Int> = emptyMap(),
     val selectedSpotId: String? = null,
     val activeCheckIn: CheckInSession? = null,
+    val sessionStartTimeMillis: Long = 0L,
+    val showLiveSession: Boolean = false,
+    val completedSessions: List<CompletedSession> = emptyList(),
     val requestedBuddyIds: Set<String> = emptySet(),
     val inviteText: String = "",
     val social: SocialSnapshot = SocialSnapshot(),
     val isSocialLoading: Boolean = false,
     val error: String? = null
+    val error: String? = null,
+    val newBadge: BadgeId? = null,
+    val pendingCheckoutBadge: BadgeId? = null,
+    val showReviewPrompt: Boolean = false,
+    val pendingReviewSpotId: String? = null,
+    val pendingReviewSpotName: String? = null,
+    val noiseFilter: String? = null,
 )
 
 enum class HomeSection {
@@ -45,13 +66,18 @@ enum class HomeSection {
 
 enum class SocialTab {
     Friends,
-    Buddies,
+    Requests,
     Discover
 }
 
 class HomeViewModel(
     private val repository: HomeRepository,
     private val socialRepository: SocialRepository = EmptySocialRepository
+    private val authRepository: AuthRepository,
+    private val streakRepository: StreakRepository,
+    private val badgeRepository: BadgeRepository,
+    private val reviewRepository: ReviewRepository,
+    private val awardBadgesUseCase: AwardBadgesUseCase,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
@@ -89,13 +115,22 @@ class HomeViewModel(
     }
 
     fun startCheckIn(spot: StudySpotSummary, mode: StudyMode = uiState.value.selectedMode) {
-        val groupSession = uiState.value.groupSession ?: return
+        val groupSessionId = if (mode == StudyMode.Group) {
+            uiState.value.groupSession?.id ?: run {
+                showError("Could not start a group session. Try again.")
+                return
+            }
+        } else {
+            null
+        }
         viewModelScope.launch {
-            runCatching { repository.startCheckIn(spot.id, mode, groupSession.id) }
+            runCatching { repository.startCheckIn(spot.id, mode, groupSessionId) }
                 .onSuccess { session ->
                     _uiState.update {
                         it.copy(
                             activeCheckIn = session,
+                            sessionStartTimeMillis = System.currentTimeMillis(),
+                            showLiveSession = true,
                             requestedBuddyIds = emptySet(),
                             error = null
                         )
@@ -107,23 +142,124 @@ class HomeViewModel(
         }
     }
 
-    fun closeCheckIn() {
-        _uiState.update { it.copy(activeCheckIn = null, error = null) }
+    fun minimizeSession() {
+        _uiState.update { it.copy(showLiveSession = false, error = null) }
     }
 
-    fun checkOut() {
+    fun expandSession() {
+        _uiState.update { it.copy(showLiveSession = true, error = null) }
+    }
+
+    fun closeCheckIn() {
+        _uiState.update { it.copy(activeCheckIn = null, showLiveSession = false, error = null) }
+    }
+
+    fun checkOut(onCheckedOut: (CheckInSession) -> Unit = {}) {
         val session = uiState.value.activeCheckIn ?: return
+        val elapsedSeconds = ((System.currentTimeMillis() - uiState.value.sessionStartTimeMillis) / 1000).toInt()
+        val spotName = session.spot.name
+        val spotId = session.spot.id
         viewModelScope.launch {
             runCatching { repository.checkOut(session.id) }
                 .onSuccess {
-                    _uiState.update { state ->
-                        state.copy(activeCheckIn = null, error = null)
+                    val finished = CompletedSession(
+                        spotName = spotName,
+                        durationSeconds = elapsedSeconds,
+                        finishedAtMillis = System.currentTimeMillis()
+                    )
+                    var earnedBadge: BadgeId? = null
+                    val userId = runCatching { authRepository.currentUser()?.id }.getOrNull()
+                    if (userId != null) {
+                        runCatching {
+                            val newCount = streakRepository.recordCheckout(userId, spotId, spotName, elapsedSeconds)
+                            awardBadgesUseCase.onCheckout(userId, newCount)
+                            earnedBadge = when (newCount) {
+                                1  -> BadgeId.FIRST_CHECKOUT
+                                10 -> BadgeId.SESSION_VETERAN
+                                else -> null
+                            }
+                        }
                     }
+                    _uiState.update { state ->
+                        state.copy(
+                            activeCheckIn = null,
+                            showLiveSession = false,
+                            completedSessions = listOf(finished) + state.completedSessions,
+                            pendingCheckoutBadge = earnedBadge,
+                            showReviewPrompt = true,
+                            pendingReviewSpotId = spotId,
+                            pendingReviewSpotName = spotName,
+                            error = null
+                        )
+                    }
+                    onCheckedOut(session)
                 }
                 .onFailure { error ->
                     showError(error.message ?: "Could not check out. Try again.")
                 }
         }
+    }
+
+    fun submitPostCheckoutReview(rating: Int, comment: String?) {
+        val spotId = uiState.value.pendingReviewSpotId ?: return
+        val checkoutBadge = uiState.value.pendingCheckoutBadge
+        viewModelScope.launch {
+            val qualityScore = ReviewQualityScorer.score(comment)
+            val draft = ReviewDraft(spotSlug = spotId, rating = rating, comment = comment)
+            runCatching { reviewRepository.submit(draft) }
+                .onSuccess {
+                    var reviewBadge: BadgeId? = null
+                    val userId = runCatching { authRepository.currentUser()?.id }.getOrNull()
+                    if (userId != null) {
+                        runCatching {
+                            val reviewCount = reviewRepository.getReviewCount(userId)
+                            awardBadgesUseCase.onReview(userId, qualityScore)
+                            reviewBadge = when {
+                                reviewCount == 0 -> BadgeId.FIRST_REVIEW
+                                qualityScore >= 5 -> BadgeId.QUALITY_REVIEWER
+                                else -> null
+                            }
+                        }
+                    }
+                    _uiState.update {
+                        it.copy(
+                            showReviewPrompt = false,
+                            pendingReviewSpotId = null,
+                            pendingReviewSpotName = null,
+                            pendingCheckoutBadge = null,
+                            newBadge = reviewBadge ?: checkoutBadge,
+                        )
+                    }
+                }
+                .onFailure {
+                    _uiState.update {
+                        it.copy(
+                            showReviewPrompt = false,
+                            pendingReviewSpotId = null,
+                            pendingReviewSpotName = null,
+                            pendingCheckoutBadge = null,
+                            newBadge = checkoutBadge,
+                        )
+                    }
+                }
+        }
+    }
+
+    fun dismissReviewPrompt() {
+        val checkoutBadge = uiState.value.pendingCheckoutBadge
+        _uiState.update {
+            it.copy(
+                showReviewPrompt = false,
+                pendingReviewSpotId = null,
+                pendingReviewSpotName = null,
+                pendingCheckoutBadge = null,
+                newBadge = checkoutBadge,
+            )
+        }
+    }
+
+    fun clearNewBadge() {
+        _uiState.update { it.copy(newBadge = null) }
     }
 
     fun sendBuddyRequest(studentId: String) {
@@ -170,6 +306,8 @@ class HomeViewModel(
                     showError(error.message ?: "Could not load friends.")
                 }
         }
+    fun setNoiseFilter(filter: String?) {
+        _uiState.update { it.copy(noiseFilter = filter, error = null) }
     }
 
     fun updateInviteText(value: String) {
@@ -213,6 +351,7 @@ class HomeViewModel(
                             groupSession = snapshot.groupSession,
                             groupSpots = snapshot.groupSpots,
                             mapSpots = snapshot.mapSpots,
+                            trendingCounts = snapshot.trendingCounts,
                             selectedSpotId = snapshot.soloSpot.id,
                             error = null
                         )
@@ -223,6 +362,36 @@ class HomeViewModel(
                         it.copy(
                             isLoading = false,
                             error = error.message ?: "Could not load study spots."
+                        )
+                    }
+                }
+        }
+    }
+
+    fun refresh() {
+        if (uiState.value.isRefreshing) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isRefreshing = true, error = null) }
+            runCatching { repository.loadHome() }
+                .onSuccess { snapshot ->
+                    _uiState.update {
+                        it.copy(
+                            isRefreshing = false,
+                            userFirstName = snapshot.userFirstName,
+                            soloSpot = snapshot.soloSpot,
+                            groupSession = snapshot.groupSession,
+                            groupSpots = snapshot.groupSpots,
+                            mapSpots = snapshot.mapSpots,
+                            trendingCounts = snapshot.trendingCounts,
+                            error = null
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(
+                            isRefreshing = false,
+                            error = error.message ?: "Could not refresh spots."
                         )
                     }
                 }
@@ -240,5 +409,21 @@ class HomeViewModel(
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
             HomeViewModel(repository, socialRepository) as T
+        private val authRepository: AuthRepository,
+        private val streakRepository: StreakRepository,
+        private val badgeRepository: BadgeRepository,
+        private val reviewRepository: ReviewRepository,
+        private val awardBadgesUseCase: AwardBadgesUseCase,
+    ) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T =
+            HomeViewModel(
+                repository,
+                authRepository,
+                streakRepository,
+                badgeRepository,
+                reviewRepository,
+                awardBadgesUseCase,
+            ) as T
     }
 }

@@ -1,13 +1,24 @@
 package com.appetizers.spotra.presentation.home
 
+import com.appetizers.spotra.domain.model.BadgeId
 import com.appetizers.spotra.domain.model.CheckInSession
 import com.appetizers.spotra.domain.model.CheckedInStudent
 import com.appetizers.spotra.domain.model.GroupMember
 import com.appetizers.spotra.domain.model.GroupStudySession
 import com.appetizers.spotra.domain.model.HomeSnapshot
+import com.appetizers.spotra.domain.model.Review
+import com.appetizers.spotra.domain.model.ReviewDraft
 import com.appetizers.spotra.domain.model.StudyMode
+import com.appetizers.spotra.domain.model.StudySpotDetail
 import com.appetizers.spotra.domain.model.StudySpotSummary
+import com.appetizers.spotra.domain.model.UserBadge
+import com.appetizers.spotra.domain.repository.AuthRepository
+import com.appetizers.spotra.domain.repository.AuthUser
+import com.appetizers.spotra.domain.repository.BadgeRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
+import com.appetizers.spotra.domain.repository.ReviewRepository
+import com.appetizers.spotra.domain.repository.StreakRepository
+import com.appetizers.spotra.domain.usecase.AwardBadgesUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -37,9 +48,18 @@ class HomeViewModelTest {
         Dispatchers.resetMain()
     }
 
+    private fun buildViewModel(home: HomeRepository = FakeHomeRepository()) = HomeViewModel(
+        repository = home,
+        authRepository = NullAuthRepository(),
+        streakRepository = NoOpStreakRepository(),
+        badgeRepository = NoOpBadgeRepository(),
+        reviewRepository = NoOpReviewRepository(),
+        awardBadgesUseCase = AwardBadgesUseCase(NoOpBadgeRepository(), NoOpReviewRepository()),
+    )
+
     @Test
     fun `loads home snapshot into ui state`() = runTest(dispatcher) {
-        val viewModel = HomeViewModel(FakeHomeRepository())
+        val viewModel = buildViewModel()
         advanceUntilIdle()
 
         val state = viewModel.uiState.value
@@ -51,7 +71,7 @@ class HomeViewModelTest {
 
     @Test
     fun `map spots load and default selection is solo spot`() = runTest(dispatcher) {
-        val viewModel = HomeViewModel(FakeHomeRepository())
+        val viewModel = buildViewModel()
         advanceUntilIdle()
 
         val state = viewModel.uiState.value
@@ -61,7 +81,7 @@ class HomeViewModelTest {
 
     @Test
     fun `selectMapSpot updates selected spot id`() = runTest(dispatcher) {
-        val viewModel = HomeViewModel(FakeHomeRepository())
+        val viewModel = buildViewModel()
         advanceUntilIdle()
 
         viewModel.selectMapSpot("dc-library")
@@ -71,7 +91,7 @@ class HomeViewModelTest {
 
     @Test
     fun `selectSection updates active home section`() = runTest(dispatcher) {
-        val viewModel = HomeViewModel(FakeHomeRepository())
+        val viewModel = buildViewModel()
         advanceUntilIdle()
 
         viewModel.selectSection(HomeSection.Explore)
@@ -83,7 +103,7 @@ class HomeViewModelTest {
 
     @Test
     fun `selectSocialTab opens social section and selects tab`() = runTest(dispatcher) {
-        val viewModel = HomeViewModel(FakeHomeRepository())
+        val viewModel = buildViewModel()
         advanceUntilIdle()
 
         viewModel.selectSocialTab(SocialTab.Discover)
@@ -95,7 +115,7 @@ class HomeViewModelTest {
 
     @Test
     fun `group invite appends member and clears input`() = runTest(dispatcher) {
-        val viewModel = HomeViewModel(FakeHomeRepository())
+        val viewModel = buildViewModel()
         advanceUntilIdle()
 
         viewModel.updateInviteText("Maya R")
@@ -110,7 +130,8 @@ class HomeViewModelTest {
 
     @Test
     fun `check in and check out update active session`() = runTest(dispatcher) {
-        val viewModel = HomeViewModel(FakeHomeRepository())
+        val repository = FakeHomeRepository()
+        val viewModel = buildViewModel(repository)
         advanceUntilIdle()
 
         val spot = requireNotNull(viewModel.uiState.value.soloSpot)
@@ -118,16 +139,26 @@ class HomeViewModelTest {
         advanceUntilIdle()
 
         assertEquals("session-e7-study-hall", viewModel.uiState.value.activeCheckIn?.id)
+        assertNull(repository.lastStartGroupSessionId)
+        assertTrue(viewModel.uiState.value.showLiveSession)
 
-        viewModel.checkOut()
+        var checkedOutSpotId: String? = null
+        viewModel.checkOut { session ->
+            checkedOutSpotId = session.spot.id
+        }
         advanceUntilIdle()
 
         assertNull(viewModel.uiState.value.activeCheckIn)
+        assertFalse(viewModel.uiState.value.showLiveSession)
+        assertEquals("e7-study-hall", checkedOutSpotId)
+        assertEquals(1, viewModel.uiState.value.completedSessions.size)
+        assertEquals("E7 Study Hall", viewModel.uiState.value.completedSessions.first().spotName)
+        assertTrue(viewModel.uiState.value.completedSessions.first().durationSeconds >= 0)
     }
 
     @Test
     fun `buddy request records requested student`() = runTest(dispatcher) {
-        val viewModel = HomeViewModel(FakeHomeRepository())
+        val viewModel = buildViewModel()
         advanceUntilIdle()
 
         viewModel.sendBuddyRequest("akshat")
@@ -138,6 +169,9 @@ class HomeViewModelTest {
 }
 
 private class FakeHomeRepository : HomeRepository {
+    var lastStartGroupSessionId: String? = null
+        private set
+
     private val soloSpot = StudySpotSummary(
         id = "e7-study-hall",
         name = "E7 Study Hall",
@@ -176,12 +210,36 @@ private class FakeHomeRepository : HomeRepository {
             mapSpots = listOf(soloSpot, secondaryMapSpot)
         )
 
+    override suspend fun spotDetail(spotId: String): StudySpotDetail =
+        StudySpotDetail(
+            id = spotId,
+            name = soloSpot.name,
+            building = "Engineering 7",
+            floor = "Room 2101",
+            badge = soloSpot.badge,
+            distanceMeters = soloSpot.distanceMeters,
+            rating = soloSpot.rating,
+            studyContextLabel = soloSpot.studyContextLabel,
+            noiseLevel = "Low",
+            lighting = "Good",
+            capacity = 24,
+            occupancyPercent = 26,
+            occupancyPercentIsLive = true,
+            reportedOccupancyPercent = 26,
+            peopleHere = 6,
+            latitude = soloSpot.latitude,
+            longitude = soloSpot.longitude
+        )
+
+    override suspend fun childSpots(parentSpotId: String): List<StudySpotDetail> = emptyList()
+
     override suspend fun startCheckIn(
         spotId: String,
         mode: StudyMode,
         groupSessionId: String?
-    ): CheckInSession =
-        CheckInSession(
+    ): CheckInSession {
+        lastStartGroupSessionId = groupSessionId
+        return CheckInSession(
             id = "session-$spotId",
             spot = soloSpot,
             mode = mode,
@@ -189,6 +247,7 @@ private class FakeHomeRepository : HomeRepository {
                 CheckedInStudent("you", "VB", "You (Vraj)", "CS 341 - studying now", isSelf = true)
             )
         )
+    }
 
     override suspend fun checkOut(sessionId: String) = Unit
 
@@ -199,4 +258,28 @@ private class FakeHomeRepository : HomeRepository {
         inviteText: String
     ): GroupMember =
         GroupMember("invite-2", inviteText, "MR")
+}
+
+private class NullAuthRepository : AuthRepository {
+    override suspend fun currentUser(): AuthUser? = null
+    override suspend fun sendOtp(email: String, createUser: Boolean) = Unit
+    override suspend fun verifyOtp(email: String, token: String): AuthUser = error("not used")
+    override suspend fun signOut() = Unit
+}
+
+private class NoOpStreakRepository : StreakRepository {
+    override suspend fun recordLogin(userId: String) = 0
+    override suspend fun recordCheckout(userId: String, spotId: String, spotName: String, durationSeconds: Int) = 0
+}
+
+private class NoOpBadgeRepository : BadgeRepository {
+    override suspend fun getBadges(userId: String): List<UserBadge> = emptyList()
+    override suspend fun awardBadge(userId: String, badgeId: BadgeId) = Unit
+}
+
+private class NoOpReviewRepository : ReviewRepository {
+    override suspend fun reviewsFor(spotSlug: String): List<Review> = emptyList()
+    override suspend fun submit(draft: ReviewDraft) = Unit
+    override suspend fun getReviewCount(userId: String) = 0
+    override suspend fun getQualityReviewCount(userId: String) = 0
 }

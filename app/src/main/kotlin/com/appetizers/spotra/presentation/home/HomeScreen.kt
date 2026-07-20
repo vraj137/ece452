@@ -5,6 +5,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,6 +28,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -34,51 +38,55 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Send
-import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.AccountCircle
-import androidx.compose.material.icons.rounded.AccessTime
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.Groups
-import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PersonAdd
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Wifi
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.appetizers.spotra.BuildConfig
+import com.appetizers.spotra.data.mock.MockData
 import com.appetizers.spotra.domain.model.CheckInSession
 import com.appetizers.spotra.domain.model.CheckedInStudent
 import com.appetizers.spotra.domain.model.GroupMember
@@ -86,33 +94,94 @@ import com.appetizers.spotra.domain.model.GroupStudySession
 import com.appetizers.spotra.domain.model.SpotFeature
 import com.appetizers.spotra.domain.model.SpotFeatureType
 import com.appetizers.spotra.domain.model.StudyMode
+import com.appetizers.spotra.domain.model.StudySpotDetail
 import com.appetizers.spotra.domain.model.StudySpotSummary
+import com.appetizers.spotra.domain.repository.AuthRepository
+import com.appetizers.spotra.domain.repository.BadgeRepository
+import com.appetizers.spotra.domain.repository.FriendRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.SocialRepository
 import com.appetizers.spotra.domain.model.SocialSnapshot
 import com.appetizers.spotra.domain.model.SocialUser
+import com.appetizers.spotra.domain.repository.ProfileRepository
+import com.appetizers.spotra.domain.repository.StreakRepository
+import com.appetizers.spotra.domain.usecase.AwardBadgesUseCase
 import com.mapbox.geojson.Point
 import com.mapbox.maps.Style
 import com.mapbox.maps.ViewAnnotationAnchor
+import com.mapbox.maps.dsl.cameraOptions
 import com.mapbox.maps.extension.compose.MapboxMap
 import com.mapbox.maps.extension.compose.animation.viewport.rememberMapViewportState
 import com.mapbox.maps.extension.compose.annotation.ViewAnnotation
 import com.mapbox.maps.extension.compose.style.MapStyle
+import com.mapbox.maps.plugin.animation.MapAnimationOptions
 import com.mapbox.maps.viewannotation.annotationAnchor
 import com.mapbox.maps.viewannotation.geometry
 import com.mapbox.maps.viewannotation.viewAnnotationOptions
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.rememberModalBottomSheetState
+import com.appetizers.spotra.domain.model.BadgeId
 import kotlinx.coroutines.delay
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(homeRepository: HomeRepository, socialRepository: SocialRepository) {
     val viewModel: HomeViewModel = viewModel(
         factory = HomeViewModel.Factory(homeRepository, socialRepository)
+fun HomeScreen(
+    homeRepository: HomeRepository,
+    profileRepository: ProfileRepository,
+    authRepository: AuthRepository,
+    spotSubmissionRepository: com.appetizers.spotra.domain.repository.SpotSubmissionRepository,
+    reviewRepository: com.appetizers.spotra.domain.repository.ReviewRepository,
+    friendRepository: FriendRepository,
+    badgeRepository: BadgeRepository,
+    streakRepository: StreakRepository,
+    awardBadgesUseCase: AwardBadgesUseCase,
+    loginStreak: Int = 0,
+    onSignOut: () -> Unit = {}
+) {
+    val viewModel: HomeViewModel = viewModel(
+        factory = HomeViewModel.Factory(
+            homeRepository,
+            authRepository,
+            streakRepository,
+            badgeRepository,
+            reviewRepository,
+            awardBadgesUseCase,
+        )
     )
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val accent by animateColorAsState(
-        targetValue = if (state.selectedMode == StudyMode.Solo) SoloBlue else GroupGreen,
-        label = "mode-accent"
-    )
+    val accent = if (state.selectedMode == StudyMode.Solo) SoloBlue else GroupGreen
+
+    var viewingSpotId by remember { mutableStateOf<String?>(null) }
+    var reviewingSpotId by remember { mutableStateOf<String?>(null) }
+    var showSubmitSpot by remember { mutableStateOf(false) }
+
+    val snackbarHostState = remember { SnackbarHostState() }
+    val reviewSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    LaunchedEffect(state.newBadge) {
+        state.newBadge?.let { badge ->
+            snackbarHostState.showSnackbar("Badge earned: ${badge.label}!")
+            viewModel.clearNewBadge()
+        }
+    }
+
+    if (state.showReviewPrompt && state.pendingReviewSpotId != null) {
+        PostCheckoutReviewSheet(
+            spotName = state.pendingReviewSpotName ?: "this spot",
+            sheetState = reviewSheetState,
+            onSubmit = { rating, comment -> viewModel.submitPostCheckoutReview(rating, comment) },
+            onDismiss = viewModel::dismissReviewPrompt,
+        )
+    }
 
     if (state.isLoading || state.soloSpot == null || state.groupSession == null) {
         HomeLoadingScreen()
@@ -120,18 +189,76 @@ fun HomeScreen(homeRepository: HomeRepository, socialRepository: SocialRepositor
     }
     val soloSpot = state.soloSpot ?: return
     val groupSession = state.groupSession ?: return
+    val activeCheckIn = state.activeCheckIn
 
-    state.activeCheckIn?.let { session ->
+    if (showSubmitSpot) {
+        SubmitSpotScreen(
+            authRepository = authRepository,
+            spotSubmissionRepository = spotSubmissionRepository,
+            onBack = { showSubmitSpot = false }
+        )
+        return
+    }
+
+    reviewingSpotId?.let { slug ->
+        ReviewScreen(
+            spotName = state.mapSpots.firstOrNull { it.id == slug }?.name ?: "this spot",
+            spotSlug = slug,
+            reviewRepository = reviewRepository,
+            onBack = { reviewingSpotId = null }
+        )
+        return
+    }
+
+    viewingSpotId?.let { spotId ->
+        val parentSpot = state.mapSpots.firstOrNull { it.id == spotId && it.childCount > 0 }
+        if (parentSpot != null) {
+            BuildingSpacesScreen(
+                parentSpot = parentSpot,
+                homeRepository = homeRepository,
+                accent = accent,
+                onBack = { viewingSpotId = null },
+                onSpaceSelected = { child ->
+                    viewingSpotId = child.id
+                }
+            )
+            return
+        }
+
+        SpotDetailScreen(
+            spotId = spotId,
+            accent = accent,
+            onBack = { viewingSpotId = null },
+            onCheckIn = { spot ->
+                viewModel.startCheckIn(spot, state.selectedMode)
+                viewingSpotId = null
+            },
+            checkInLabel = if (state.selectedMode == StudyMode.Group) "Join with group" else "Start Session",
+            homeRepository = homeRepository,
+            reviewRepository = reviewRepository,
+            friendRepository = friendRepository,
+            onReview = { reviewingSpotId = spotId },
+            activeCheckInSpotId = activeCheckIn?.spot?.id,
+            onEndSession = {
+                viewModel.checkOut()
+                viewingSpotId = null
+            }
+        )
+        return
+    }
+
+    if (activeCheckIn != null && state.showLiveSession) {
         LiveCheckInScreen(
-            session = session,
-            accent = session.mode.accentColor(),
+            session = activeCheckIn,
+            sessionStartTimeMillis = state.sessionStartTimeMillis,
+            accent = activeCheckIn.mode.accentColor(),
             requestedBuddyIds = state.requestedBuddyIds,
             onBuddyRequest = viewModel::sendBuddyRequest,
-            onBack = viewModel::closeCheckIn,
-            onCheckout = viewModel::checkOut,
+            onBack = viewModel::minimizeSession,
+            onCheckout = { viewModel.checkOut() },
             selectedSection = state.selectedSection,
             onSectionSelected = { section ->
-                viewModel.closeCheckIn()
+                viewModel.minimizeSession()
                 viewModel.selectSection(section)
             }
         )
@@ -140,7 +267,7 @@ fun HomeScreen(homeRepository: HomeRepository, socialRepository: SocialRepositor
 
     if (state.selectedSection == HomeSection.Map && state.selectedMode == StudyMode.Group) {
         BackHandler { viewModel.returnToSoloMap() }
-        GroupModeScreen(
+        GroupModeContent(
             groupSession = groupSession,
             spots = state.groupSpots,
             inviteText = state.inviteText,
@@ -149,22 +276,33 @@ fun HomeScreen(homeRepository: HomeRepository, socialRepository: SocialRepositor
             onBack = viewModel::returnToSoloMap,
             selectedSection = state.selectedSection,
             onSectionSelected = viewModel::selectSection,
-            onSpotSelected = { spot ->
-                viewModel.startCheckIn(spot, StudyMode.Group)
-            }
+            onSpotSelected = { spot -> viewingSpotId = spot.id }
         )
         return
     }
 
     if (state.selectedSection == HomeSection.Explore) {
-        val displayedSpot = state.mapSpots.firstOrNull { it.id == state.selectedSpotId } ?: soloSpot
-        LiveSensorEnvironmentScreen(
-            spot = displayedSpot,
-            selectedSection = state.selectedSection,
-            onSectionSelected = viewModel::selectSection,
-            onBack = { viewModel.selectSection(HomeSection.Map) },
-            onCheckIn = { viewModel.startCheckIn(displayedSpot, state.selectedMode) }
-        )
+        Column(Modifier.fillMaxSize()) {
+            ExploreTabContent(
+                accent = accent,
+                trendingCounts = state.trendingCounts,
+                onSpotSelected = { viewingSpotId = it },
+                onSuggestSpot = { showSubmitSpot = true },
+                modifier = Modifier.weight(1f)
+            )
+            if (activeCheckIn != null) {
+                ActiveSessionBar(
+                    spotName = activeCheckIn.spot.name,
+                    sessionStartTimeMillis = state.sessionStartTimeMillis,
+                    onClick = viewModel::expandSession
+                )
+            }
+            BottomNavigationShell(
+                accent = accent,
+                selectedSection = state.selectedSection,
+                onSectionSelected = viewModel::selectSection
+            )
+        }
         return
     }
 
@@ -182,61 +320,91 @@ fun HomeScreen(homeRepository: HomeRepository, socialRepository: SocialRepositor
             social = state.social,
             onSendFriendRequest = viewModel::sendFriendRequest,
             onAcceptFriendRequest = viewModel::acceptFriendRequest
+            friendRepository = friendRepository,
+            loginStreak = loginStreak,
+            activeSessionBar = if (activeCheckIn != null) {
+                {
+                    ActiveSessionBar(
+                        spotName = activeCheckIn.spot.name,
+                        sessionStartTimeMillis = state.sessionStartTimeMillis,
+                        onClick = viewModel::expandSession
+                    )
+                }
+            } else null
         )
         return
     }
 
     if (state.selectedSection == HomeSection.Profile) {
-        ProfileScreen(
-            userFirstName = state.userFirstName,
-            selectedSection = state.selectedSection,
-            onSectionSelected = viewModel::selectSection
-        )
+        Column(Modifier.fillMaxSize()) {
+            ProfileTabContent(
+                profileRepository = profileRepository,
+                authRepository = authRepository,
+                friendRepository = friendRepository,
+                badgeRepository = badgeRepository,
+                onSignOut = onSignOut,
+                recentSessions = state.completedSessions,
+                modifier = Modifier.weight(1f)
+            )
+            if (activeCheckIn != null) {
+                ActiveSessionBar(
+                    spotName = activeCheckIn.spot.name,
+                    sessionStartTimeMillis = state.sessionStartTimeMillis,
+                    onClick = viewModel::expandSession
+                )
+            }
+            BottomNavigationShell(
+                accent = accent,
+                selectedSection = state.selectedSection,
+                onSectionSelected = viewModel::selectSection
+            )
+        }
         return
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(HomeBackground)
-            .statusBarsPadding()
-    ) {
-        HomeHeader(
-            userFirstName = state.userFirstName,
-            selectedMode = state.selectedMode,
-            accent = accent,
-            onModeSelected = viewModel::selectMode
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-        ) {
-            CampusMap(
-                spots = state.mapSpots,
-                selectedSpotId = state.selectedSpotId,
-                onSpotSelected = viewModel::selectMapSpot,
+    val filteredMapSpots = remember(state.mapSpots, state.noiseFilter) {
+        state.mapSpots.filter { spot ->
+            state.noiseFilter == null ||
+            spot.badge.equals(state.noiseFilter, ignoreCase = true)
+        }
+    }
+
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                MapTabContent(
+                    userFirstName = state.userFirstName,
+                    selectedMode = state.selectedMode,
+                    mapSpots = filteredMapSpots,
+                    allMapSpots = state.mapSpots,
+                    selectedSpotId = state.selectedSpotId,
+                    soloSpot = soloSpot,
+                    accent = accent,
+                    isRefreshing = state.isRefreshing,
+                    noiseFilter = state.noiseFilter,
+                    onModeSelected = viewModel::selectMode,
+                    onMapSpotSelected = viewModel::selectMapSpot,
+                    onSpotSelected = { viewingSpotId = it },
+                    onRefresh = viewModel::refresh,
+                    onNoiseFilterChange = viewModel::setNoiseFilter,
+                )
+            }
+            if (activeCheckIn != null) {
+                ActiveSessionBar(
+                    spotName = activeCheckIn.spot.name,
+                    sessionStartTimeMillis = state.sessionStartTimeMillis,
+                    onClick = viewModel::expandSession
+                )
+            }
+            BottomNavigationShell(
                 accent = accent,
-                mode = state.selectedMode,
-                modifier = Modifier.fillMaxSize()
-            )
-            val displayedSpot = state.mapSpots.firstOrNull { it.id == state.selectedSpotId }
-                ?: soloSpot
-            StudySpotCard(
-                spot = displayedSpot,
-                accent = accent,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(start = 30.dp, end = 30.dp, bottom = 16.dp),
-                onClick = {
-                    viewModel.startCheckIn(displayedSpot, StudyMode.Solo)
-                }
+                selectedSection = state.selectedSection,
+                onSectionSelected = viewModel::selectSection
             )
         }
-        BottomNavigationShell(
-            accent = accent,
-            selectedSection = state.selectedSection,
-            onSectionSelected = viewModel::selectSection
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding()
         )
     }
 }
@@ -260,7 +428,63 @@ private fun HomeLoadingScreen() {
 }
 
 @Composable
-private fun GroupModeScreen(
+private fun MapTabContent(
+    userFirstName: String,
+    selectedMode: StudyMode,
+    mapSpots: List<StudySpotSummary>,
+    allMapSpots: List<StudySpotSummary>,
+    selectedSpotId: String?,
+    soloSpot: StudySpotSummary,
+    accent: Color,
+    isRefreshing: Boolean,
+    noiseFilter: String?,
+    onModeSelected: (StudyMode) -> Unit,
+    onMapSpotSelected: (String) -> Unit,
+    onSpotSelected: (String) -> Unit,
+    onRefresh: () -> Unit,
+    onNoiseFilterChange: (String?) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(HomeBackground)
+            .statusBarsPadding()
+    ) {
+        HomeHeader(
+            userFirstName = userFirstName,
+            selectedMode = selectedMode,
+            accent = accent,
+            onModeSelected = onModeSelected,
+            noiseFilter = noiseFilter,
+            onNoiseFilterChange = onNoiseFilterChange,
+        )
+        CampusMap(
+            spots = mapSpots,
+            selectedSpotId = selectedSpotId,
+            onSpotSelected = onMapSpotSelected,
+            accent = accent,
+            mode = selectedMode,
+            isRefreshing = isRefreshing,
+            onRefresh = onRefresh,
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+        )
+        val displayedSpot = remember(allMapSpots, selectedSpotId, soloSpot) {
+            allMapSpots.firstOrNull { it.id == selectedSpotId } ?: soloSpot
+        }
+        StudySpotCard(
+            spot = displayedSpot,
+            accent = accent,
+            modifier = Modifier.padding(start = 30.dp, top = 16.dp, end = 30.dp),
+            onClick = { onSpotSelected(displayedSpot.id) }
+        )
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+@Composable
+private fun GroupModeContent(
     groupSession: GroupStudySession,
     spots: List<StudySpotSummary>,
     inviteText: String,
@@ -282,7 +506,7 @@ private fun GroupModeScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+            contentPadding = PaddingValues(
                 start = 38.dp,
                 top = 18.dp,
                 end = 32.dp,
@@ -325,6 +549,7 @@ private fun GroupModeScreen(
 
 @Composable
 private fun GroupModeHeader(groupSession: GroupStudySession, onBack: () -> Unit) {
+    val isSolo = groupSession.members.size <= 1
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -334,7 +559,7 @@ private fun GroupModeHeader(groupSession: GroupStudySession, onBack: () -> Unit)
         GroupHeaderTopRow(onBack)
         Spacer(Modifier.height(22.dp))
         Text(
-            text = groupSession.title,
+            text = if (isSolo) "Group mode" else groupSession.title,
             color = Color.White,
             fontSize = 30.sp,
             fontWeight = FontWeight.ExtraBold,
@@ -343,25 +568,50 @@ private fun GroupModeHeader(groupSession: GroupStudySession, onBack: () -> Unit)
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            text = "${groupSession.subtitle} - ${groupSession.members.size} members",
+            text = if (isSolo) "Invite friends below to start a session"
+                   else "${groupSession.subtitle} · ${groupSession.members.size} members",
             color = GroupHeaderSecondary,
-            fontSize = 20.sp,
+            fontSize = 18.sp,
             fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
-        Spacer(Modifier.height(22.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            GroupAvatarStrip(groupSession.members)
-            Spacer(Modifier.width(18.dp))
-            Text(
-                text = groupSession.proximityLabel,
-                color = GroupHeaderSecondary,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+        if (!isSolo) {
+            Spacer(Modifier.height(22.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                GroupAvatarStrip(groupSession.members)
+                Spacer(Modifier.width(18.dp))
+                Text(
+                    text = groupSession.proximityLabel,
+                    color = GroupHeaderSecondary,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        } else {
+            Spacer(Modifier.height(14.dp))
+            Row(
+                modifier = Modifier
+                    .background(GroupBackButton, RoundedCornerShape(22.dp))
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.PersonAdd,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(Modifier.width(7.dp))
+                Text(
+                    text = "Just you · use invite bar below",
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
         }
     }
 }
@@ -448,10 +698,7 @@ private fun GroupAvatarStrip(members: List<GroupMember>) {
 }
 
 @Composable
-private fun GroupSpotCard(
-    spot: StudySpotSummary,
-    onClick: () -> Unit
-) {
+private fun GroupSpotCard(spot: StudySpotSummary, onClick: () -> Unit) {
     val borderColor = if (spot.bestFit) GroupGreen else GroupCardBorder
     val backgroundColor = if (spot.bestFit) GroupBestFitBackground else Color.White
     val icon = groupSpotIconFor(spot)
@@ -506,6 +753,48 @@ private fun GroupSpotCard(
         }
         Spacer(Modifier.height(14.dp))
         GroupFeatureRows(spot.features)
+        Spacer(Modifier.height(10.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                modifier = Modifier
+                    .background(GroupGreen.copy(alpha = 0.12f), RoundedCornerShape(10.dp))
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Group,
+                    contentDescription = null,
+                    tint = GroupGreen,
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(Modifier.width(5.dp))
+                Text(
+                    text = "Group-friendly",
+                    color = GroupGreen,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "Tap to view",
+                    color = HeaderMuted,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(Modifier.width(3.dp))
+                Icon(
+                    imageVector = Icons.Rounded.ChevronRight,
+                    contentDescription = null,
+                    tint = NavMuted,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
     }
 }
 
@@ -548,13 +837,8 @@ private fun GroupFeatureChip(feature: SpotFeature) {
 }
 
 @Composable
-private fun GroupInviteBar(
-    value: String,
-    onValueChange: (String) -> Unit,
-    onSend: () -> Unit
-) {
+private fun GroupInviteBar(value: String, onValueChange: (String) -> Unit, onSend: () -> Unit) {
     val canSend = value.trim().isNotEmpty()
-
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -575,11 +859,7 @@ private fun GroupInviteBar(
                 value = value,
                 onValueChange = onValueChange,
                 singleLine = false,
-                textStyle = TextStyle(
-                    color = Ink,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Medium
-                ),
+                textStyle = TextStyle(color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Medium),
                 modifier = Modifier.fillMaxWidth()
             )
             if (value.isBlank()) {
@@ -595,10 +875,7 @@ private fun GroupInviteBar(
         Row(
             modifier = Modifier
                 .height(72.dp)
-                .background(
-                    if (canSend) GroupGreen else DisabledSend,
-                    RoundedCornerShape(16.dp)
-                )
+                .background(if (canSend) GroupGreen else DisabledSend, RoundedCornerShape(16.dp))
                 .clickable(enabled = canSend, onClick = onSend)
                 .padding(horizontal = 20.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -611,134 +888,184 @@ private fun GroupInviteBar(
                 modifier = Modifier.size(22.dp)
             )
             Spacer(Modifier.width(8.dp))
-            Text(
-                text = "Send",
-                color = Color.White,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.ExtraBold
-            )
+            Text(text = "Send", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
         }
     }
 }
 
 @Composable
-private fun LiveSensorEnvironmentScreen(
-    spot: StudySpotSummary,
+private fun SocialScreen(
+    selectedTab: SocialTab,
+    onTabSelected: (SocialTab) -> Unit,
     selectedSection: HomeSection,
     onSectionSelected: (HomeSection) -> Unit,
-    onBack: () -> Unit,
-    onCheckIn: () -> Unit
+    friendRepository: FriendRepository,
+    loginStreak: Int = 0,
+    activeSessionBar: (@Composable () -> Unit)? = null
 ) {
-    val readings = remember(spot.id) { sensorReadingsFor(spot.id) }
-    val score = remember(readings) { readings.sumOf { it.scoreWeight } / readings.size }
+    val vm: SocialViewModel = viewModel(factory = SocialViewModel.Factory(friendRepository))
+    val state by vm.state.collectAsStateWithLifecycle()
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(CheckInHeader)
+            .background(Color.White)
             .statusBarsPadding()
     ) {
         Column(
-            modifier = Modifier.padding(start = 30.dp, top = 34.dp, end = 30.dp, bottom = 20.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(46.dp)
-                    .background(HeaderButton, RoundedCornerShape(14.dp))
-                    .clickable(onClick = onBack),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                    contentDescription = "Back",
-                    tint = Color.White
-                )
-            }
-            Spacer(Modifier.height(18.dp))
-            Text(
-                text = spot.name,
-                color = Color.White,
-                fontSize = 30.sp,
-                fontWeight = FontWeight.ExtraBold
-            )
-            Spacer(Modifier.height(5.dp))
-            Text(
-                text = "Live sensor readings - Updated 12s ago",
-                color = HeaderSecondary,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(Modifier.height(18.dp))
-            Row(
-                modifier = Modifier
-                    .background(SensorScoreBackground, RoundedCornerShape(24.dp))
-                    .padding(horizontal = 18.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Bolt,
-                    contentDescription = null,
-                    tint = Color(0xFF9BB2FF),
-                    modifier = Modifier.size(21.dp)
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = "$score / 100 study score",
-                    color = Color(0xFFDCE4FF),
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
-            }
-        }
-
-        SensorPrivacyNote()
-
-        LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                start = 24.dp,
-                top = 26.dp,
-                end = 24.dp,
-                bottom = 18.dp
-            ),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(start = 30.dp, top = 34.dp, end = 30.dp)
         ) {
-            itemsIndexed(readings.chunked(2)) { _, row ->
-                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    row.forEach { reading ->
-                        SensorReadingCard(
-                            reading = reading,
-                            modifier = Modifier.weight(1f)
-                        )
+            Text(text = "Social", color = Ink, fontSize = 32.sp, fontWeight = FontWeight.ExtraBold)
+            Spacer(Modifier.height(22.dp))
+            SocialTabs(selectedTab, onTabSelected)
+        }
+
+        if (state.isLoading) {
+            androidx.compose.material3.CircularProgressIndicator(
+                modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 40.dp),
+                color = SoloBlue
+            )
+            Spacer(Modifier.weight(1f))
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                contentPadding = PaddingValues(start = 30.dp, top = 22.dp, end = 30.dp, bottom = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                when (selectedTab) {
+                    SocialTab.Friends -> {
+                        if (state.friends.isEmpty()) {
+                            item {
+                                Text(
+                                    text = "No friends yet. Search for people in Discover.",
+                                    color = HeaderMuted,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        } else {
+                            item { SectionHeader("YOUR FRIENDS (${state.friends.size})") }
+                            itemsIndexed(state.friends) { index, friend ->
+                                SocialPersonRow(
+                                    person = SocialPerson(
+                                        id = friend.id,
+                                        initials = friend.initials,
+                                        name = friend.fullName,
+                                        detail = friend.displayDetail
+                                    ),
+                                    actionLabel = "",
+                                    actionEnabled = false,
+                                    onAction = {}
+                                )
+                            }
+                        }
+                        item { StudyStreakCard(streakCount = loginStreak) }
                     }
-                    if (row.size == 1) {
-                        Spacer(Modifier.weight(1f))
+                    SocialTab.Requests -> {
+                        val badge = state.incomingRequests.size
+                        if (state.incomingRequests.isEmpty() && state.outgoingRequests.isEmpty()) {
+                            item {
+                                Text(
+                                    text = "No pending requests.",
+                                    color = HeaderMuted,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        } else {
+                            if (state.incomingRequests.isNotEmpty()) {
+                                item { SectionHeader("INCOMING ($badge)") }
+                                itemsIndexed(state.incomingRequests) { _, request ->
+                                    IncomingRequestRow(
+                                        profile = request,
+                                        onAccept = { vm.acceptRequest(request) },
+                                        onDecline = { vm.declineRequest(request) }
+                                    )
+                                }
+                            }
+                            if (state.outgoingRequests.isNotEmpty()) {
+                                item { SectionHeader("SENT") }
+                                itemsIndexed(state.outgoingRequests) { _, request ->
+                                    SocialPersonRow(
+                                        person = SocialPerson(
+                                            id = request.id,
+                                            initials = request.initials,
+                                            name = request.fullName,
+                                            detail = request.displayDetail
+                                        ),
+                                        actionLabel = "Pending",
+                                        actionEnabled = false,
+                                        onAction = {}
+                                    )
+                                }
+                            }
+                        }
                     }
-                }
-            }
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(58.dp)
-                        .background(SoloBlue, RoundedCornerShape(18.dp))
-                        .clickable(onClick = onCheckIn),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = Color.White)
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "Check in here",
-                        color = Color.White,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.ExtraBold
-                    )
+                    SocialTab.Discover -> {
+                        item {
+                            SearchBar(
+                                query = state.searchQuery,
+                                onQueryChange = vm::updateSearchQuery
+                            )
+                        }
+                        if (state.searchQuery.isNotBlank()) {
+                            if (state.searchResults.isEmpty()) {
+                                item {
+                                    Text(
+                                        text = "No results for \"${state.searchQuery}\".",
+                                        color = HeaderMuted,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            } else {
+                                item { SectionHeader("RESULTS") }
+                                itemsIndexed(state.searchResults) { _, profile ->
+                                    SocialPersonRow(
+                                        person = SocialPerson(
+                                            id = profile.id,
+                                            initials = profile.initials,
+                                            name = profile.fullName,
+                                            detail = profile.displayDetail
+                                        ),
+                                        actionLabel = "+ Add",
+                                        actionEnabled = true,
+                                        onAction = { vm.sendRequest(profile) }
+                                    )
+                                }
+                            }
+                        } else if (state.suggestions.isNotEmpty()) {
+                            item { SectionHeader("PEOPLE YOU MAY KNOW") }
+                            itemsIndexed(state.suggestions) { _, profile ->
+                                SocialPersonRow(
+                                    person = SocialPerson(
+                                        id = profile.id,
+                                        initials = profile.initials,
+                                        name = profile.fullName,
+                                        detail = profile.displayDetail.ifBlank { "UWaterloo student" }
+                                    ),
+                                    actionLabel = "+ Add",
+                                    actionEnabled = true,
+                                    onAction = { vm.sendRequest(profile) }
+                                )
+                            }
+                        } else {
+                            item {
+                                Text(
+                                    text = "Search by name or UWaterloo email to find friends.",
+                                    color = HeaderMuted,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
+        activeSessionBar?.invoke()
         BottomNavigationShell(
             accent = SoloBlue,
             selectedSection = selectedSection,
@@ -748,93 +1075,61 @@ private fun LiveSensorEnvironmentScreen(
 }
 
 @Composable
-private fun SensorPrivacyNote() {
+private fun SearchBar(query: String, onQueryChange: (String) -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xFFF2F4FF))
-            .padding(horizontal = 30.dp, vertical = 18.dp),
+            .background(HomeBackground, androidx.compose.foundation.shape.RoundedCornerShape(14.dp))
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            imageVector = Icons.Rounded.CheckCircle,
+            imageVector = Icons.Rounded.PersonAdd,
             contentDescription = null,
-            tint = SoloBlue,
-            modifier = Modifier.size(22.dp)
+            tint = HeaderMuted,
+            modifier = Modifier.size(20.dp)
         )
-        Spacer(Modifier.width(14.dp))
-        Text(
-            text = "Readings from your phone's mic, light sensor & network",
-            color = SoloBlue,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold
+        Spacer(Modifier.width(12.dp))
+        BasicTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            modifier = Modifier.weight(1f),
+            textStyle = androidx.compose.ui.text.TextStyle(
+                color = Ink,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium
+            ),
+            decorationBox = { inner ->
+                if (query.isEmpty()) {
+                    Text("Search by name or email", color = HeaderMuted, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                }
+                inner()
+            },
+            singleLine = true
         )
     }
 }
 
 @Composable
-private fun SensorReadingCard(
-    reading: SensorReading,
-    modifier: Modifier = Modifier
+private fun IncomingRequestRow(
+    profile: com.appetizers.spotra.domain.model.FriendProfile,
+    onAccept: () -> Unit,
+    onDecline: () -> Unit
 ) {
-    Column(
-        modifier = modifier
-            .height(178.dp)
-            .background(Color.White, RoundedCornerShape(20.dp))
-            .padding(18.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.White, androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .background(reading.tint.copy(alpha = .13f), RoundedCornerShape(13.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = reading.icon,
-                    contentDescription = null,
-                    tint = reading.tint,
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-            Spacer(Modifier.width(12.dp))
-            Text(
-                text = reading.label,
-                color = SectionLabel,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.ExtraBold,
-                maxLines = 1
-            )
-        }
-        Spacer(Modifier.height(20.dp))
-        Text(
-            text = reading.value,
-            color = Ink,
-            fontSize = 28.sp,
-            fontWeight = FontWeight.ExtraBold
-        )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            text = reading.description,
-            color = HeaderMuted,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        Spacer(Modifier.weight(1f))
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(5.dp)
-                .background(DividerLine, RoundedCornerShape(3.dp))
+                .size(54.dp)
+                .background(avatarColorFor(profile.id), androidx.compose.foundation.shape.CircleShape),
+            contentAlignment = Alignment.Center
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(reading.progress)
-                    .height(5.dp)
-                    .background(reading.tint, RoundedCornerShape(3.dp))
-            )
+            Text(profile.initials, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
         }
     }
 }
@@ -871,8 +1166,15 @@ private fun SocialScreen(
             )
             Spacer(Modifier.height(22.dp))
             SocialTabs(selectedTab, onTabSelected)
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(profile.fullName, color = Ink, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            Spacer(Modifier.height(2.dp))
+            Text(profile.displayDetail, color = HeaderMuted, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1)
         }
-        LazyColumn(
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = "✓",
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
@@ -930,6 +1232,23 @@ private fun SocialScreen(
             accent = SoloBlue,
             selectedSection = selectedSection,
             onSectionSelected = onSectionSelected
+                .background(SoloBlue, androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                .clickable(onClick = onAccept)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            color = Color.White,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.ExtraBold
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = "✗",
+            modifier = Modifier
+                .background(HomeBackground, androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                .clickable(onClick = onDecline)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            color = DPAtriumRed,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.ExtraBold
         )
     }
 }
@@ -954,6 +1273,11 @@ private fun SocialTabs(
     ) {
         SocialTab.entries.forEach { tab ->
             val selected = tab == selectedTab
+            val label = when (tab) {
+                SocialTab.Friends -> "Friends"
+                SocialTab.Requests -> "Requests"
+                SocialTab.Discover -> "Discover"
+            }
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -963,7 +1287,7 @@ private fun SocialTabs(
                 verticalArrangement = Arrangement.Center
             ) {
                 Text(
-                    text = tab.name,
+                    text = label,
                     color = if (selected) SoloBlue else HeaderMuted,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.ExtraBold
@@ -1053,7 +1377,7 @@ private fun SocialPersonRow(
 }
 
 @Composable
-private fun StudyStreakCard() {
+private fun StudyStreakCard(streakCount: Int) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1077,13 +1401,13 @@ private fun StudyStreakCard() {
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                text = "4 day study streak",
+                text = if (streakCount > 0) "$streakCount day login streak" else "No streak yet",
                 color = Ink,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.ExtraBold
             )
             Text(
-                text = "Check in tomorrow to keep it alive.",
+                text = if (streakCount > 0) "Open the app tomorrow to keep it going." else "Come back tomorrow to start your streak!",
                 color = HeaderMuted,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold
@@ -1092,75 +1416,80 @@ private fun StudyStreakCard() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ProfileScreen(
-    userFirstName: String,
-    selectedSection: HomeSection,
-    onSectionSelected: (HomeSection) -> Unit
+private fun PostCheckoutReviewSheet(
+    spotName: String,
+    sheetState: androidx.compose.material3.SheetState,
+    onSubmit: (rating: Int, comment: String?) -> Unit,
+    onDismiss: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(HomeBackground)
-            .statusBarsPadding()
-    ) {
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(30.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp)
-        ) {
-            item {
-                Text(
-                    text = "$userFirstName's study profile",
-                    color = Ink,
-                    fontSize = 31.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
-            }
-            item {
-                StudyStreakCard()
-            }
-            item {
-                ProfileMetricCard("Preferred mode", "Solo mornings, group evenings", Icons.Rounded.Person)
-            }
-            item {
-                ProfileMetricCard("Top course match", "CS 341 - 8 active buddies", Icons.Rounded.School)
-            }
-            item {
-                ProfileMetricCard("Privacy", "Buddy requests are opt-in both ways", Icons.Rounded.CheckCircle)
-            }
-        }
-        BottomNavigationShell(
-            accent = SoloBlue,
-            selectedSection = selectedSection,
-            onSectionSelected = onSectionSelected
-        )
-    }
-}
+    var rating by remember { mutableStateOf(0) }
+    var comment by remember { mutableStateOf("") }
 
-@Composable
-private fun ProfileMetricCard(title: String, detail: String, icon: ImageVector) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.White, RoundedCornerShape(22.dp))
-            .padding(20.dp),
-        verticalAlignment = Alignment.CenterVertically
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = Color.White,
     ) {
-        Box(
-            modifier = Modifier
-                .size(52.dp)
-                .background(SelfPillBackground, RoundedCornerShape(16.dp)),
-            contentAlignment = Alignment.Center
+        Column(
+            modifier = androidx.compose.ui.Modifier
+                .fillMaxWidth()
+                .padding(start = 24.dp, end = 24.dp, bottom = 40.dp)
         ) {
-            Icon(icon, contentDescription = null, tint = SoloBlue, modifier = Modifier.size(28.dp))
-        }
-        Spacer(Modifier.width(16.dp))
-        Column {
-            Text(title, color = Ink, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
-            Text(detail, color = HeaderMuted, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                text = "How was your session?",
+                color = Ink,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+            Spacer(androidx.compose.ui.Modifier.height(4.dp))
+            Text(text = spotName, color = HeaderMuted, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            Spacer(androidx.compose.ui.Modifier.height(20.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                (1..5).forEach { star ->
+                    Icon(
+                        imageVector = Icons.Rounded.Star,
+                        contentDescription = "Rate $star stars",
+                        tint = if (star <= rating) StarGold else Color(0xFFE0DDDA),
+                        modifier = androidx.compose.ui.Modifier
+                            .size(40.dp)
+                            .clickable { rating = star }
+                    )
+                }
+            }
+            Spacer(androidx.compose.ui.Modifier.height(16.dp))
+            BasicTextField(
+                value = comment,
+                onValueChange = { comment = it },
+                modifier = androidx.compose.ui.Modifier
+                    .fillMaxWidth()
+                    .background(HomeBackground, RoundedCornerShape(12.dp))
+                    .padding(14.dp),
+                textStyle = TextStyle(color = Ink, fontSize = 15.sp),
+                decorationBox = { inner ->
+                    if (comment.isEmpty()) {
+                        Text("Any tips for other students? (optional)", color = HeaderMuted, fontSize = 15.sp)
+                    }
+                    inner()
+                }
+            )
+            Spacer(androidx.compose.ui.Modifier.height(20.dp))
+            Row(
+                modifier = androidx.compose.ui.Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = androidx.compose.ui.Modifier.weight(1f)
+                ) { Text("Skip") }
+                Button(
+                    onClick = { if (rating > 0) onSubmit(rating, comment.ifBlank { null }) },
+                    enabled = rating > 0,
+                    modifier = androidx.compose.ui.Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = SoloBlue)
+                ) { Text("Submit") }
+            }
         }
     }
 }
@@ -1168,6 +1497,7 @@ private fun ProfileMetricCard(title: String, detail: String, icon: ImageVector) 
 @Composable
 private fun LiveCheckInScreen(
     session: CheckInSession,
+    sessionStartTimeMillis: Long,
     accent: Color,
     requestedBuddyIds: Set<String>,
     onBuddyRequest: (String) -> Unit,
@@ -1176,15 +1506,7 @@ private fun LiveCheckInScreen(
     selectedSection: HomeSection,
     onSectionSelected: (HomeSection) -> Unit
 ) {
-    var elapsedSeconds by remember(session.spot.name) { mutableStateOf(0) }
     var selectedBuddy by remember(session.id) { mutableStateOf<CheckedInStudent?>(null) }
-
-    LaunchedEffect(session.spot.name) {
-        while (true) {
-            delay(1000)
-            elapsedSeconds += 1
-        }
-    }
 
     Box(
         modifier = Modifier
@@ -1207,7 +1529,7 @@ private fun LiveCheckInScreen(
                     .weight(1f)
             )
             CheckInSessionPanel(
-                elapsedSeconds = elapsedSeconds,
+                sessionStartTimeMillis = sessionStartTimeMillis,
                 onCheckout = onCheckout
             )
             BottomNavigationShell(
@@ -1240,30 +1562,17 @@ private fun CheckInAttendeeList(
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(Color.White)
-    ) {
+    Box(modifier = modifier.fillMaxWidth().background(Color.White)) {
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
             userScrollEnabled = true,
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                start = 36.dp,
-                top = 20.dp,
-                end = 24.dp,
-                bottom = 104.dp
+            contentPadding = PaddingValues(
+                start = 36.dp, top = 20.dp, end = 24.dp, bottom = 104.dp
             )
         ) {
             item {
-                Text(
-                    text = "WHO'S HERE",
-                    color = SectionLabel,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
+                Text(text = "WHO'S HERE", color = SectionLabel, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
                 Spacer(Modifier.height(14.dp))
             }
             if (students.isEmpty()) {
@@ -1277,22 +1586,14 @@ private fun CheckInAttendeeList(
                     )
                 }
             } else {
-                itemsIndexed(
-                    items = students,
-                    key = { _, student -> student.id }
-                ) { index, student ->
+                itemsIndexed(items = students, key = { _, s -> s.id }) { index, student ->
                     CheckedInStudentRow(
                         student = student,
                         requested = student.id in requestedBuddyIds,
                         onBuddyClick = { onBuddyClick(student) }
                     )
                     if (index < students.lastIndex) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(1.dp)
-                                .background(DividerLine)
-                        )
+                        Box(Modifier.fillMaxWidth().height(1.dp).background(DividerLine))
                     }
                 }
             }
@@ -1302,21 +1603,13 @@ private fun CheckInAttendeeList(
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .height(28.dp)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(Color.Transparent, Color.White)
-                    )
-                )
+                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.White)))
         )
     }
 }
 
 @Composable
-private fun LiveCheckInHeader(
-    spotName: String,
-    peopleHere: Int,
-    onBack: () -> Unit
-) {
+private fun LiveCheckInHeader(spotName: String, peopleHere: Int, onBack: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1362,11 +1655,7 @@ private fun LiveCheckInHeader(
                 .padding(horizontal = 16.dp, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .size(10.dp)
-                    .background(CheckedInDot, CircleShape)
-            )
+            Box(Modifier.size(10.dp).background(CheckedInDot, CircleShape))
             Spacer(Modifier.width(9.dp))
             Text(
                 text = "Checked in",
@@ -1379,11 +1668,7 @@ private fun LiveCheckInHeader(
 }
 
 @Composable
-private fun CheckedInStudentRow(
-    student: CheckedInStudent,
-    requested: Boolean,
-    onBuddyClick: () -> Unit
-) {
+private fun CheckedInStudentRow(student: CheckedInStudent, requested: Boolean, onBuddyClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1391,7 +1676,14 @@ private fun CheckedInStudentRow(
             .padding(vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        StudentAvatar(student)
+        Box(
+            modifier = Modifier
+                .size(56.dp)
+                .background(avatarColorFor(student.id), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(text = student.initials, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
+        }
         Spacer(Modifier.width(16.dp))
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1405,12 +1697,7 @@ private fun CheckedInStudentRow(
                 )
                 if (student.isFriend) {
                     Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = "friend",
-                        color = SoloBlue,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.ExtraBold
-                    )
+                    Text(text = "friend", color = SoloBlue, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold)
                 }
             }
             Spacer(Modifier.height(4.dp))
@@ -1432,37 +1719,13 @@ private fun CheckedInStudentRow(
                 fontSize = 17.sp,
                 fontWeight = FontWeight.SemiBold
             )
-            else -> BuddyRequestButton(
-                requested = requested,
-                onClick = onBuddyClick
-            )
+            else -> BuddyRequestButton(requested = requested, onClick = onBuddyClick)
         }
     }
 }
 
 @Composable
-private fun StudentAvatar(student: CheckedInStudent) {
-    Box(
-        modifier = Modifier
-            .size(56.dp)
-            .background(avatarColorFor(student.id), CircleShape),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = student.initials,
-            color = Color.White,
-            fontSize = 19.sp,
-            fontWeight = FontWeight.ExtraBold
-        )
-    }
-}
-
-@Composable
-private fun RelationPill(
-    text: String,
-    contentColor: Color,
-    backgroundColor: Color
-) {
+private fun RelationPill(text: String, contentColor: Color, backgroundColor: Color) {
     Text(
         text = text,
         modifier = Modifier
@@ -1561,14 +1824,15 @@ private fun BuddyRequestSheet(
                 fontWeight = FontWeight.SemiBold
             )
             Spacer(Modifier.height(16.dp))
+            val tags = buddyTags(student)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                buddyTags(student).take(3).forEach { tag ->
+                tags.take(3).forEach { tag ->
                     RelationPill(tag, BodyText, SwitcherTrack)
                 }
             }
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                buddyTags(student).drop(3).forEach { tag ->
+                tags.drop(3).forEach { tag ->
                     RelationPill(tag, BodyText, SwitcherTrack)
                 }
             }
@@ -1585,37 +1849,48 @@ private fun BuddyRequestSheet(
             )
             Spacer(Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    text = "Decline",
+                Box(
                     modifier = Modifier
                         .weight(1f)
                         .height(54.dp)
                         .background(SwitcherTrack, RoundedCornerShape(16.dp))
-                        .clickable(onClick = onDismiss)
-                        .padding(top = 16.dp),
-                    color = HeaderMuted,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
+                        .clickable(onClick = onDismiss),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Decline",
+                        color = HeaderMuted,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
+                val alreadySent = requested
+                val theyRequested = student.hasSentMeRequest
+                val buttonLabel = when {
+                    alreadySent -> "Sent"
+                    theyRequested -> "Accept their request"
+                    else -> "Send buddy request"
+                }
+                val buttonIcon = if (alreadySent) Icons.Rounded.Check else Icons.Rounded.PersonAdd
                 Row(
                     modifier = Modifier
                         .weight(1.45f)
                         .height(54.dp)
-                        .background(if (requested) RequestedPill else SoloBlue, RoundedCornerShape(16.dp))
-                        .clickable(enabled = !requested, onClick = onAccept),
+                        .background(if (alreadySent) RequestedPill else SoloBlue, RoundedCornerShape(16.dp))
+                        .clickable(enabled = !alreadySent, onClick = onAccept),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
                     Icon(
-                        imageVector = if (requested) Icons.Rounded.Check else Icons.Rounded.PersonAdd,
+                        imageVector = buttonIcon,
                         contentDescription = null,
-                        tint = if (requested) QuietText else Color.White,
+                        tint = if (alreadySent) QuietText else Color.White,
                         modifier = Modifier.size(21.dp)
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        text = if (requested) "Request sent" else "Accept buddy",
-                        color = if (requested) QuietText else Color.White,
+                        text = buttonLabel,
+                        color = if (alreadySent) QuietText else Color.White,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.ExtraBold
                     )
@@ -1626,10 +1901,48 @@ private fun BuddyRequestSheet(
 }
 
 @Composable
-private fun CheckInSessionPanel(
-    elapsedSeconds: Int,
-    onCheckout: () -> Unit
+private fun ActiveSessionBar(
+    spotName: String,
+    sessionStartTimeMillis: Long,
+    onClick: () -> Unit
 ) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(CheckInHeader)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(Modifier.size(9.dp).background(CheckedInDot, CircleShape))
+        Spacer(Modifier.width(10.dp))
+        Text(
+            text = "Session · $spotName",
+            color = Color.White,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.ExtraBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        SessionElapsedText(
+            sessionStartTimeMillis = sessionStartTimeMillis,
+            color = CheckedInText,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.ExtraBold
+        )
+        Spacer(Modifier.width(10.dp))
+        Text(
+            text = "Return ›",
+            color = HeaderSecondary,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
+@Composable
+private fun CheckInSessionPanel(sessionStartTimeMillis: Long, onCheckout: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1643,15 +1956,10 @@ private fun CheckInSessionPanel(
         ) {
             SessionClockIcon()
             Spacer(Modifier.width(12.dp))
-            Text(
-                text = "Session time",
-                color = BodyText,
-                fontSize = 19.sp,
-                fontWeight = FontWeight.SemiBold
-            )
+            Text(text = "Session time", color = BodyText, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.weight(1f))
-            Text(
-                text = elapsedSeconds.asSessionTime(),
+            SessionElapsedText(
+                sessionStartTimeMillis = sessionStartTimeMillis,
                 color = Ink,
                 fontSize = 26.sp,
                 fontWeight = FontWeight.ExtraBold
@@ -1667,21 +1975,35 @@ private fun CheckInSessionPanel(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center
         ) {
-            Icon(
-                imageVector = Icons.Rounded.Check,
-                contentDescription = null,
-                tint = BodyText,
-                modifier = Modifier.size(22.dp)
-            )
+            Icon(imageVector = Icons.Rounded.Check, contentDescription = null, tint = BodyText, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(10.dp))
-            Text(
-                text = "Check out & review",
-                color = BodyText,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.ExtraBold
-            )
+            Text(text = "Check out & review", color = BodyText, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
         }
     }
+}
+
+@Composable
+private fun SessionElapsedText(
+    sessionStartTimeMillis: Long,
+    color: Color,
+    fontSize: androidx.compose.ui.unit.TextUnit,
+    fontWeight: FontWeight
+) {
+    var elapsedSeconds by remember(sessionStartTimeMillis) {
+        mutableStateOf(((System.currentTimeMillis() - sessionStartTimeMillis) / 1000).toInt())
+    }
+    LaunchedEffect(sessionStartTimeMillis) {
+        while (true) {
+            delay(1000)
+            elapsedSeconds = ((System.currentTimeMillis() - sessionStartTimeMillis) / 1000).toInt()
+        }
+    }
+    Text(
+        text = elapsedSeconds.asSessionTime(),
+        color = color,
+        fontSize = fontSize,
+        fontWeight = fontWeight
+    )
 }
 
 @Composable
@@ -1699,20 +2021,8 @@ private fun SessionClockIcon() {
                 radius = size.minDimension / 2 - stroke,
                 style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke)
             )
-            drawLine(
-                color = SoloBlue,
-                start = center,
-                end = Offset(center.x, center.y - size.height * .26f),
-                strokeWidth = stroke,
-                cap = StrokeCap.Round
-            )
-            drawLine(
-                color = SoloBlue,
-                start = center,
-                end = Offset(center.x + size.width * .22f, center.y + size.height * .12f),
-                strokeWidth = stroke,
-                cap = StrokeCap.Round
-            )
+            drawLine(SoloBlue, center, Offset(center.x, center.y - size.height * .26f), stroke, StrokeCap.Round)
+            drawLine(SoloBlue, center, Offset(center.x + size.width * .22f, center.y + size.height * .12f), stroke, StrokeCap.Round)
         }
     }
 }
@@ -1722,13 +2032,15 @@ private fun HomeHeader(
     userFirstName: String,
     selectedMode: StudyMode,
     accent: Color,
-    onModeSelected: (StudyMode) -> Unit
+    onModeSelected: (StudyMode) -> Unit,
+    noiseFilter: String? = null,
+    onNoiseFilterChange: (String?) -> Unit = {},
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(Color.White)
-            .padding(start = 38.dp, top = 30.dp, end = 28.dp, bottom = 26.dp)
+            .padding(start = 38.dp, top = 30.dp, end = 28.dp, bottom = 16.dp)
     ) {
         SpotraLandingWordmark(accent)
         Spacer(Modifier.height(8.dp))
@@ -1738,45 +2050,60 @@ private fun HomeHeader(
             fontSize = 22.sp,
             fontWeight = FontWeight.Medium
         )
-        Spacer(Modifier.height(24.dp))
-        ModeSwitcher(
-            selectedMode = selectedMode,
-            accent = accent,
-            onModeSelected = onModeSelected
-        )
+        Spacer(Modifier.height(18.dp))
+        ModeSwitcher(selectedMode = selectedMode, accent = accent, onModeSelected = onModeSelected)
+        Spacer(Modifier.height(14.dp))
+        NoiseFilterChips(selected = noiseFilter, accent = accent, onSelect = onNoiseFilterChange)
+        Spacer(Modifier.height(4.dp))
     }
+}
+
+private val NOISE_FILTER_OPTIONS = listOf("Silent", "Quiet", "Moderate", "Busy")
+
+@Composable
+private fun NoiseFilterChips(selected: String?, accent: Color, onSelect: (String?) -> Unit) {
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(end = 4.dp)
+    ) {
+        item {
+            FilterChip(label = "All", selected = selected == null, accent = accent, onClick = { onSelect(null) })
+        }
+        items(NOISE_FILTER_OPTIONS) { option ->
+            FilterChip(label = option, selected = selected == option, accent = accent, onClick = {
+                onSelect(if (selected == option) null else option)
+            })
+        }
+    }
+}
+
+@Composable
+private fun FilterChip(label: String, selected: Boolean, accent: Color, onClick: () -> Unit) {
+    Text(
+        text = label,
+        modifier = Modifier
+            .background(if (selected) accent else HomeBackground, RoundedCornerShape(20.dp))
+            .border(1.dp, if (selected) accent else DividerLine, RoundedCornerShape(20.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 7.dp),
+        color = if (selected) Color.White else BodyText,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.ExtraBold,
+        maxLines = 1
+    )
 }
 
 @Composable
 private fun SpotraLandingWordmark(accent: Color) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            text = "sp",
-            color = Ink,
-            fontSize = 31.sp,
-            fontWeight = FontWeight.ExtraBold
-        )
-        Text(
-            text = "o",
-            color = accent,
-            fontSize = 31.sp,
-            fontWeight = FontWeight.ExtraBold
-        )
-        Text(
-            text = "tra",
-            color = Ink,
-            fontSize = 31.sp,
-            fontWeight = FontWeight.ExtraBold
-        )
+        Text(text = "sp", color = Ink, fontSize = 31.sp, fontWeight = FontWeight.ExtraBold)
+        Text(text = "o", color = accent, fontSize = 31.sp, fontWeight = FontWeight.ExtraBold)
+        Text(text = "tra", color = Ink, fontSize = 31.sp, fontWeight = FontWeight.ExtraBold)
     }
 }
 
 @Composable
-private fun ModeSwitcher(
-    selectedMode: StudyMode,
-    accent: Color,
-    onModeSelected: (StudyMode) -> Unit
-) {
+private fun ModeSwitcher(selectedMode: StudyMode, accent: Color, onModeSelected: (StudyMode) -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1813,31 +2140,27 @@ private fun ModeSegment(
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
+    val bgColor by animateColorAsState(
+        targetValue = if (selected) selectedColor else Color.Transparent,
+        animationSpec = tween(durationMillis = 200),
+        label = "segment-bg"
+    )
+    val contentColor by animateColorAsState(
+        targetValue = if (selected) Color.White else MutedText,
+        animationSpec = tween(durationMillis = 200),
+        label = "segment-content"
+    )
     Row(
         modifier = modifier
             .fillMaxSize()
-            .background(
-                color = if (selected) selectedColor else Color.Transparent,
-                shape = RoundedCornerShape(30.dp)
-            )
+            .background(bgColor, RoundedCornerShape(30.dp))
             .clickable(onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center
     ) {
-        val contentColor = if (selected) Color.White else MutedText
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            tint = contentColor,
-            modifier = Modifier.size(24.dp)
-        )
+        Icon(imageVector = icon, contentDescription = label, tint = contentColor, modifier = Modifier.size(24.dp))
         Spacer(Modifier.width(10.dp))
-        Text(
-            text = label,
-            color = contentColor,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold
-        )
+        Text(text = label, color = contentColor, fontSize = 20.sp, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -1848,6 +2171,8 @@ private fun CampusMap(
     onSpotSelected: (String) -> Unit,
     accent: Color,
     mode: StudyMode,
+    isRefreshing: Boolean = false,
+    onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     if (BuildConfig.MAPBOX_PUBLIC_TOKEN.isBlank()) {
@@ -1855,12 +2180,26 @@ private fun CampusMap(
         return
     }
 
-    val located = spots.filter { it.latitude != null && it.longitude != null }
+    val located = remember(spots) { spots.filter { it.latitude != null && it.longitude != null } }
+    // Fixed view of UW campus so the study spots are always framed.
     val mapViewportState = rememberMapViewportState {
         setCameraOptions {
             center(Point.fromLngLat(-80.5430, 43.4720))
             zoom(14.6)
         }
+    }
+    val zoomBy: (Double) -> Unit = { delta ->
+        val cameraState = mapViewportState.cameraState
+        val nextZoom = ((cameraState?.zoom ?: 14.6) + delta).coerceIn(13.0, 18.5)
+        mapViewportState.easeTo(
+            cameraOptions {
+                center(cameraState?.center ?: Point.fromLngLat(-80.5430, 43.4720))
+                zoom(nextZoom)
+                bearing(cameraState?.bearing ?: 0.0)
+                pitch(cameraState?.pitch ?: 0.0)
+            },
+            MapAnimationOptions.mapAnimationOptions { duration(180) }
+        )
     }
 
     Box(modifier = modifier.background(MapLoadingBackground)) {
@@ -1887,8 +2226,9 @@ private fun CampusMap(
                     ViewAnnotation(options = options) {
                         MapPin(
                             label = spot.name,
-                            color = accent,
+                            color = if (spot.id == selectedSpotId) accent else occupancyPinColor(spot),
                             selected = spot.id == selectedSpotId,
+                            contentDescription = "${spot.name}, occupancy ${spot.badge}",
                             modifier = Modifier.clickable(
                                 interactionSource = interactionSource,
                                 indication = null
@@ -1898,25 +2238,75 @@ private fun CampusMap(
                 }
             }
         }
+
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            MapCircleButton(
+                icon = Icons.Rounded.Add,
+                contentDescription = "Zoom in",
+                onClick = { zoomBy(1.0) }
+            )
+            MapCircleButton(
+                icon = Icons.Rounded.Remove,
+                contentDescription = "Zoom out",
+                onClick = { zoomBy(-1.0) }
+            )
+            MapCircleButton(
+                icon = Icons.Rounded.Refresh,
+                contentDescription = "Refresh spot occupancy",
+                loading = isRefreshing,
+                onClick = onRefresh
+            )
+        }
     }
 }
 
 @Composable
-private fun CampusMapPlaceholder(
-    mode: StudyMode,
-    accent: Color,
-    modifier: Modifier = Modifier
+private fun MapCircleButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    loading: Boolean = false
 ) {
-    val pins = if (mode == StudyMode.Solo) soloPins(accent) else groupPins(accent)
-
-    BoxWithConstraints(
+    Box(
         modifier = modifier
-            .fillMaxWidth()
-            .background(MapBackground)
+            .size(44.dp)
+            .shadow(6.dp, CircleShape, clip = false)
+            .background(Color.White, CircleShape)
+            .clickable(enabled = !loading, onClick = onClick),
+        contentAlignment = Alignment.Center
     ) {
+        if (loading) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(20.dp),
+                strokeWidth = 2.dp,
+                color = SoloBlue
+            )
+        } else {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = Ink,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+    }
+}
+
+@Suppress("UnusedBoxWithConstraintsScope")
+@Composable
+private fun CampusMapPlaceholder(mode: StudyMode, accent: Color, modifier: Modifier = Modifier) {
+    val pins = remember(mode, accent) {
+        if (mode == StudyMode.Solo) soloPins(accent) else groupPins(accent)
+    }
+    BoxWithConstraints(modifier = modifier.fillMaxWidth().background(MapBackground)) {
         Canvas(Modifier.fillMaxSize()) {
             drawRect(MapBackground)
-
             val blockColor = MapBlock.copy(alpha = .88f)
             val blockRadius = 9.dp.toPx()
             val blockWidth = size.width * .24f
@@ -1930,35 +2320,16 @@ private fun CampusMapPlaceholder(
                 Offset(size.width * .63f, size.height * .49f)
             )
             blockPositions.forEach { topLeft ->
-                drawRoundRect(
-                    color = blockColor,
-                    topLeft = topLeft,
-                    size = Size(blockWidth, blockHeight),
-                    cornerRadius = CornerRadius(blockRadius, blockRadius)
-                )
+                drawRoundRect(color = blockColor, topLeft = topLeft, size = Size(blockWidth, blockHeight), cornerRadius = CornerRadius(blockRadius, blockRadius))
             }
-
             val streetWidth = 13.dp.toPx()
             listOf(.26f, .58f, .91f).forEach { x ->
-                drawLine(
-                    color = Color.White,
-                    start = Offset(size.width * x, 0f),
-                    end = Offset(size.width * x, size.height),
-                    strokeWidth = streetWidth,
-                    cap = StrokeCap.Round
-                )
+                drawLine(Color.White, Offset(size.width * x, 0f), Offset(size.width * x, size.height), streetWidth, StrokeCap.Round)
             }
             listOf(.31f, .59f, .87f).forEach { y ->
-                drawLine(
-                    color = Color.White,
-                    start = Offset(0f, size.height * y),
-                    end = Offset(size.width, size.height * y),
-                    strokeWidth = streetWidth,
-                    cap = StrokeCap.Round
-                )
+                drawLine(Color.White, Offset(0f, size.height * y), Offset(size.width, size.height * y), streetWidth, StrokeCap.Round)
             }
         }
-
         pins.forEach { pin ->
             MapPin(
                 label = pin.label,
@@ -1969,7 +2340,6 @@ private fun CampusMapPlaceholder(
                     .offset(x = maxWidth * pin.x, y = maxHeight * pin.y)
             )
         }
-
         Box(
             modifier = Modifier
                 .align(Alignment.TopStart)
@@ -1987,71 +2357,246 @@ private fun MapPin(
     label: String,
     color: Color,
     selected: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    contentDescription: String = label
 ) {
-    // Every spot always shows its label pill + dot. Focus is expressed purely through a
-    // draw-time scale and a fading white ring (no re-measure), so the Mapbox ViewAnnotation
-    // never repositions — the pin grows in place, anchored at its dot, instead of shaking.
-    val pillScale by animateFloatAsState(
-        targetValue = if (selected) 1.1f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioNoBouncy,
-            stiffness = Spring.StiffnessMediumLow
-        ),
-        label = "pill-scale"
-    )
-    val borderAlpha by animateFloatAsState(
+    val labelAlpha by animateFloatAsState(
         targetValue = if (selected) 1f else 0f,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "pill-border"
+        animationSpec = tween(durationMillis = 180),
+        label = "pin-label-alpha"
     )
     val dotScale by animateFloatAsState(
-        targetValue = if (selected) 1.25f else 1f,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "dot-scale"
+        targetValue = if (selected) 1.4f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow),
+        label = "pin-dot-scale"
     )
 
     val pillShape = RoundedCornerShape(18.dp)
-    // Reserve transparent room on top/sides — never the bottom — so the dot stays pinned to
-    // the map coordinate while the pill (and its shadow) render above without being clipped.
-    Box(
-        modifier = modifier.padding(top = 14.dp, start = 20.dp, end = 20.dp),
-        contentAlignment = Alignment.BottomCenter
+    // padding(top) reserves space equal to label height so the dot anchor never moves
+    Column(
+        modifier = modifier
+            .semantics { this.contentDescription = contentDescription }
+            .padding(horizontal = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text = label,
-                modifier = Modifier
-                    .graphicsLayer {
-                        scaleX = pillScale
-                        scaleY = pillScale
-                        // Grow up out of the dot.
-                        transformOrigin = TransformOrigin(0.5f, 1f)
-                    }
-                    .shadow(6.dp, pillShape, clip = false)
-                    .background(color, pillShape)
-                    .border(2.dp, Color.White.copy(alpha = borderAlpha), pillShape)
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
-                color = Color.White,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.ExtraBold,
-                maxLines = 1
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            // Base marker — a dot that always marks the spot, enlarging slightly when selected.
+        // Always in layout — alpha-only via graphicsLayer keeps ViewAnnotation size constant
+        // so Mapbox never re-anchors the pin (prevents jank on selection change)
+        Text(
+            text = label,
+            modifier = Modifier
+                .graphicsLayer { alpha = labelAlpha }
+                .shadow(6.dp, pillShape, clip = false)
+                .background(color, pillShape)
+                .border(2.dp, Color.White, pillShape)
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            color = Color.White,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.ExtraBold,
+            maxLines = 1
+        )
+        Spacer(Modifier.height(3.dp))
+        Box(
+            modifier = Modifier
+                .graphicsLayer { scaleX = dotScale; scaleY = dotScale }
+                .size(12.dp)
+                .shadow(3.dp, CircleShape, clip = false)
+                .background(Color.White, CircleShape)
+                .padding(2.5.dp)
+                .background(color, CircleShape)
+        )
+    }
+}
+
+@Composable
+private fun BuildingSpacesScreen(
+    parentSpot: StudySpotSummary,
+    homeRepository: HomeRepository,
+    accent: Color,
+    onBack: () -> Unit,
+    onSpaceSelected: (StudySpotDetail) -> Unit
+) {
+    var spaces by remember(parentSpot.id) { mutableStateOf<List<StudySpotDetail>>(emptyList()) }
+    var isLoading by remember(parentSpot.id) { mutableStateOf(true) }
+    var error by remember(parentSpot.id) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(parentSpot.id) {
+        isLoading = true
+        error = null
+        runCatching { homeRepository.childSpots(parentSpot.id) }
+            .onSuccess { spaces = it }
+            .onFailure { error = it.message ?: "Could not load spaces." }
+        isLoading = false
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(HomeBackground)
+            .statusBarsPadding()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color.White)
+                .padding(start = 22.dp, top = 16.dp, end = 22.dp, bottom = 20.dp)
+        ) {
             Box(
                 modifier = Modifier
-                    .graphicsLayer {
-                        scaleX = dotScale
-                        scaleY = dotScale
-                    }
-                    .size(15.dp)
-                    .shadow(3.dp, CircleShape, clip = false)
-                    .background(Color.White, CircleShape)
-                    .padding(3.dp)
-                    .background(color, CircleShape)
+                    .size(44.dp)
+                    .background(HomeBackground, RoundedCornerShape(12.dp))
+                    .clickable(onClick = onBack),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                    contentDescription = "Back",
+                    tint = Ink,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+            Spacer(Modifier.height(18.dp))
+            Text(
+                text = parentSpot.name,
+                color = Ink,
+                fontSize = 28.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "${parentSpot.childCount} study spaces",
+                color = HeaderMuted,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium
             )
         }
+
+        when {
+            isLoading -> {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = accent)
+                }
+            }
+            error != null -> {
+                Text(
+                    text = error.orEmpty(),
+                    modifier = Modifier.padding(24.dp),
+                    color = DPAtriumRed,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            else -> {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 28.dp),
+                    verticalArrangement = Arrangement.spacedBy(18.dp)
+                ) {
+                    spaces
+                        .groupBy { it.floor ?: "Building" }
+                        .forEach { (floor, floorSpaces) ->
+                            item { SectionHeader(label = floor) }
+                            itemsIndexed(
+                                items = floorSpaces,
+                                key = { _, space -> space.id }
+                            ) { _, space ->
+                                BuildingSpaceRow(
+                                    space = space,
+                                    accent = accent,
+                                    onClick = { onSpaceSelected(space) }
+                                )
+                            }
+                        }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BuildingSpaceRow(
+    space: StudySpotDetail,
+    accent: Color,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.White, RoundedCornerShape(20.dp))
+            .border(1.5.dp, DividerLine, RoundedCornerShape(20.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(52.dp)
+                .background(accent.copy(alpha = 0.12f), RoundedCornerShape(16.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = if (space.studyContextLabel == "Group-friendly") Icons.Rounded.Group else Icons.Rounded.School,
+                contentDescription = null,
+                tint = accent,
+                modifier = Modifier.size(26.dp)
+            )
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = space.name,
+                color = Ink,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(5.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                space.capacity?.let { capacity ->
+                    Text(
+                        text = "Capacity $capacity",
+                        color = HeaderMuted,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+                if (space.capacity != null && space.studyContextLabel != null) {
+                    Text(text = " - ", color = HeaderMuted, fontSize = 14.sp)
+                }
+                space.studyContextLabel?.let { label ->
+                    Text(
+                        text = label,
+                        color = HeaderMuted,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                text = space.occupancyPercent?.let { "$it%" } ?: "0%",
+                color = if ((space.occupancyPercent ?: 0) > 70) DPAtriumRed else GroupGreen,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+            Text(
+                text = "live full",
+                color = HeaderMuted,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Icon(
+            imageVector = Icons.Rounded.ChevronRight,
+            contentDescription = null,
+            tint = NavMuted,
+            modifier = Modifier.size(22.dp)
+        )
     }
 }
 
@@ -2069,9 +2614,9 @@ private fun StudySpotCard(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(118.dp)
-            .background(CardBackground, RoundedCornerShape(20.dp))
-            .border(3.dp, accent, RoundedCornerShape(20.dp))
+            .shadow(12.dp, RoundedCornerShape(20.dp), clip = false)
+            .background(Color.White, RoundedCornerShape(20.dp))
+            .border(1.5.dp, accent.copy(alpha = 0.35f), RoundedCornerShape(20.dp))
             .then(clickModifier)
             .padding(horizontal = 20.dp, vertical = 18.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -2082,17 +2627,10 @@ private fun StudySpotCard(
                 .background(Color(0xFFE7E8FF), RoundedCornerShape(18.dp)),
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                imageVector = Icons.Rounded.School,
-                contentDescription = null,
-                tint = accent,
-                modifier = Modifier.size(29.dp)
-            )
+            Icon(imageVector = Icons.Rounded.School, contentDescription = null, tint = accent, modifier = Modifier.size(29.dp))
         }
         Spacer(Modifier.width(18.dp))
-        Column(
-            modifier = Modifier.weight(1f)
-        ) {
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = spot.name,
                 color = Ink,
@@ -2104,54 +2642,37 @@ private fun StudySpotCard(
             Spacer(Modifier.height(7.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 distanceLabel?.let {
-                    Text(
-                        text = it,
-                        color = HeaderMuted,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1
-                    )
+                    Text(text = it, color = HeaderMuted, fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1)
                 }
                 spot.rating?.let { rating ->
-                    Icon(
-                        imageVector = Icons.Rounded.Star,
-                        contentDescription = null,
-                        tint = StarGold,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Text(
-                        text = " $rating",
-                        color = HeaderMuted,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Icon(imageVector = Icons.Rounded.Star, contentDescription = null, tint = StarGold, modifier = Modifier.size(18.dp))
+                    Text(text = " $rating", color = HeaderMuted, fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 if (contextLabel.isNotBlank()) {
-                    Text(
-                        text = " - $contextLabel",
-                        color = HeaderMuted,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Text(text = " - $contextLabel", color = HeaderMuted, fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
         Spacer(Modifier.width(12.dp))
+        val (badgeBg, badgeFg) = badgePillColors(spot.badge)
         Text(
             text = spot.badge,
             modifier = Modifier
-                .background(QuietPill, RoundedCornerShape(18.dp))
+                .background(badgeBg, RoundedCornerShape(18.dp))
                 .padding(horizontal = 14.dp, vertical = 7.dp),
-            color = QuietText,
+            color = badgeFg,
             fontSize = 15.sp,
             fontWeight = FontWeight.ExtraBold,
             maxLines = 1
         )
     }
+}
+
+private fun badgePillColors(badge: String): Pair<Color, Color> = when (badge.lowercase()) {
+    "silent", "quiet" -> QuietPill to QuietText
+    "moderate" -> ModerateFitBackground to ModerateFitText
+    "busy", "lively" -> Color(0xFFFFECEC) to Color(0xFFB91C1C)
+    else -> SwitcherTrack to BodyText
 }
 
 @Composable
@@ -2165,7 +2686,7 @@ private fun BottomNavigationShell(
             .fillMaxWidth()
             .background(Color.White)
             .navigationBarsPadding()
-            .padding(start = 24.dp, top = 18.dp, end = 24.dp, bottom = 18.dp),
+            .padding(start = 24.dp, top = 14.dp, end = 24.dp, bottom = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         BottomNavItem(
@@ -2217,40 +2738,13 @@ private fun BottomNavItem(
         modifier = modifier.clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            tint = color,
-            modifier = Modifier.size(28.dp)
-        )
+        Icon(imageVector = icon, contentDescription = label, tint = color, modifier = Modifier.size(28.dp))
         Spacer(Modifier.height(5.dp))
-        Text(
-            text = label,
-            color = color,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1
-        )
+        Text(text = label, color = color, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1)
     }
 }
 
-private data class StudyMapPin(
-    val label: String,
-    val x: Float,
-    val y: Float,
-    val color: Color,
-    val selected: Boolean = false
-)
-
-private data class SensorReading(
-    val label: String,
-    val value: String,
-    val description: String,
-    val progress: Float,
-    val scoreWeight: Int,
-    val icon: ImageVector,
-    val tint: Color
-)
+private data class StudyMapPin(val label: String, val x: Float, val y: Float, val color: Color, val selected: Boolean = false)
 
 private data class SocialPerson(
     val id: String,
@@ -2346,40 +2840,28 @@ private fun buddyTags(student: CheckedInStudent): List<String> = when (student.i
     else -> listOf("CS 341", "Focused", "Solo-friendly", "Open to buddy")
 }
 
-private fun soloPins(accent: Color) = listOf(
-    StudyMapPin("E7 Hall", .64f, .20f, accent, selected = true),
-    StudyMapPin("DC Lib", .33f, .35f, LibraryGreen),
-    StudyMapPin("SLC 2F", .07f, .65f, SLCOrange),
-    StudyMapPin("DP Atrium", .66f, .64f, DPAtriumRed)
-)
+private fun pinsFrom(pinList: List<Pair<String, Boolean>>, accent: Color): List<StudyMapPin> =
+    pinList.mapNotNull { (spotId, selected) ->
+        val spot = MockData.spotById(spotId) ?: return@mapNotNull null
+        StudyMapPin(
+            label = spot.shortLabel,
+            x = spot.mapPinX,
+            y = spot.mapPinY,
+            color = if (selected) accent else occupancyPinColorFromPercent(spot.fullPercent),
+            selected = selected
+        )
+    }
 
-private fun groupPins(accent: Color) = listOf(
-    StudyMapPin("DC Team", .29f, .31f, accent, selected = true),
-    StudyMapPin("E7 Hall", .63f, .20f, SoloBlue),
-    StudyMapPin("SLC 2F", .07f, .65f, SLCOrange),
-    StudyMapPin("EV3 Hub", .63f, .64f, LibraryGreen)
-)
+private fun soloPins(accent: Color) = pinsFrom(MockData.soloMapPins, accent)
+private fun groupPins(accent: Color) = pinsFrom(MockData.groupMapPins, accent)
 
-private fun avatarColorFor(id: String, index: Int = 0): Color = when (id) {
-    "you" -> SoloBlue
-    "akshat" -> PurpleAvatar
-    "eric" -> LibraryGreen
-    "raghav" -> SLCOrange
-    "pavan" -> Color(0xFF0EA5E9)
-    "edmond" -> Color(0xFF14B8A6)
-    "maya" -> Color(0xFF8B5CF6)
-    "leah" -> DPAtriumRed
-    "kai" -> Color(0xFF64748B)
-    "priya" -> Color(0xFFEF4444)
-    "ben" -> Color(0xFFF97316)
-    "lina" -> Color(0xFF22C55E)
-    else -> listOf(
-        Color(0xFF14B8A6),
-        Color(0xFF8B5CF6),
-        Color(0xFFEF4444),
-        Color(0xFFF97316),
-        Color(0xFF22C55E)
-    )[index.coerceAtLeast(0) % 5]
+private fun occupancyPinColor(spot: StudySpotSummary): Color =
+    occupancyPinColorFromPercent(spot.occupancyPercent ?: 0)
+
+private fun occupancyPinColorFromPercent(percent: Int): Color = when {
+    percent >= 75 -> DPAtriumRed
+    percent >= 50 -> SLCOrange
+    else -> LibraryGreen
 }
 
 private fun iconForFeature(type: SpotFeatureType): ImageVector = when (type) {
@@ -2404,51 +2886,3 @@ private fun Int.asSessionTime(): String {
     val seconds = this % 60
     return "$minutes:${seconds.toString().padStart(2, '0')}"
 }
-
-private val HomeBackground = Color(0xFFF8F7F3)
-private val Ink = Color(0xFF171A3C)
-private val HeaderMuted = Color(0xFFA8A6AA)
-private val MutedText = Color(0xFF96949A)
-private val SwitcherTrack = Color(0xFFEDE9E0)
-private val SoloBlue = Color(0xFF4355E8)
-private val SensorScoreBackground = Color(0xFF293B8E)
-private val GroupGreen = Color(0xFF21A46F)
-private val GroupHeaderGreen = Color(0xFF115C3B)
-private val GroupHeaderChip = Color(0xFF3A7B62)
-private val GroupBackButton = Color(0xFF0D4A31)
-private val GroupHeaderSecondary = Color(0xFFB7D0C3)
-private val GroupMoreAvatar = Color(0xFF6A8176)
-private val GroupBestFitBackground = Color(0xFFEFFAF4)
-private val GroupCardBorder = Color(0xFFEDE9E0)
-private val GroupFeatureChipBackground = Color(0xFFEDE9E0)
-private val GroupSpotIconGreen = Color(0xFFDDF6EA)
-private val GroupSpotIconYellow = Color(0xFFFFF1D2)
-private val ModerateFitBackground = Color(0xFFFFF1D2)
-private val ModerateFitText = Color(0xFF8A5200)
-private val InviteInputBackground = Color(0xFFF1F0ED)
-private val DisabledSend = Color(0xFF9ACFB9)
-private val MapBackground = Color(0xFFEAE6DB)
-private val MapLoadingBackground = Color(0xFFE8E8E8)
-private val MapBlock = Color(0xFFCFC9B6)
-private val CardBackground = Color(0xFFF0F1FF)
-private val QuietPill = Color(0xFFDDF6EA)
-private val QuietText = Color(0xFF137B4B)
-private val LibraryGreen = Color(0xFF249B6C)
-private val SLCOrange = Color(0xFFD89209)
-private val DPAtriumRed = Color(0xFFD83D3C)
-private val NavMuted = Color(0xFFC2BEB5)
-private val StarGold = Color(0xFFF8BC3B)
-private val CheckInHeader = Color(0xFF1B1A31)
-private val HeaderButton = Color(0xFF3A394F)
-private val HeaderSecondary = Color(0xFF9D9AA9)
-private val CheckedInPill = Color(0xFF244F50)
-private val CheckedInDot = Color(0xFF5AE5A0)
-private val CheckedInText = Color(0xFF72E6A7)
-private val SectionLabel = Color(0xFFA5A5A7)
-private val DividerLine = Color(0xFFECE9E3)
-private val SelfRowBackground = Color(0xFFF3F3FD)
-private val SelfPillBackground = Color(0xFFE8E9FF)
-private val BuddyPill = Color(0xFFF0F0FF)
-private val RequestedPill = Color(0xFFE7F8EF)
-private val BodyText = Color(0xFF5F5C62)
-private val PurpleAvatar = Color(0xFFA43CE2)
