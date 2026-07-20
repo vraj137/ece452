@@ -131,9 +131,6 @@ import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(homeRepository: HomeRepository, socialRepository: SocialRepository) {
-    val viewModel: HomeViewModel = viewModel(
-        factory = HomeViewModel.Factory(homeRepository, socialRepository)
 fun HomeScreen(
     homeRepository: HomeRepository,
     profileRepository: ProfileRepository,
@@ -312,14 +309,6 @@ fun HomeScreen(
             onTabSelected = viewModel::selectSocialTab,
             selectedSection = state.selectedSection,
             onSectionSelected = viewModel::selectSection,
-            onJoin = {
-                viewModel.startCheckIn(soloSpot, StudyMode.Solo)
-            },
-            onAddBuddy = viewModel::sendBuddyRequest,
-            requestedBuddyIds = state.requestedBuddyIds,
-            social = state.social,
-            onSendFriendRequest = viewModel::sendFriendRequest,
-            onAcceptFriendRequest = viewModel::acceptFriendRequest
             friendRepository = friendRepository,
             loginStreak = loginStreak,
             activeSessionBar = if (activeCheckIn != null) {
@@ -1131,41 +1120,6 @@ private fun IncomingRequestRow(
         ) {
             Text(profile.initials, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
         }
-    }
-}
-
-@Composable
-private fun SocialScreen(
-    selectedTab: SocialTab,
-    onTabSelected: (SocialTab) -> Unit,
-    selectedSection: HomeSection,
-    onSectionSelected: (HomeSection) -> Unit,
-    onJoin: () -> Unit,
-    onAddBuddy: (String) -> Unit,
-    requestedBuddyIds: Set<String>,
-    social: SocialSnapshot,
-    onSendFriendRequest: (String) -> Unit,
-    onAcceptFriendRequest: (String) -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.White)
-            .statusBarsPadding()
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 30.dp, top = 34.dp, end = 30.dp)
-        ) {
-            Text(
-                text = "Social",
-                color = Ink,
-                fontSize = 32.sp,
-                fontWeight = FontWeight.ExtraBold
-            )
-            Spacer(Modifier.height(22.dp))
-            SocialTabs(selectedTab, onTabSelected)
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
             Text(profile.fullName, color = Ink, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
@@ -1173,6 +1127,17 @@ private fun SocialScreen(
             Text(profile.displayDetail, color = HeaderMuted, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1)
         }
         Spacer(Modifier.width(8.dp))
+        Text(
+            text = "✓",
+            modifier = Modifier
+                .background(SoloBlue, androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                .clickable(onClick = onAccept)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            color = Color.White,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.ExtraBold
+        )
+        /*
         Text(
             text = "✓",
             modifier = Modifier
@@ -1250,12 +1215,19 @@ private fun SocialScreen(
             fontSize = 15.sp,
             fontWeight = FontWeight.ExtraBold
         )
+        */
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = "✗",
+            modifier = Modifier
+                .background(HomeBackground, androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                .clickable(onClick = onDecline)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            color = DPAtriumRed,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.ExtraBold
+        )
     }
-}
-
-@Composable
-private fun EmptySocialState(message: String) {
-    Text(message, color = HeaderMuted, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
 }
 
 @Composable

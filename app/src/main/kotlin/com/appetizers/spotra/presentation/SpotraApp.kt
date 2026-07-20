@@ -117,7 +117,6 @@ fun SpotraApp(container: AppContainer) {
         composable(Routes.Program) { ProgramScreen(state, goBack, onboardingViewModel) }
         composable(Routes.Complete) { CompleteScreen(state, onboardingViewModel::finishOnboarding) }
         composable(Routes.SignIn) { EmailScreen(state, goBack, onboardingViewModel, signIn = true) }
-        composable(Routes.Home) { HomeScreen(container.homeRepository, container.socialRepository) }
         composable(Routes.Home) {
             HomeScreen(
                 homeRepository = container.homeRepository,
