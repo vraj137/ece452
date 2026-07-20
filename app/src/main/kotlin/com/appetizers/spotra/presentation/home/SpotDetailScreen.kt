@@ -25,7 +25,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
-import androidx.compose.material.icons.rounded.BookmarkBorder
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Star
@@ -54,6 +53,7 @@ import com.appetizers.spotra.domain.model.StudySpotSummary
 import com.appetizers.spotra.domain.repository.FriendRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.ReviewRepository
+import java.util.Locale
 
 private enum class ReviewFilter { Friends, All }
 
@@ -121,8 +121,7 @@ internal fun SpotDetailScreen(
         SpotDetailHeader(
             spot = detail,
             friendsStudying = friendsAtSpot,
-            onBack = onBack,
-            onCheckIn = { onCheckIn(detail.toSummary()) }
+            onBack = onBack
         )
         LazyColumn(
             modifier = Modifier
@@ -196,8 +195,7 @@ private fun SpotDetailLoadingOrError(message: String?, onBack: () -> Unit) {
 private fun SpotDetailHeader(
     spot: StudySpotDetail,
     friendsStudying: List<FriendProfile>,
-    onBack: () -> Unit,
-    onCheckIn: () -> Unit
+    onBack: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -225,19 +223,7 @@ private fun SpotDetailHeader(
                     modifier = Modifier.size(22.dp)
                 )
             }
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .background(HeaderButton, RoundedCornerShape(12.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.BookmarkBorder,
-                    contentDescription = "Bookmark",
-                    tint = Color.White,
-                    modifier = Modifier.size(22.dp)
-                )
-            }
+            Spacer(Modifier.size(44.dp))
         }
 
         Spacer(Modifier.height(18.dp))
@@ -339,7 +325,7 @@ private fun SpotStatTiles(spot: StudySpotDetail) {
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             StatTile(
-                value = spot.rating?.let { String.format("%.1f", it) } ?: "New",
+                value = spot.rating?.let { String.format(Locale.US, "%.1f", it) } ?: "New",
                 label = "RATING",
                 valueColor = SoloBlue,
                 modifier = Modifier.weight(1f)

@@ -46,7 +46,6 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Group
-import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PersonAdd
@@ -62,6 +61,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -146,7 +146,6 @@ fun HomeScreen(
             homeRepository,
             authRepository,
             streakRepository,
-            badgeRepository,
             reviewRepository,
             awardBadgesUseCase,
         )
@@ -1314,7 +1313,7 @@ private fun PostCheckoutReviewSheet(
     onSubmit: (rating: Int, comment: String?) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var rating by remember { mutableStateOf(0) }
+    var rating by remember { mutableIntStateOf(0) }
     var comment by remember { mutableStateOf("") }
 
     ModalBottomSheet(
@@ -1880,7 +1879,7 @@ private fun SessionElapsedText(
     fontWeight: FontWeight
 ) {
     var elapsedSeconds by remember(sessionStartTimeMillis) {
-        mutableStateOf(((System.currentTimeMillis() - sessionStartTimeMillis) / 1000).toInt())
+        mutableIntStateOf(((System.currentTimeMillis() - sessionStartTimeMillis) / 1000).toInt())
     }
     LaunchedEffect(sessionStartTimeMillis) {
         while (true) {
@@ -2692,24 +2691,6 @@ private data class SocialPerson(
     val name: String,
     val detail: String,
     val active: Boolean = true
-)
-
-private fun friendStudyRows() = listOf(
-    SocialPerson("raghav", "RV", "Raghav Verma", "E7 Study Hall - 1h 2min"),
-    SocialPerson("vishvam", "VP", "Vishvam Patel", "DC Library 3F - 28min"),
-    SocialPerson("edmond", "EY", "Edmond Yang", "Last seen 3h ago", active = false)
-)
-
-private fun confirmedBuddies() = listOf(
-    SocialPerson("akshat", "AJ", "Akshat Jawne", "ECE 222 - quiet morning sessions"),
-    SocialPerson("eric", "EZ", "Eric Z.", "MATH 237 - problem set partner"),
-    SocialPerson("raghav", "RV", "Raghav Verma", "CS 341 - finals prep")
-)
-
-private fun discoverBuddies() = listOf(
-    SocialPerson("kira", "KL", "Kira L.", "CS 341 - graph algorithms"),
-    SocialPerson("max", "MP", "Max P.", "ECE 222 - circuits review"),
-    SocialPerson("sara", "SN", "Sara N.", "CS 341 - quiet study")
 )
 
 private fun buddyMeta(student: CheckedInStudent): String = when (student.id) {
