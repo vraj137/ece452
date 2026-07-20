@@ -12,6 +12,7 @@ import com.appetizers.spotra.domain.model.StudyMode
 import com.appetizers.spotra.domain.model.StudySpotDetail
 import com.appetizers.spotra.domain.model.UserBadge
 import com.appetizers.spotra.domain.model.UserProfile
+import com.appetizers.spotra.domain.model.SocialSnapshot
 import kotlinx.coroutines.flow.Flow
 
 data class AuthUser(val id: String, val email: String)
@@ -67,4 +68,16 @@ interface HomeRepository {
     suspend fun checkOut(sessionId: String)
     suspend fun sendBuddyRequest(studentId: String)
     suspend fun inviteToGroup(groupSessionId: String, inviteText: String): GroupMember
+}
+
+interface SocialRepository {
+    suspend fun loadSocial(): SocialSnapshot
+    suspend fun sendFriendRequest(recipientId: String)
+    suspend fun acceptFriendRequest(requesterId: String)
+}
+
+object EmptySocialRepository : SocialRepository {
+    override suspend fun loadSocial() = SocialSnapshot()
+    override suspend fun sendFriendRequest(recipientId: String) = Unit
+    override suspend fun acceptFriendRequest(requesterId: String) = Unit
 }

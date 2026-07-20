@@ -100,6 +100,9 @@ import com.appetizers.spotra.domain.repository.AuthRepository
 import com.appetizers.spotra.domain.repository.BadgeRepository
 import com.appetizers.spotra.domain.repository.FriendRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
+import com.appetizers.spotra.domain.repository.SocialRepository
+import com.appetizers.spotra.domain.model.SocialSnapshot
+import com.appetizers.spotra.domain.model.SocialUser
 import com.appetizers.spotra.domain.repository.ProfileRepository
 import com.appetizers.spotra.domain.repository.StreakRepository
 import com.appetizers.spotra.domain.usecase.AwardBadgesUseCase
@@ -1134,6 +1137,85 @@ private fun IncomingRequestRow(
             fontSize = 15.sp,
             fontWeight = FontWeight.ExtraBold
         )
+        /*
+        Text(
+            text = "✓",
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                start = 30.dp,
+                top = 22.dp,
+                end = 30.dp,
+                bottom = 18.dp
+            ),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            when (selectedTab) {
+                SocialTab.Friends -> {
+                    item { SectionHeader("YOUR FRIENDS") }
+                    if (social.friends.isEmpty()) item { EmptySocialState("No friends yet — find classmates in Discover.") }
+                    itemsIndexed(social.friends) { _, friend ->
+                        SocialPersonRow(
+                            person = friend.toSocialPerson("${friend.program} · ${friend.studyTerm.label}"),
+                            actionLabel = "Friend",
+                            actionEnabled = false,
+                            onAction = onJoin
+                        )
+                    }
+                    item { StudyStreakCard() }
+                }
+                SocialTab.Buddies -> {
+                    item { SectionHeader("FRIEND REQUESTS") }
+                    if (social.incomingRequests.isEmpty()) item { EmptySocialState("No pending friend requests.") }
+                    itemsIndexed(social.incomingRequests) { _, buddy ->
+                        SocialPersonRow(
+                            person = buddy.toSocialPerson("${buddy.program} · ${buddy.studyTerm.label}"),
+                            actionLabel = "Accept",
+                            actionEnabled = true,
+                            onAction = { onAcceptFriendRequest(buddy.id) }
+                        )
+                    }
+                    item { StudyStreakCard() }
+                }
+                SocialTab.Discover -> {
+                    item { SectionHeader("CLASSMATES IN YOUR PROGRAM & TERM") }
+                    if (social.suggestedUsers.isEmpty()) item { EmptySocialState("No new classmates to suggest right now.") }
+                    itemsIndexed(social.suggestedUsers) { _, buddy ->
+                        SocialPersonRow(
+                            person = buddy.toSocialPerson("${buddy.program} · ${buddy.studyTerm.label}"),
+                            actionLabel = if (buddy.id in social.outgoingRequestIds) "Sent" else "+ Add",
+                            actionEnabled = buddy.id !in social.outgoingRequestIds,
+                            onAction = { onSendFriendRequest(buddy.id) }
+                        )
+                    }
+                    item { StudyStreakCard() }
+                }
+            }
+        }
+        BottomNavigationShell(
+            accent = SoloBlue,
+            selectedSection = selectedSection,
+            onSectionSelected = onSectionSelected
+                .background(SoloBlue, androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                .clickable(onClick = onAccept)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            color = Color.White,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.ExtraBold
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = "✗",
+            modifier = Modifier
+                .background(HomeBackground, androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                .clickable(onClick = onDecline)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            color = DPAtriumRed,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.ExtraBold
+        )
+        */
         Spacer(Modifier.width(6.dp))
         Text(
             text = "✗",
@@ -2693,6 +2775,60 @@ private data class SocialPerson(
     val detail: String,
     val active: Boolean = true
 )
+
+private fun SocialUser.toSocialPerson(detail: String) = SocialPerson(
+    id = id,
+    initials = initials,
+    name = name,
+    detail = detail
+)
+
+private fun StudyMode.accentColor(): Color = when (this) {
+    StudyMode.Solo -> SoloBlue
+    StudyMode.Group -> GroupGreen
+}
+
+private fun sensorReadingsFor(spotId: String): List<SensorReading> {
+    val quietBias = if (spotId.contains("library") || spotId.contains("e7")) 0 else 8
+    return listOf(
+        SensorReading(
+            label = "NOISE",
+            value = "${32 + quietBias} dB",
+            description = if (quietBias == 0) "Library-quiet" else "Moderate chatter",
+            progress = if (quietBias == 0) .42f else .62f,
+            scoreWeight = if (quietBias == 0) 96 else 78,
+            icon = Icons.AutoMirrored.Rounded.VolumeUp,
+            tint = GroupGreen
+        ),
+        SensorReading(
+            label = "LIGHTING",
+            value = "480 lx",
+            description = "Ideal for reading",
+            progress = .86f,
+            scoreWeight = 92,
+            icon = Icons.Rounded.LightMode,
+            tint = StarGold
+        ),
+        SensorReading(
+            label = "WI-FI",
+            value = "94 Mbps",
+            description = "Excellent signal",
+            progress = .94f,
+            scoreWeight = 94,
+            icon = Icons.Rounded.Wifi,
+            tint = SoloBlue
+        ),
+        SensorReading(
+            label = "OCCUPANCY",
+            value = "26%",
+            description = "Plenty of seats",
+            progress = .34f,
+            scoreWeight = 82,
+            icon = Icons.Rounded.Groups,
+            tint = GroupGreen
+        )
+    )
+}
 
 private fun friendStudyRows() = listOf(
     SocialPerson("raghav", "RV", "Raghav Verma", "E7 Study Hall - 1h 2min"),
