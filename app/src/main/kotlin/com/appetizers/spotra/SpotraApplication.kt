@@ -16,10 +16,10 @@ import com.appetizers.spotra.data.remote.SupabaseAuthRepository
 import com.appetizers.spotra.data.remote.SupabaseBadgeRepository
 import com.appetizers.spotra.data.remote.SupabaseFriendRepository
 import com.appetizers.spotra.data.remote.SupabaseHomeRepository
-import com.appetizers.spotra.data.remote.SupabaseProfileRepository
-import com.appetizers.spotra.data.remote.SupabaseSocialRepository
 import com.appetizers.spotra.data.remote.DebugSocialRepository
+import com.appetizers.spotra.data.remote.SupabaseProfileRepository
 import com.appetizers.spotra.data.remote.SupabaseReviewRepository
+import com.appetizers.spotra.data.remote.SupabaseSocialRepository
 import com.appetizers.spotra.data.remote.SupabaseSpotSubmissionRepository
 import com.appetizers.spotra.data.remote.SupabaseStreakRepository
 import com.appetizers.spotra.domain.repository.AuthRepository
@@ -28,8 +28,8 @@ import com.appetizers.spotra.domain.repository.FriendRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.OnboardingDraftRepository
 import com.appetizers.spotra.domain.repository.ProfileRepository
-import com.appetizers.spotra.domain.repository.SocialRepository
 import com.appetizers.spotra.domain.repository.ReviewRepository
+import com.appetizers.spotra.domain.repository.SocialRepository
 import com.appetizers.spotra.domain.repository.SpotSubmissionRepository
 import com.appetizers.spotra.domain.repository.StreakRepository
 import com.appetizers.spotra.domain.usecase.AwardBadgesUseCase
@@ -89,14 +89,6 @@ class AppContainer(application: Application) {
             authRepository = SupabaseAuthRepository(client)
             profileRepository = SupabaseProfileRepository(client)
             socialRepository = SupabaseSocialRepository(client)
-        } else if (BuildConfig.DEBUG) {
-            authRepository = DebugAuthRepository()
-            profileRepository = DebugProfileRepository()
-            socialRepository = DebugSocialRepository()
-        } else {
-            authRepository = MissingConfigurationAuthRepository()
-            profileRepository = MissingConfigurationProfileRepository()
-            socialRepository = DebugSocialRepository()
             spotSubmissionRepository = SupabaseSpotSubmissionRepository(client)
             homeRepository = SupabaseHomeRepository(client)
             reviewRepository = SupabaseReviewRepository(client)
@@ -106,6 +98,7 @@ class AppContainer(application: Application) {
         } else if (BuildConfig.DEBUG) {
             authRepository = DebugAuthRepository()
             profileRepository = DebugProfileRepository()
+            socialRepository = DebugSocialRepository()
             spotSubmissionRepository = DebugSpotSubmissionRepository()
             homeRepository = DebugHomeRepository()
             reviewRepository = DebugReviewRepository()
@@ -115,6 +108,7 @@ class AppContainer(application: Application) {
         } else {
             authRepository = MissingConfigurationAuthRepository()
             profileRepository = MissingConfigurationProfileRepository()
+            socialRepository = DebugSocialRepository()
             spotSubmissionRepository = DebugSpotSubmissionRepository()
             homeRepository = DebugHomeRepository()
             reviewRepository = DebugReviewRepository()

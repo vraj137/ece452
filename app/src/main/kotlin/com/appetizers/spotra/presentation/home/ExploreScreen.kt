@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.appetizers.spotra.data.mock.MockData
 import com.appetizers.spotra.data.mock.MockSpot
+import java.util.Locale
 
 private enum class LeaderboardCategory(val label: String, val subtitle: String) {
     Trending("Trending", "Top spots this week"),
@@ -326,7 +327,7 @@ private fun LeaderboardSpotCard(
                         )
                         Spacer(Modifier.width(4.dp))
                         Text(
-                            text = String.format("%.1f", spot.rating),
+                            text = String.format(Locale.US, "%.1f", spot.rating),
                             color = accent,
                             fontSize = 20.sp,
                             fontWeight = FontWeight.ExtraBold
@@ -414,7 +415,7 @@ private fun RatingPill(rating: Double) {
         )
         Spacer(Modifier.width(3.dp))
         Text(
-            text = String.format("%.1f", rating),
+            text = String.format(Locale.US, "%.1f", rating),
             color = BodyText,
             fontSize = 12.sp,
             fontWeight = FontWeight.ExtraBold

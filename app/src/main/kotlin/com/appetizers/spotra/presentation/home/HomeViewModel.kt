@@ -11,7 +11,6 @@ import com.appetizers.spotra.domain.model.ReviewDraft
 import com.appetizers.spotra.domain.model.StudyMode
 import com.appetizers.spotra.domain.model.StudySpotSummary
 import com.appetizers.spotra.domain.repository.AuthRepository
-import com.appetizers.spotra.domain.repository.BadgeRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.ReviewRepository
 import com.appetizers.spotra.domain.repository.StreakRepository
@@ -68,7 +67,6 @@ class HomeViewModel(
     private val repository: HomeRepository,
     private val authRepository: AuthRepository,
     private val streakRepository: StreakRepository,
-    private val badgeRepository: BadgeRepository,
     private val reviewRepository: ReviewRepository,
     private val awardBadgesUseCase: AwardBadgesUseCase,
 ) : ViewModel() {
@@ -206,7 +204,7 @@ class HomeViewModel(
                             val reviewCount = reviewRepository.getReviewCount(userId)
                             awardBadgesUseCase.onReview(userId, qualityScore)
                             reviewBadge = when {
-                                reviewCount == 0 -> BadgeId.FIRST_REVIEW
+                                reviewCount == 1 -> BadgeId.FIRST_REVIEW
                                 qualityScore >= 5 -> BadgeId.QUALITY_REVIEWER
                                 else -> null
                             }
@@ -371,7 +369,6 @@ class HomeViewModel(
         private val repository: HomeRepository,
         private val authRepository: AuthRepository,
         private val streakRepository: StreakRepository,
-        private val badgeRepository: BadgeRepository,
         private val reviewRepository: ReviewRepository,
         private val awardBadgesUseCase: AwardBadgesUseCase,
     ) : ViewModelProvider.Factory {
@@ -381,7 +378,6 @@ class HomeViewModel(
                 repository,
                 authRepository,
                 streakRepository,
-                badgeRepository,
                 reviewRepository,
                 awardBadgesUseCase,
             ) as T

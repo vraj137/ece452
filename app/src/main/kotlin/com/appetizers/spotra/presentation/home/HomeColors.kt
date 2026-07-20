@@ -3,15 +3,12 @@ package com.appetizers.spotra.presentation.home
 import androidx.compose.ui.graphics.Color
 import com.appetizers.spotra.domain.model.StudyMode
 
-internal enum class NavTab { Map, Explore, Social, Profile }
-
 internal val HomeBackground = Color(0xFFF8F7F3)
 internal val Ink = Color(0xFF171A3C)
 internal val HeaderMuted = Color(0xFFA8A6AA)
 internal val MutedText = Color(0xFF96949A)
 internal val SwitcherTrack = Color(0xFFEDE9E0)
 internal val SoloBlue = Color(0xFF4355E8)
-internal val SensorScoreBackground = Color(0xFF293B8E)
 internal val GroupGreen = Color(0xFF21A46F)
 internal val GroupHeaderGreen = Color(0xFF115C3B)
 internal val GroupHeaderChip = Color(0xFF3A7B62)

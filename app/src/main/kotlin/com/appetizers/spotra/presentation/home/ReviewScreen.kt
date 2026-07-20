@@ -1,5 +1,6 @@
 package com.appetizers.spotra.presentation.home
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -79,6 +80,8 @@ internal fun ReviewScreen(
     var submitted by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+
+    BackHandler(onBack = onBack)
 
     if (submitted) {
         ReviewSuccessScreen(onBack = onBack)

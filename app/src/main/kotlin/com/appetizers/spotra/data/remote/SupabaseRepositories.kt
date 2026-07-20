@@ -9,6 +9,8 @@ import com.appetizers.spotra.domain.model.GroupStudySession
 import com.appetizers.spotra.domain.model.HomeSnapshot
 import com.appetizers.spotra.domain.model.Review
 import com.appetizers.spotra.domain.model.ReviewDraft
+import com.appetizers.spotra.domain.model.SocialSnapshot
+import com.appetizers.spotra.domain.model.SocialUser
 import com.appetizers.spotra.domain.model.SpotSubmission
 import com.appetizers.spotra.domain.model.StudyMode
 import com.appetizers.spotra.domain.model.StudySpotDetail
@@ -21,26 +23,23 @@ import com.appetizers.spotra.domain.repository.BadgeRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.ProfileRepository
 import com.appetizers.spotra.domain.repository.ReviewRepository
+import com.appetizers.spotra.domain.repository.SocialRepository
 import com.appetizers.spotra.domain.repository.SpotSubmissionRepository
 import com.appetizers.spotra.domain.repository.StreakRepository
 import com.appetizers.spotra.domain.usecase.ReviewQualityScorer
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.OtpType
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.OTP
 import io.github.jan.supabase.postgrest.from
-import com.appetizers.spotra.domain.model.SocialSnapshot
-import com.appetizers.spotra.domain.model.SocialUser
-import com.appetizers.spotra.domain.repository.SocialRepository
-import kotlinx.serialization.Serializable
 import io.github.jan.supabase.postgrest.query.Order
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 
 class SupabaseAuthRepository(
     private val client: SupabaseClient
@@ -98,10 +97,17 @@ class SupabaseSocialRepository(private val client: SupabaseClient) : SocialRepos
         val userId = requireNotNull(client.auth.currentUserOrNull()?.id) { "Please sign in first." }
         val me = requireNotNull(client.from("profiles").select { filter { eq("id", userId) } }
             .decodeSingleOrNull<UserProfileDto>()) { "Complete your profile before using Social." }
+        val studyTerm = me.studyTerm ?: return SocialSnapshot()
         val peers = client.from("profiles").select {
-            filter { eq("program", me.program); eq("study_term", me.studyTerm.label); neq("id", userId) }
-        }.decodeList<UserProfileDto>().map { dto ->
-            SocialUser(dto.userId, "${dto.firstName} ${dto.lastName}", dto.program, dto.studyTerm)
+            filter {
+                eq("program", me.program)
+                eq("study_term", studyTerm.label)
+                neq("id", userId)
+            }
+        }.decodeList<UserProfileDto>().mapNotNull { dto ->
+            dto.studyTerm?.let { term ->
+                SocialUser(dto.userId, "${dto.firstName} ${dto.lastName}", dto.program, term)
+            }
         }
         val sent = client.from("friend_requests").select {
             filter { eq("requester_id", userId) }
@@ -132,6 +138,11 @@ class SupabaseSocialRepository(private val client: SupabaseClient) : SocialRepos
         val userId = requireNotNull(client.auth.currentUserOrNull()?.id) { "Please sign in first." }
         client.from("friend_requests").update({ set("status", "accepted") }) {
             filter { eq("requester_id", requesterId); eq("recipient_id", userId); eq("status", "pending") }
+        }
+    }
+}
+
+@Serializable
 private data class SpotSubmissionDto(
     val name: String,
     val description: String,
