@@ -2159,25 +2159,29 @@ private fun CampusMap(
     onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    if (BuildConfig.MAPBOX_PUBLIC_TOKEN.isBlank()) {
+    val located = remember(spots) { spots.filter { it.latitude != null && it.longitude != null } }
+    val displayState = mapDisplayState(
+        tokenBlank = BuildConfig.MAPBOX_PUBLIC_TOKEN.isBlank(),
+        locatedCount = located.size
+    )
+
+    if (displayState == MapDisplayState.PLACEHOLDER) {
         CampusMapPlaceholder(mode = mode, accent = accent, modifier = modifier)
         return
     }
-
-    val located = remember(spots) { spots.filter { it.latitude != null && it.longitude != null } }
     // Fixed view of UW campus so the study spots are always framed.
     val mapViewportState = rememberMapViewportState {
         setCameraOptions {
-            center(Point.fromLngLat(-80.5430, 43.4720))
-            zoom(14.6)
+            center(Point.fromLngLat(MapConfig.CAMPUS_LNG, MapConfig.CAMPUS_LAT))
+            zoom(MapConfig.DEFAULT_ZOOM)
         }
     }
     val zoomBy: (Double) -> Unit = { delta ->
         val cameraState = mapViewportState.cameraState
-        val nextZoom = ((cameraState?.zoom ?: 14.6) + delta).coerceIn(13.0, 18.5)
+        val nextZoom = MapConfig.coerceZoom((cameraState?.zoom ?: MapConfig.DEFAULT_ZOOM) + delta)
         mapViewportState.easeTo(
             cameraOptions {
-                center(cameraState?.center ?: Point.fromLngLat(-80.5430, 43.4720))
+                center(cameraState?.center ?: Point.fromLngLat(MapConfig.CAMPUS_LNG, MapConfig.CAMPUS_LAT))
                 zoom(nextZoom)
                 bearing(cameraState?.bearing ?: 0.0)
                 pitch(cameraState?.pitch ?: 0.0)
@@ -2246,6 +2250,41 @@ private fun CampusMap(
                 onClick = onRefresh
             )
         }
+
+        if (displayState == MapDisplayState.EMPTY) {
+            MapEmptyOverlay(modifier = Modifier.align(Alignment.Center))
+        }
+    }
+}
+
+@Composable
+private fun MapEmptyOverlay(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .background(Color.White, RoundedCornerShape(16.dp))
+            .padding(horizontal = 20.dp, vertical = 16.dp)
+            .semantics(mergeDescendants = true) {},
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Map,
+            contentDescription = null,
+            tint = HeaderMuted,
+            modifier = Modifier.size(28.dp)
+        )
+        Text(
+            text = "No study spots to show",
+            color = Ink,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            text = "Tap refresh to try again",
+            color = BodyText,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium
+        )
     }
 }
 
@@ -2456,13 +2495,13 @@ private fun BuildingSpacesScreen(
             )
         }
 
-        when {
-            isLoading -> {
+        when (buildingSpacesDisplayState(isLoading = isLoading, error = error, spaceCount = spaces.size)) {
+            BuildingSpacesDisplayState.LOADING -> {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = accent)
                 }
             }
-            error != null -> {
+            BuildingSpacesDisplayState.ERROR -> {
                 Text(
                     text = error.orEmpty(),
                     modifier = Modifier.padding(24.dp),
@@ -2471,7 +2510,18 @@ private fun BuildingSpacesScreen(
                     fontWeight = FontWeight.SemiBold
                 )
             }
-            else -> {
+            BuildingSpacesDisplayState.EMPTY -> {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = "No study spaces listed for this building yet.",
+                        modifier = Modifier.padding(24.dp),
+                        color = BodyText,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+            BuildingSpacesDisplayState.CONTENT -> {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 28.dp),
