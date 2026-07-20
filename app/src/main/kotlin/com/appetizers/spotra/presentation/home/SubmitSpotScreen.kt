@@ -1,5 +1,6 @@
 package com.appetizers.spotra.presentation.home
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -78,6 +79,14 @@ internal fun SubmitSpotScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var showFullMap by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+
+    BackHandler {
+        if (showFullMap) {
+            showFullMap = false
+        } else {
+            onBack()
+        }
+    }
 
     if (submitted) {
         SubmitSuccessScreen(onBack = onBack)
@@ -417,6 +426,7 @@ private fun FullScreenMapPicker(
     onPinPlaced: (Double, Double) -> Unit,
     onConfirm: () -> Unit
 ) {
+    val mapUnavailable = BuildConfig.MAPBOX_PUBLIC_TOKEN.isBlank()
     val mapViewportState = rememberMapViewportState {
         setCameraOptions {
             center(Point.fromLngLat(if (pinPlaced) pinLng else UW_LNG, if (pinPlaced) pinLat else UW_LAT))
@@ -425,38 +435,67 @@ private fun FullScreenMapPicker(
     }
 
     Box(modifier = Modifier.fillMaxSize().background(MapLoadingBackground)) {
-        MapboxMap(
-            modifier = Modifier.fillMaxSize(),
-            mapViewportState = mapViewportState,
-            style = { MapStyle(style = Style.LIGHT) },
-            scaleBar = {},
-            logo = {},
-            attribution = {},
-            onMapClickListener = { point ->
-                onPinPlaced(point.latitude(), point.longitude())
-                true
-            }
-        ) {
-            if (pinPlaced) {
-                val options = remember(pinLat, pinLng) {
-                    viewAnnotationOptions {
-                        geometry(Point.fromLngLat(pinLng, pinLat))
-                        annotationAnchor { anchor(ViewAnnotationAnchor.BOTTOM) }
-                        allowOverlap(true)
-                    }
-                }
-                ViewAnnotation(options = options) {
+        if (mapUnavailable) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(
-                        imageVector = Icons.Rounded.LocationOn,
+                        Icons.Rounded.LocationOn,
                         contentDescription = null,
                         tint = SoloBlue,
                         modifier = Modifier.size(40.dp)
                     )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "Map unavailable in debug mode",
+                        color = HeaderMuted,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    if (pinPlaced) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Using selected location",
+                            color = SoloBlue,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+        } else {
+            MapboxMap(
+                modifier = Modifier.fillMaxSize(),
+                mapViewportState = mapViewportState,
+                style = { MapStyle(style = Style.LIGHT) },
+                scaleBar = {},
+                logo = {},
+                attribution = {},
+                onMapClickListener = { point ->
+                    onPinPlaced(point.latitude(), point.longitude())
+                    true
+                }
+            ) {
+                if (pinPlaced) {
+                    val options = remember(pinLat, pinLng) {
+                        viewAnnotationOptions {
+                            geometry(Point.fromLngLat(pinLng, pinLat))
+                            annotationAnchor { anchor(ViewAnnotationAnchor.BOTTOM) }
+                            allowOverlap(true)
+                        }
+                    }
+                    ViewAnnotation(options = options) {
+                        Icon(
+                            imageVector = Icons.Rounded.LocationOn,
+                            contentDescription = null,
+                            tint = SoloBlue,
+                            modifier = Modifier.size(40.dp)
+                        )
+                    }
                 }
             }
         }
 
-        if (!pinPlaced) {
+        if (!pinPlaced && !mapUnavailable) {
             Box(
                 modifier = Modifier
                     .align(Alignment.Center)
@@ -496,7 +535,7 @@ private fun FullScreenMapPicker(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center
             ) {
-                Text(if (pinPlaced) "Cancel" else "Close", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                Text("Close", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
             }
         }
     }

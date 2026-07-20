@@ -52,7 +52,6 @@ class HomeViewModelTest {
         repository = home,
         authRepository = NullAuthRepository(),
         streakRepository = NoOpStreakRepository(),
-        badgeRepository = NoOpBadgeRepository(),
         reviewRepository = NoOpReviewRepository(),
         awardBadgesUseCase = AwardBadgesUseCase(NoOpBadgeRepository(), NoOpReviewRepository()),
     )
