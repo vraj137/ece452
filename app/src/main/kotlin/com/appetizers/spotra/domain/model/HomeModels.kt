@@ -33,7 +33,8 @@ data class StudySpotSummary(
     val features: List<SpotFeature> = emptyList(),
     val bestFit: Boolean = false,
     val latitude: Double? = null,
-    val longitude: Double? = null
+    val longitude: Double? = null,
+    val occupancyPercent: Int? = null,
 )
 
 data class StudySpotDetail(
@@ -59,7 +60,8 @@ data class StudySpotDetail(
     val features: List<SpotFeature> = emptyList(),
     val bestFit: Boolean = false,
     val latitude: Double? = null,
-    val longitude: Double? = null
+    val longitude: Double? = null,
+    val bookingUrl: String? = null,
 ) {
     fun toSummary() = StudySpotSummary(
         id = id,
@@ -73,7 +75,8 @@ data class StudySpotDetail(
         features = features,
         bestFit = bestFit,
         latitude = latitude,
-        longitude = longitude
+        longitude = longitude,
+        occupancyPercent = occupancyPercent,
     )
 }
 

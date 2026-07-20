@@ -28,6 +28,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -36,7 +38,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Send
-import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Bolt
@@ -46,7 +47,6 @@ import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.Groups
-import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PersonAdd
@@ -224,9 +224,10 @@ fun HomeScreen(
             accent = accent,
             onBack = { viewingSpotId = null },
             onCheckIn = { spot ->
-                viewModel.startCheckIn(spot, StudyMode.Solo)
+                viewModel.startCheckIn(spot, state.selectedMode)
                 viewingSpotId = null
             },
+            checkInLabel = if (state.selectedMode == StudyMode.Group) "Join with group" else "Start Session",
             homeRepository = homeRepository,
             reviewRepository = reviewRepository,
             friendRepository = friendRepository,
@@ -269,7 +270,7 @@ fun HomeScreen(
             onBack = viewModel::returnToSoloMap,
             selectedSection = state.selectedSection,
             onSectionSelected = viewModel::selectSection,
-            onSpotSelected = { spot -> viewModel.startCheckIn(spot, StudyMode.Group) }
+            onSpotSelected = { spot -> viewingSpotId = spot.id }
         )
         return
     }
@@ -347,21 +348,31 @@ fun HomeScreen(
         return
     }
 
+    val filteredMapSpots = remember(state.mapSpots, state.noiseFilter) {
+        state.mapSpots.filter { spot ->
+            state.noiseFilter == null ||
+            spot.badge.equals(state.noiseFilter, ignoreCase = true)
+        }
+    }
+
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 MapTabContent(
                     userFirstName = state.userFirstName,
                     selectedMode = state.selectedMode,
-                    mapSpots = state.mapSpots,
+                    mapSpots = filteredMapSpots,
+                    allMapSpots = state.mapSpots,
                     selectedSpotId = state.selectedSpotId,
                     soloSpot = soloSpot,
                     accent = accent,
                     isRefreshing = state.isRefreshing,
+                    noiseFilter = state.noiseFilter,
                     onModeSelected = viewModel::selectMode,
                     onMapSpotSelected = viewModel::selectMapSpot,
                     onSpotSelected = { viewingSpotId = it },
-                    onRefresh = viewModel::refresh
+                    onRefresh = viewModel::refresh,
+                    onNoiseFilterChange = viewModel::setNoiseFilter,
                 )
             }
             if (activeCheckIn != null) {
@@ -407,14 +418,17 @@ private fun MapTabContent(
     userFirstName: String,
     selectedMode: StudyMode,
     mapSpots: List<StudySpotSummary>,
+    allMapSpots: List<StudySpotSummary>,
     selectedSpotId: String?,
     soloSpot: StudySpotSummary,
     accent: Color,
     isRefreshing: Boolean,
+    noiseFilter: String?,
     onModeSelected: (StudyMode) -> Unit,
     onMapSpotSelected: (String) -> Unit,
     onSpotSelected: (String) -> Unit,
-    onRefresh: () -> Unit
+    onRefresh: () -> Unit,
+    onNoiseFilterChange: (String?) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -426,7 +440,9 @@ private fun MapTabContent(
             userFirstName = userFirstName,
             selectedMode = selectedMode,
             accent = accent,
-            onModeSelected = onModeSelected
+            onModeSelected = onModeSelected,
+            noiseFilter = noiseFilter,
+            onNoiseFilterChange = onNoiseFilterChange,
         )
         CampusMap(
             spots = mapSpots,
@@ -440,8 +456,8 @@ private fun MapTabContent(
                 .fillMaxWidth()
                 .weight(1f)
         )
-        val displayedSpot = remember(mapSpots, selectedSpotId, soloSpot) {
-            mapSpots.firstOrNull { it.id == selectedSpotId } ?: soloSpot
+        val displayedSpot = remember(allMapSpots, selectedSpotId, soloSpot) {
+            allMapSpots.firstOrNull { it.id == selectedSpotId } ?: soloSpot
         }
         StudySpotCard(
             spot = displayedSpot,
@@ -519,6 +535,7 @@ private fun GroupModeContent(
 
 @Composable
 private fun GroupModeHeader(groupSession: GroupStudySession, onBack: () -> Unit) {
+    val isSolo = groupSession.members.size <= 1
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -528,7 +545,7 @@ private fun GroupModeHeader(groupSession: GroupStudySession, onBack: () -> Unit)
         GroupHeaderTopRow(onBack)
         Spacer(Modifier.height(22.dp))
         Text(
-            text = groupSession.title,
+            text = if (isSolo) "Group mode" else groupSession.title,
             color = Color.White,
             fontSize = 30.sp,
             fontWeight = FontWeight.ExtraBold,
@@ -537,25 +554,50 @@ private fun GroupModeHeader(groupSession: GroupStudySession, onBack: () -> Unit)
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            text = "${groupSession.subtitle} - ${groupSession.members.size} members",
+            text = if (isSolo) "Invite friends below to start a session"
+                   else "${groupSession.subtitle} · ${groupSession.members.size} members",
             color = GroupHeaderSecondary,
-            fontSize = 20.sp,
+            fontSize = 18.sp,
             fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
-        Spacer(Modifier.height(22.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            GroupAvatarStrip(groupSession.members)
-            Spacer(Modifier.width(18.dp))
-            Text(
-                text = groupSession.proximityLabel,
-                color = GroupHeaderSecondary,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+        if (!isSolo) {
+            Spacer(Modifier.height(22.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                GroupAvatarStrip(groupSession.members)
+                Spacer(Modifier.width(18.dp))
+                Text(
+                    text = groupSession.proximityLabel,
+                    color = GroupHeaderSecondary,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        } else {
+            Spacer(Modifier.height(14.dp))
+            Row(
+                modifier = Modifier
+                    .background(GroupBackButton, RoundedCornerShape(22.dp))
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.PersonAdd,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(Modifier.width(7.dp))
+                Text(
+                    text = "Just you · use invite bar below",
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
         }
     }
 }
@@ -697,6 +739,48 @@ private fun GroupSpotCard(spot: StudySpotSummary, onClick: () -> Unit) {
         }
         Spacer(Modifier.height(14.dp))
         GroupFeatureRows(spot.features)
+        Spacer(Modifier.height(10.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                modifier = Modifier
+                    .background(GroupGreen.copy(alpha = 0.12f), RoundedCornerShape(10.dp))
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Group,
+                    contentDescription = null,
+                    tint = GroupGreen,
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(Modifier.width(5.dp))
+                Text(
+                    text = "Group-friendly",
+                    color = GroupGreen,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "Tap to view",
+                    color = HeaderMuted,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(Modifier.width(3.dp))
+                Icon(
+                    imageVector = Icons.Rounded.ChevronRight,
+                    contentDescription = null,
+                    tint = NavMuted,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
     }
 }
 
@@ -796,224 +880,6 @@ private fun GroupInviteBar(value: String, onValueChange: (String) -> Unit, onSen
 }
 
 @Composable
-private fun LiveSensorEnvironmentScreen(
-    spot: StudySpotSummary,
-    selectedSection: HomeSection,
-    onSectionSelected: (HomeSection) -> Unit,
-    onBack: () -> Unit,
-    onCheckIn: () -> Unit
-) {
-    val readings = remember(spot.id) { sensorReadingsFor(spot.id) }
-    val score = remember(readings) { readings.sumOf { it.scoreWeight } / readings.size }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(CheckInHeader)
-            .statusBarsPadding()
-    ) {
-        Column(
-            modifier = Modifier.padding(start = 30.dp, top = 34.dp, end = 30.dp, bottom = 20.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(46.dp)
-                    .background(HeaderButton, RoundedCornerShape(14.dp))
-                    .clickable(onClick = onBack),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                    contentDescription = "Back",
-                    tint = Color.White
-                )
-            }
-            Spacer(Modifier.height(18.dp))
-            Text(
-                text = spot.name,
-                color = Color.White,
-                fontSize = 30.sp,
-                fontWeight = FontWeight.ExtraBold
-            )
-            Spacer(Modifier.height(5.dp))
-            Text(
-                text = "Live sensor readings - Updated 12s ago",
-                color = HeaderSecondary,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(Modifier.height(18.dp))
-            Row(
-                modifier = Modifier
-                    .background(SensorScoreBackground, RoundedCornerShape(24.dp))
-                    .padding(horizontal = 18.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Bolt,
-                    contentDescription = null,
-                    tint = Color(0xFF9BB2FF),
-                    modifier = Modifier.size(21.dp)
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = "$score / 100 study score",
-                    color = Color(0xFFDCE4FF),
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
-            }
-        }
-
-        SensorPrivacyNote()
-
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            contentPadding = PaddingValues(
-                start = 24.dp,
-                top = 26.dp,
-                end = 24.dp,
-                bottom = 18.dp
-            ),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            itemsIndexed(readings.chunked(2)) { _, row ->
-                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    row.forEach { reading ->
-                        SensorReadingCard(
-                            reading = reading,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                    if (row.size == 1) {
-                        Spacer(Modifier.weight(1f))
-                    }
-                }
-            }
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(58.dp)
-                        .background(SoloBlue, RoundedCornerShape(18.dp))
-                        .clickable(onClick = onCheckIn),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = Color.White)
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "Check in here",
-                        color = Color.White,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.ExtraBold
-                    )
-                }
-            }
-        }
-        BottomNavigationShell(
-            accent = SoloBlue,
-            selectedSection = selectedSection,
-            onSectionSelected = onSectionSelected
-        )
-    }
-}
-
-@Composable
-private fun SensorPrivacyNote() {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color(0xFFF2F4FF))
-            .padding(horizontal = 30.dp, vertical = 18.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            imageVector = Icons.Rounded.CheckCircle,
-            contentDescription = null,
-            tint = SoloBlue,
-            modifier = Modifier.size(22.dp)
-        )
-        Spacer(Modifier.width(14.dp))
-        Text(
-            text = "Readings from your phone's mic, light sensor & network",
-            color = SoloBlue,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold
-        )
-    }
-}
-
-@Composable
-private fun SensorReadingCard(
-    reading: SensorReading,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier
-            .height(178.dp)
-            .background(Color.White, RoundedCornerShape(20.dp))
-            .padding(18.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .background(reading.tint.copy(alpha = .13f), RoundedCornerShape(13.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = reading.icon,
-                    contentDescription = null,
-                    tint = reading.tint,
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-            Spacer(Modifier.width(12.dp))
-            Text(
-                text = reading.label,
-                color = SectionLabel,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.ExtraBold,
-                maxLines = 1
-            )
-        }
-        Spacer(Modifier.height(20.dp))
-        Text(
-            text = reading.value,
-            color = Ink,
-            fontSize = 28.sp,
-            fontWeight = FontWeight.ExtraBold
-        )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            text = reading.description,
-            color = HeaderMuted,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        Spacer(Modifier.weight(1f))
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(5.dp)
-                .background(DividerLine, RoundedCornerShape(3.dp))
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(reading.progress)
-                    .height(5.dp)
-                    .background(reading.tint, RoundedCornerShape(3.dp))
-            )
-        }
-    }
-}
-
-@Composable
 private fun SocialScreen(
     selectedTab: SocialTab,
     onTabSelected: (SocialTab) -> Unit,
@@ -1059,7 +925,7 @@ private fun SocialScreen(
                         if (state.friends.isEmpty()) {
                             item {
                                 Text(
-                                    text = "No friends yet — search for people in Discover.",
+                                    text = "No friends yet. Search for people in Discover.",
                                     color = HeaderMuted,
                                     fontSize = 16.sp,
                                     fontWeight = FontWeight.Medium
@@ -2056,13 +1922,15 @@ private fun HomeHeader(
     userFirstName: String,
     selectedMode: StudyMode,
     accent: Color,
-    onModeSelected: (StudyMode) -> Unit
+    onModeSelected: (StudyMode) -> Unit,
+    noiseFilter: String? = null,
+    onNoiseFilterChange: (String?) -> Unit = {},
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(Color.White)
-            .padding(start = 38.dp, top = 30.dp, end = 28.dp, bottom = 26.dp)
+            .padding(start = 38.dp, top = 30.dp, end = 28.dp, bottom = 16.dp)
     ) {
         SpotraLandingWordmark(accent)
         Spacer(Modifier.height(8.dp))
@@ -2072,9 +1940,47 @@ private fun HomeHeader(
             fontSize = 22.sp,
             fontWeight = FontWeight.Medium
         )
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(18.dp))
         ModeSwitcher(selectedMode = selectedMode, accent = accent, onModeSelected = onModeSelected)
+        Spacer(Modifier.height(14.dp))
+        NoiseFilterChips(selected = noiseFilter, accent = accent, onSelect = onNoiseFilterChange)
+        Spacer(Modifier.height(4.dp))
     }
+}
+
+private val NOISE_FILTER_OPTIONS = listOf("Silent", "Quiet", "Moderate", "Busy")
+
+@Composable
+private fun NoiseFilterChips(selected: String?, accent: Color, onSelect: (String?) -> Unit) {
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(end = 4.dp)
+    ) {
+        item {
+            FilterChip(label = "All", selected = selected == null, accent = accent, onClick = { onSelect(null) })
+        }
+        items(NOISE_FILTER_OPTIONS) { option ->
+            FilterChip(label = option, selected = selected == option, accent = accent, onClick = {
+                onSelect(if (selected == option) null else option)
+            })
+        }
+    }
+}
+
+@Composable
+private fun FilterChip(label: String, selected: Boolean, accent: Color, onClick: () -> Unit) {
+    Text(
+        text = label,
+        modifier = Modifier
+            .background(if (selected) accent else HomeBackground, RoundedCornerShape(20.dp))
+            .border(1.dp, if (selected) accent else DividerLine, RoundedCornerShape(20.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 7.dp),
+        color = if (selected) Color.White else BodyText,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.ExtraBold,
+        maxLines = 1
+    )
 }
 
 @Composable
@@ -2214,7 +2120,7 @@ private fun CampusMap(
                     ViewAnnotation(options = options) {
                         MapPin(
                             label = spot.name,
-                            color = accent,
+                            color = if (spot.id == selectedSpotId) accent else occupancyPinColor(spot),
                             selected = spot.id == selectedSpotId,
                             contentDescription = "${spot.name}, occupancy ${spot.badge}",
                             modifier = Modifier.clickable(
@@ -2688,17 +2594,25 @@ private fun StudySpotCard(
             }
         }
         Spacer(Modifier.width(12.dp))
+        val (badgeBg, badgeFg) = badgePillColors(spot.badge)
         Text(
             text = spot.badge,
             modifier = Modifier
-                .background(QuietPill, RoundedCornerShape(18.dp))
+                .background(badgeBg, RoundedCornerShape(18.dp))
                 .padding(horizontal = 14.dp, vertical = 7.dp),
-            color = QuietText,
+            color = badgeFg,
             fontSize = 15.sp,
             fontWeight = FontWeight.ExtraBold,
             maxLines = 1
         )
     }
+}
+
+private fun badgePillColors(badge: String): Pair<Color, Color> = when (badge.lowercase()) {
+    "silent", "quiet" -> QuietPill to QuietText
+    "moderate" -> ModerateFitBackground to ModerateFitText
+    "busy", "lively" -> Color(0xFFFFECEC) to Color(0xFFB91C1C)
+    else -> SwitcherTrack to BodyText
 }
 
 @Composable
@@ -2772,16 +2686,6 @@ private fun BottomNavItem(
 
 private data class StudyMapPin(val label: String, val x: Float, val y: Float, val color: Color, val selected: Boolean = false)
 
-private data class SensorReading(
-    val label: String,
-    val value: String,
-    val description: String,
-    val progress: Float,
-    val scoreWeight: Int,
-    val icon: ImageVector,
-    val tint: Color
-)
-
 private data class SocialPerson(
     val id: String,
     val initials: String,
@@ -2789,48 +2693,6 @@ private data class SocialPerson(
     val detail: String,
     val active: Boolean = true
 )
-
-private fun sensorReadingsFor(spotId: String): List<SensorReading> {
-    val quietBias = if (spotId.contains("library") || spotId.contains("e7")) 0 else 8
-    return listOf(
-        SensorReading(
-            label = "NOISE",
-            value = "${32 + quietBias} dB",
-            description = if (quietBias == 0) "Library-quiet" else "Moderate chatter",
-            progress = if (quietBias == 0) .42f else .62f,
-            scoreWeight = if (quietBias == 0) 96 else 78,
-            icon = Icons.AutoMirrored.Rounded.VolumeUp,
-            tint = GroupGreen
-        ),
-        SensorReading(
-            label = "LIGHTING",
-            value = "480 lx",
-            description = "Ideal for reading",
-            progress = .86f,
-            scoreWeight = 92,
-            icon = Icons.Rounded.LightMode,
-            tint = StarGold
-        ),
-        SensorReading(
-            label = "WI-FI",
-            value = "94 Mbps",
-            description = "Excellent signal",
-            progress = .94f,
-            scoreWeight = 94,
-            icon = Icons.Rounded.Wifi,
-            tint = SoloBlue
-        ),
-        SensorReading(
-            label = "OCCUPANCY",
-            value = "26%",
-            description = "Plenty of seats",
-            progress = .34f,
-            scoreWeight = 82,
-            icon = Icons.Rounded.Groups,
-            tint = GroupGreen
-        )
-    )
-}
 
 private fun friendStudyRows() = listOf(
     SocialPerson("raghav", "RV", "Raghav Verma", "E7 Study Hall - 1h 2min"),
@@ -2871,7 +2733,7 @@ private fun pinsFrom(pinList: List<Pair<String, Boolean>>, accent: Color): List<
             label = spot.shortLabel,
             x = spot.mapPinX,
             y = spot.mapPinY,
-            color = if (selected) accent else pinColorFor(spotId),
+            color = if (selected) accent else occupancyPinColorFromPercent(spot.fullPercent),
             selected = selected
         )
     }
@@ -2879,11 +2741,13 @@ private fun pinsFrom(pinList: List<Pair<String, Boolean>>, accent: Color): List<
 private fun soloPins(accent: Color) = pinsFrom(MockData.soloMapPins, accent)
 private fun groupPins(accent: Color) = pinsFrom(MockData.groupMapPins, accent)
 
-private fun pinColorFor(spotId: String): Color = when (spotId) {
-    "dc-library-3f", "e5-collab-lab" -> LibraryGreen
-    "slc-boardroom-2a" -> SLCOrange
-    "dp-library", "mc-atrium" -> DPAtriumRed
-    else -> SoloBlue
+private fun occupancyPinColor(spot: StudySpotSummary): Color =
+    occupancyPinColorFromPercent(spot.occupancyPercent ?: 0)
+
+private fun occupancyPinColorFromPercent(percent: Int): Color = when {
+    percent >= 75 -> DPAtriumRed
+    percent >= 50 -> SLCOrange
+    else -> LibraryGreen
 }
 
 private fun iconForFeature(type: SpotFeatureType): ImageVector = when (type) {

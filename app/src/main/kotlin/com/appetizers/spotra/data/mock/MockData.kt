@@ -24,7 +24,7 @@ data class MockSpot(
     val mapPinY: Float,           // fractional y position on placeholder map (0..1)
     val distanceMeters: Int,
     val rating: Double,
-    val badge: String,            // Quiet / Silent / Moderate / Lively / Best fit
+    val badge: String,            // Quiet / Silent / Moderate / Lively
     val studyContextLabel: String? = null,
     val noiseLevel: String,       // Low / Silent / Moderate / Lively
     val lighting: String,         // Good / Natural / Bright / Poor
@@ -34,7 +34,8 @@ data class MockSpot(
     val features: List<SpotFeature> = emptyList(),
     val bestFit: Boolean = false,
     val checkInsThisWeek: Int,
-    val reviews: List<MockReview> = emptyList()
+    val reviews: List<MockReview> = emptyList(),
+    val bookingUrl: String? = null,
 ) {
     fun toSummary() = StudySpotSummary(
         id = id,
@@ -46,7 +47,8 @@ data class MockSpot(
         features = features,
         bestFit = bestFit,
         latitude = latitude,
-        longitude = longitude
+        longitude = longitude,
+        occupancyPercent = fullPercent,
     )
 
     fun toDetail() = StudySpotDetail(
@@ -67,7 +69,8 @@ data class MockSpot(
         features = features,
         bestFit = bestFit,
         latitude = latitude,
-        longitude = longitude
+        longitude = longitude,
+        bookingUrl = bookingUrl,
     )
 }
 
@@ -100,16 +103,10 @@ object MockData {
 
     val groupSession = GroupStudySession(
         id = "app-etizers-cs341",
-        title = "app-etizers study sesh",
-        subtitle = "CS 341 finals prep",
-        proximityLabel = "all within 10 min",
-        members = listOf(
-            GroupMember("you", selfDisplayName, selfInitials),
-            GroupMember("akshat", "Akshat J.", "AJ"),
-            GroupMember("eric", "Eric Z.", "EZ"),
-            GroupMember("raghav", "Raghav V.", "RV"),
-            GroupMember("pavan", "Pavan J.", "PJ")
-        )
+        title = "Your study sesh",
+        subtitle = "Ready to find a spot",
+        proximityLabel = "invite friends below",
+        members = listOf(GroupMember("you", selfDisplayName, selfInitials))
     )
 
     // ── Study spots ───────────────────────────────────────────────────────────
@@ -170,7 +167,8 @@ object MockData {
             reviews = listOf(
                 MockReview("Mei L.", "ML", "mei", 5, "Best quiet spot on campus!"),
                 MockReview("Sam C.", "SC", "sam", 4)
-            )
+            ),
+            bookingUrl = "https://uwaterloo.ca/library/services/book-study-room",
         ),
 
         MockSpot(
@@ -184,7 +182,7 @@ object MockData {
             mapPinY = 0.65f,
             distanceMeters = 210,
             rating = 4.3,
-            badge = "Best fit",
+            badge = "Moderate",
             noiseLevel = "Moderate",
             lighting = "Bright",
             fullPercent = 12,
@@ -198,7 +196,8 @@ object MockData {
             ),
             bestFit = true,
             checkInsThisWeek = 87,
-            reviews = listOf(MockReview("Akshat J.", "AJ", "akshat", 4, "Great room for group sessions."))
+            reviews = listOf(MockReview("Akshat J.", "AJ", "akshat", 4, "Great room for group sessions.")),
+            bookingUrl = "https://slc.uwaterloo.ca/book-a-room/",
         ),
 
         MockSpot(
