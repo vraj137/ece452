@@ -23,5 +23,6 @@ data class ReviewDraft(
     val wifiQuality: String? = null,
     val occupancyPercent: Int? = null,
     val comment: String? = null,
-    val anonymous: Boolean = false
+    val anonymous: Boolean = false,
+    val qualityScore: Int = 0,
 )

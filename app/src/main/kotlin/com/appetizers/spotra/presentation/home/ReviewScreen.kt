@@ -1,5 +1,6 @@
 package com.appetizers.spotra.presentation.home
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -47,15 +48,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.appetizers.spotra.domain.model.ReviewDraft
 import com.appetizers.spotra.domain.repository.ReviewRepository
+import com.appetizers.spotra.domain.usecase.ReviewQualityScorer
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 private val NOISE_OPTIONS = listOf("Silent", "Low", "Moderate", "Lively")
 private val LIGHTING_OPTIONS = listOf("Poor", "Good", "Bright", "Natural")
-private val WIFI_OPTIONS = listOf("Poor", "OK", "Good", "Fast")
+internal val WIFI_OPTIONS = listOf("Poor", "OK", "Good", "Fast")
 private val OCCUPANCY_OPTIONS = listOf("Empty", "Some", "Busy", "Packed")
 
-private fun occupancyToPercent(index: Int?): Int? = when (index) {
+internal fun wifiLabel(index: Int?): String? = index?.let { WIFI_OPTIONS.getOrNull(it) }
+internal fun occupancyToPercent(index: Int?): Int? = when (index) {
     0 -> 10
     1 -> 40
     2 -> 70
@@ -84,6 +87,8 @@ internal fun ReviewScreen(
     var submitted by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+
+    BackHandler(onBack = onBack)
 
     if (submitted) {
         ReviewSuccessScreen(onBack = onBack)
@@ -145,10 +150,11 @@ internal fun ReviewScreen(
                                         rating = rating,
                                         noiseLevel = noiseLabel(noiseIndex),
                                         lighting = lightingLabel(lightingIndex),
-                                        wifiQuality = wifiIndex?.let { WIFI_OPTIONS.getOrNull(it) },
+                                        wifiQuality = wifiLabel(wifiIndex),
                                         occupancyPercent = occupancyToPercent(occupancyIndex),
                                         comment = comment.trim().ifBlank { null },
-                                        anonymous = anonymous
+                                        anonymous = anonymous,
+                                        qualityScore = ReviewQualityScorer.score(comment.trim().ifBlank { null })
                                     )
                                 )
                                 submitted = true

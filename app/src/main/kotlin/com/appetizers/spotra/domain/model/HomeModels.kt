@@ -41,6 +41,7 @@ data class StudySpotSummary(
     val amenities: List<String> = emptyList(),
     val noiseLevel: String? = null,
     val lighting: String? = null,
+    val friendsHere: Int = 0,
 )
 
 data class StudySpotDetail(
@@ -124,7 +125,7 @@ data class CheckInSession(
 data class HomeSnapshot(
     val userFirstName: String,
     val soloSpot: StudySpotSummary,
-    val groupSession: GroupStudySession,
+    val groupSession: GroupStudySession?,
     val groupSpots: List<StudySpotSummary>,
     val mapSpots: List<StudySpotSummary> = emptyList(),
     val trendingCounts: Map<String, Int> = emptyMap(),

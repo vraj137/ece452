@@ -21,6 +21,10 @@ import com.appetizers.spotra.domain.repository.BadgeRepository
 import com.appetizers.spotra.domain.repository.FriendRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.ProfileRepository
+import com.appetizers.spotra.domain.repository.SocialRepository
+import com.appetizers.spotra.domain.model.SocialSnapshot
+import com.appetizers.spotra.domain.model.SocialUser
+import com.appetizers.spotra.domain.model.StudyTerm
 import com.appetizers.spotra.domain.repository.ReviewRepository
 import com.appetizers.spotra.domain.repository.StreakRepository
 
@@ -52,6 +56,33 @@ class DebugProfileRepository : ProfileRepository {
     }
 }
 
+class DebugSocialRepository : SocialRepository {
+    private val friends = mutableListOf(
+        SocialUser("raghav", "Raghav Verma", "Computer Engineering", StudyTerm.TWO_A)
+    )
+    private val incoming = mutableListOf(
+        SocialUser("vishvam", "Vishvam Patel", "Computer Engineering", StudyTerm.TWO_A)
+    )
+    private val suggestions = mutableListOf(
+        SocialUser("edmond", "Edmond Yang", "Computer Engineering", StudyTerm.TWO_A),
+        SocialUser("akshat", "Akshat Jawne", "Computer Engineering", StudyTerm.TWO_A)
+    )
+    private val outgoing = mutableSetOf<String>()
+
+    override suspend fun loadSocial() = SocialSnapshot(friends, incoming, suggestions, outgoing)
+
+    override suspend fun sendFriendRequest(recipientId: String) {
+        outgoing += recipientId
+    }
+
+    override suspend fun acceptFriendRequest(requesterId: String) {
+        incoming.firstOrNull { it.id == requesterId }?.let { friend ->
+            incoming.remove(friend)
+            friends += friend
+        }
+    }
+}
+
 class DebugHomeRepository : HomeRepository {
     private var groupSession = MockData.groupSession
 
@@ -68,7 +99,44 @@ class DebugHomeRepository : HomeRepository {
         MockData.spotById(spotId)?.toDetail()
             ?: error("Unknown study spot: $spotId")
 
-    override suspend fun childSpots(parentSpotId: String): List<StudySpotDetail> = emptyList()
+    override suspend fun childSpots(parentSpotId: String): List<StudySpotDetail> {
+        val parent = MockData.spotById(parentSpotId) ?: return emptyList()
+        val building = parent.building.substringBefore(",").trim()
+        return listOf(
+            StudySpotDetail(
+                id = "$parentSpotId-floor-2",
+                name = "${parent.name} – 2nd Floor",
+                building = building,
+                floor = "2nd",
+                badge = "Quiet",
+                rating = 4.1,
+                noiseLevel = "Quiet",
+                lighting = "Bright",
+                capacity = 20,
+                occupancyPercent = 30,
+                peopleHere = 6,
+                amenities = listOf("Wi-Fi", "Outlets"),
+                latitude = parent.latitude,
+                longitude = parent.longitude,
+            ),
+            StudySpotDetail(
+                id = "$parentSpotId-floor-3",
+                name = "${parent.name} – 3rd Floor",
+                building = building,
+                floor = "3rd",
+                badge = "Moderate",
+                rating = 3.8,
+                noiseLevel = "Moderate",
+                lighting = "Natural",
+                capacity = 30,
+                occupancyPercent = 55,
+                peopleHere = 16,
+                amenities = listOf("Wi-Fi", "Whiteboards", "Outlets"),
+                latitude = parent.latitude,
+                longitude = parent.longitude,
+            ),
+        )
+    }
 
     override suspend fun startCheckIn(
         spotId: String,
@@ -86,8 +154,6 @@ class DebugHomeRepository : HomeRepository {
     }
 
     override suspend fun checkOut(sessionId: String) = Unit
-
-    override suspend fun sendBuddyRequest(studentId: String) = Unit
 
     override suspend fun inviteToGroup(groupSessionId: String, inviteText: String): GroupMember {
         val initials = inviteText

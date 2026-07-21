@@ -22,8 +22,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ExitToApp
 import androidx.compose.material.icons.rounded.Bolt
-import androidx.compose.material.icons.rounded.ExitToApp
 import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Star
@@ -38,7 +38,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -207,11 +206,11 @@ class ProfileViewModel(
 internal fun ProfileTabContent(
     profileRepository: ProfileRepository,
     authRepository: AuthRepository,
-    friendRepository: FriendRepository? = null,
     badgeRepository: BadgeRepository,
     onSignOut: () -> Unit,
+    modifier: Modifier = Modifier,
+    friendRepository: FriendRepository? = null,
     recentSessions: List<CompletedSession> = emptyList(),
-    modifier: Modifier = Modifier
 ) {
     val vm: ProfileViewModel = viewModel(
         factory = ProfileViewModel.Factory(profileRepository, authRepository, friendRepository, badgeRepository)
@@ -220,7 +219,6 @@ internal fun ProfileTabContent(
     LaunchedEffect(Unit) { vm.refreshBadges() }
     var showSettings by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState()
-    val scope = rememberCoroutineScope()
 
     Column(
         modifier = modifier
@@ -279,7 +277,7 @@ internal fun ProfileTabContent(
                 Spacer(Modifier.height(8.dp))
                 HorizontalDivider(color = DividerLine)
                 SettingsRow(
-                    icon = Icons.Rounded.ExitToApp,
+                    icon = Icons.AutoMirrored.Rounded.ExitToApp,
                     label = "Sign out",
                     tint = Color(0xFFD83D3C),
                     onClick = {

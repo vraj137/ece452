@@ -12,7 +12,7 @@ import com.appetizers.spotra.domain.model.ReviewDraft
 import com.appetizers.spotra.domain.model.StudyMode
 import com.appetizers.spotra.domain.model.StudySpotSummary
 import com.appetizers.spotra.domain.repository.AuthRepository
-import com.appetizers.spotra.domain.repository.BadgeRepository
+import com.appetizers.spotra.domain.repository.FriendRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.ReviewRepository
 import com.appetizers.spotra.domain.repository.StreakRepository
@@ -72,10 +72,10 @@ class HomeViewModel(
     private val repository: HomeRepository,
     private val authRepository: AuthRepository,
     private val streakRepository: StreakRepository,
-    private val badgeRepository: BadgeRepository,
     private val reviewRepository: ReviewRepository,
     private val awardBadgesUseCase: AwardBadgesUseCase,
     private val locationRepository: LocationRepository,
+    private val friendRepository: FriendRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
@@ -196,12 +196,28 @@ class HomeViewModel(
         }
     }
 
-    fun submitPostCheckoutReview(rating: Int, noiseLevel: String?, lighting: String?, comment: String?) {
+    fun submitPostCheckoutReview(
+        rating: Int,
+        noiseLevel: String?,
+        lighting: String?,
+        wifiQuality: String?,
+        occupancyPercent: Int?,
+        comment: String?,
+    ) {
         val spotId = uiState.value.pendingReviewSpotId ?: return
         val checkoutBadge = uiState.value.pendingCheckoutBadge
         viewModelScope.launch {
             val qualityScore = ReviewQualityScorer.score(comment)
-            val draft = ReviewDraft(spotSlug = spotId, rating = rating, noiseLevel = noiseLevel, lighting = lighting, comment = comment)
+            val draft = ReviewDraft(
+                spotSlug = spotId,
+                rating = rating,
+                noiseLevel = noiseLevel,
+                lighting = lighting,
+                wifiQuality = wifiQuality,
+                occupancyPercent = occupancyPercent,
+                comment = comment,
+                qualityScore = qualityScore,
+            )
             runCatching { reviewRepository.submit(draft) }
                 .onSuccess {
                     var reviewBadge: BadgeId? = null
@@ -261,7 +277,7 @@ class HomeViewModel(
     fun sendBuddyRequest(studentId: String) {
         if (studentId in uiState.value.requestedBuddyIds) return
         viewModelScope.launch {
-            runCatching { repository.sendBuddyRequest(studentId) }
+            runCatching { friendRepository.sendRequest(studentId) }
                 .onSuccess {
                     _uiState.update { state ->
                         state.copy(
@@ -404,6 +420,7 @@ class HomeViewModel(
                             error = null
                         )
                     }
+                    launch { updateUserLocation() }
                 }
                 .onFailure { error ->
                     _uiState.update {
@@ -424,10 +441,10 @@ class HomeViewModel(
         private val repository: HomeRepository,
         private val authRepository: AuthRepository,
         private val streakRepository: StreakRepository,
-        private val badgeRepository: BadgeRepository,
         private val reviewRepository: ReviewRepository,
         private val awardBadgesUseCase: AwardBadgesUseCase,
         private val locationRepository: LocationRepository,
+        private val friendRepository: FriendRepository,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
@@ -435,10 +452,10 @@ class HomeViewModel(
                 repository,
                 authRepository,
                 streakRepository,
-                badgeRepository,
                 reviewRepository,
                 awardBadgesUseCase,
                 locationRepository,
+                friendRepository,
             ) as T
     }
 }

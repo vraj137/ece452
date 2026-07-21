@@ -46,7 +46,6 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Group
-import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PersonAdd
@@ -62,6 +61,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -104,6 +104,7 @@ import com.appetizers.spotra.domain.repository.AuthRepository
 import com.appetizers.spotra.domain.repository.BadgeRepository
 import com.appetizers.spotra.domain.repository.FriendRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
+import com.appetizers.spotra.domain.model.SocialUser
 import com.appetizers.spotra.domain.repository.ProfileRepository
 import com.appetizers.spotra.domain.repository.StreakRepository
 import com.appetizers.spotra.domain.usecase.AwardBadgesUseCase
@@ -151,10 +152,10 @@ fun HomeScreen(
             homeRepository,
             authRepository,
             streakRepository,
-            badgeRepository,
             reviewRepository,
             awardBadgesUseCase,
             locationRepository,
+            friendRepository,
         )
     )
 
@@ -187,19 +188,19 @@ fun HomeScreen(
         PostCheckoutReviewSheet(
             spotName = state.pendingReviewSpotName ?: "this spot",
             sheetState = reviewSheetState,
-            onSubmit = { rating, noiseLevel, lighting, comment ->
-            viewModel.submitPostCheckoutReview(rating, noiseLevel, lighting, comment)
-        },
+            onSubmit = { rating, noiseLevel, lighting, wifiQuality, occupancyPercent, comment ->
+                viewModel.submitPostCheckoutReview(rating, noiseLevel, lighting, wifiQuality, occupancyPercent, comment)
+            },
             onDismiss = viewModel::dismissReviewPrompt,
         )
     }
 
-    if (state.isLoading || state.soloSpot == null || state.groupSession == null) {
+    if (state.isLoading || state.soloSpot == null) {
         HomeLoadingScreen()
         return
     }
     val soloSpot = state.soloSpot ?: return
-    val groupSession = state.groupSession ?: return
+    val groupSession = state.groupSession
     val activeCheckIn = state.activeCheckIn
 
     if (showSubmitSpot) {
@@ -276,7 +277,7 @@ fun HomeScreen(
         return
     }
 
-    if (state.selectedSection == HomeSection.Map && state.selectedMode == StudyMode.Group) {
+    if (state.selectedSection == HomeSection.Map && state.selectedMode == StudyMode.Group && groupSession != null) {
         BackHandler { viewModel.returnToSoloMap() }
         GroupModeContent(
             groupSession = groupSession,
@@ -371,7 +372,7 @@ fun HomeScreen(
         state.amenityFilter, state.occupancyFilter
     ) {
         state.mapSpots.filter { spot ->
-            (state.noiseFilter == null || spot.badge.equals(state.noiseFilter, ignoreCase = true)) &&
+            (state.noiseFilter == null || spot.noiseLevel?.equals(state.noiseFilter, ignoreCase = true) == true) &&
             (state.spaceTypeFilter == null ||
                 (state.spaceTypeFilter == StudyMode.Solo && spot.soloFriendly) ||
                 (state.spaceTypeFilter == StudyMode.Group && spot.groupFriendly)) &&
@@ -895,7 +896,7 @@ private fun GroupInviteBar(value: String, onValueChange: (String) -> Unit, onSen
             )
             if (value.isBlank()) {
                 Text(
-                    text = "Invite a friend to this session...",
+                    text = "Enter email to invite a friend...",
                     color = HeaderMuted,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Medium
@@ -1356,12 +1357,14 @@ private fun StudyStreakCard(streakCount: Int) {
 private fun PostCheckoutReviewSheet(
     spotName: String,
     sheetState: androidx.compose.material3.SheetState,
-    onSubmit: (rating: Int, noiseLevel: String?, lighting: String?, comment: String?) -> Unit,
+    onSubmit: (rating: Int, noiseLevel: String?, lighting: String?, wifiQuality: String?, occupancyPercent: Int?, comment: String?) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var rating by remember { mutableStateOf(0) }
+    var rating by remember { mutableIntStateOf(0) }
     var noiseIndex by remember { mutableStateOf<Int?>(null) }
     var lightingIndex by remember { mutableStateOf<Int?>(null) }
+    var wifiIndex by remember { mutableStateOf<Int?>(null) }
+    var occupancyIndex by remember { mutableStateOf<Int?>(null) }
     var comment by remember { mutableStateOf("") }
 
     ModalBottomSheet(
@@ -1409,6 +1412,18 @@ private fun PostCheckoutReviewSheet(
                 selectedIndex = lightingIndex,
                 onSelect = { lightingIndex = it },
             )
+            LabelSlider(
+                label = "WiFi quality",
+                options = listOf("Poor", "OK", "Good", "Fast"),
+                selectedIndex = wifiIndex,
+                onSelect = { wifiIndex = it },
+            )
+            LabelSlider(
+                label = "How busy was it?",
+                options = listOf("Empty", "Some", "Busy", "Packed"),
+                selectedIndex = occupancyIndex,
+                onSelect = { occupancyIndex = it },
+            )
             BasicTextField(
                 value = comment,
                 onValueChange = { comment = it },
@@ -1438,6 +1453,8 @@ private fun PostCheckoutReviewSheet(
                             rating,
                             noiseLabel(noiseIndex),
                             lightingLabel(lightingIndex),
+                            wifiLabel(wifiIndex),
+                            occupancyToPercent(occupancyIndex),
                             comment.ifBlank { null }
                         )
                     },
@@ -1946,7 +1963,7 @@ private fun SessionElapsedText(
     fontWeight: FontWeight
 ) {
     var elapsedSeconds by remember(sessionStartTimeMillis) {
-        mutableStateOf(((System.currentTimeMillis() - sessionStartTimeMillis) / 1000).toInt())
+        mutableIntStateOf(((System.currentTimeMillis() - sessionStartTimeMillis) / 1000).toInt())
     }
     LaunchedEffect(sessionStartTimeMillis) {
         while (true) {
@@ -2026,7 +2043,7 @@ private fun HomeHeader(
     }
 }
 
-private val NOISE_FILTER_OPTIONS = listOf("Silent", "Quiet", "Moderate", "Busy")
+private val NOISE_FILTER_OPTIONS = listOf("Silent", "Low", "Moderate", "Lively")
 private val AMENITY_OPTIONS = listOf("Wi-Fi", "Outlets", "Whiteboard", "Accessible")
 private val OCCUPANCY_OPTIONS = listOf(50 to "< 50% full", 75 to "< 75% full")
 
@@ -2201,25 +2218,31 @@ private fun CampusMap(
     onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    if (BuildConfig.MAPBOX_PUBLIC_TOKEN.isBlank()) {
+    val located = remember(spots) { spots.filter { it.latitude != null && it.longitude != null } }
+    val displayState = mapDisplayState(
+        tokenBlank = BuildConfig.MAPBOX_PUBLIC_TOKEN.isBlank(),
+        locatedCount = located.size
+    )
+
+    if (displayState == MapDisplayState.PLACEHOLDER) {
         CampusMapPlaceholder(mode = mode, accent = accent, modifier = modifier)
         return
     }
 
-    val located = remember(spots) { spots.filter { it.latitude != null && it.longitude != null } }
+
     val mapViewportState = rememberMapViewportState {
         setCameraOptions {
-            center(Point.fromLngLat(-80.5430, 43.4720))
-            zoom(14.6)
+            center(Point.fromLngLat(MapConfig.CAMPUS_LNG, MapConfig.CAMPUS_LAT))
+            zoom(MapConfig.DEFAULT_ZOOM)
         }
     }
 
     val zoomBy: (Double) -> Unit = { delta ->
         val cameraState = mapViewportState.cameraState
-        val nextZoom = ((cameraState?.zoom ?: 14.6) + delta).coerceIn(13.0, 18.5)
+        val nextZoom = MapConfig.coerceZoom((cameraState?.zoom ?: MapConfig.DEFAULT_ZOOM) + delta)
         mapViewportState.easeTo(
             cameraOptions {
-                center(cameraState?.center ?: Point.fromLngLat(-80.5430, 43.4720))
+                center(cameraState?.center ?: Point.fromLngLat(MapConfig.CAMPUS_LNG, MapConfig.CAMPUS_LAT))
                 zoom(nextZoom)
                 bearing(cameraState?.bearing ?: 0.0)
                 pitch(cameraState?.pitch ?: 0.0)
@@ -2289,6 +2312,41 @@ private fun CampusMap(
                 onClick = onRefresh
             )
         }
+
+        if (displayState == MapDisplayState.EMPTY) {
+            MapEmptyOverlay(modifier = Modifier.align(Alignment.Center))
+        }
+    }
+}
+
+@Composable
+private fun MapEmptyOverlay(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .background(Color.White, RoundedCornerShape(16.dp))
+            .padding(horizontal = 20.dp, vertical = 16.dp)
+            .semantics(mergeDescendants = true) {},
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Map,
+            contentDescription = null,
+            tint = HeaderMuted,
+            modifier = Modifier.size(28.dp)
+        )
+        Text(
+            text = "No study spots to show",
+            color = Ink,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            text = "Tap refresh to try again",
+            color = BodyText,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium
+        )
     }
 }
 
@@ -2496,13 +2554,13 @@ private fun BuildingSpacesScreen(
             )
         }
 
-        when {
-            isLoading -> {
+        when (buildingSpacesDisplayState(isLoading = isLoading, error = error, spaceCount = spaces.size)) {
+            BuildingSpacesDisplayState.LOADING -> {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = accent)
                 }
             }
-            error != null -> {
+            BuildingSpacesDisplayState.ERROR -> {
                 Text(
                     text = error.orEmpty(),
                     modifier = Modifier.padding(24.dp),
@@ -2511,7 +2569,18 @@ private fun BuildingSpacesScreen(
                     fontWeight = FontWeight.SemiBold
                 )
             }
-            else -> {
+            BuildingSpacesDisplayState.EMPTY -> {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = "No study spaces listed for this building yet.",
+                        modifier = Modifier.padding(24.dp),
+                        color = BodyText,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+            BuildingSpacesDisplayState.CONTENT -> {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 28.dp),
@@ -2676,6 +2745,25 @@ private fun StudySpotCard(
                     Text(text = " - $contextLabel", color = HeaderMuted, fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
+            if (spot.friendsHere > 0) {
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Rounded.Group,
+                        contentDescription = null,
+                        tint = SoloBlue,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = if (spot.friendsHere == 1) "1 friend here" else "${spot.friendsHere} friends here",
+                        color = SoloBlue,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1
+                    )
+                }
+            }
         }
         Spacer(Modifier.width(12.dp))
         val (badgeBg, badgeFg) = badgePillColors(spot.badge)
@@ -2778,22 +2866,11 @@ private data class SocialPerson(
     val active: Boolean = true
 )
 
-private fun friendStudyRows() = listOf(
-    SocialPerson("raghav", "RV", "Raghav Verma", "E7 Study Hall - 1h 2min"),
-    SocialPerson("vishvam", "VP", "Vishvam Patel", "DC Library 3F - 28min"),
-    SocialPerson("edmond", "EY", "Edmond Yang", "Last seen 3h ago", active = false)
-)
-
-private fun confirmedBuddies() = listOf(
-    SocialPerson("akshat", "AJ", "Akshat Jawne", "ECE 222 - quiet morning sessions"),
-    SocialPerson("eric", "EZ", "Eric Z.", "MATH 237 - problem set partner"),
-    SocialPerson("raghav", "RV", "Raghav Verma", "CS 341 - finals prep")
-)
-
-private fun discoverBuddies() = listOf(
-    SocialPerson("kira", "KL", "Kira L.", "CS 341 - graph algorithms"),
-    SocialPerson("max", "MP", "Max P.", "ECE 222 - circuits review"),
-    SocialPerson("sara", "SN", "Sara N.", "CS 341 - quiet study")
+private fun SocialUser.toSocialPerson(detail: String) = SocialPerson(
+    id = id,
+    initials = initials,
+    name = name,
+    detail = detail
 )
 
 private fun buddyMeta(student: CheckedInStudent): String = when (student.id) {

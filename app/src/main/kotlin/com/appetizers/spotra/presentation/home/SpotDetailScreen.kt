@@ -25,7 +25,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
-import androidx.compose.material.icons.rounded.BookmarkBorder
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Star
@@ -54,6 +53,7 @@ import com.appetizers.spotra.domain.model.StudySpotSummary
 import com.appetizers.spotra.domain.repository.FriendRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.ReviewRepository
+import java.util.Locale
 
 private enum class ReviewFilter { Friends, All }
 
@@ -75,6 +75,7 @@ internal fun SpotDetailScreen(
 
     var spot by remember(spotId) { mutableStateOf<StudySpotDetail?>(null) }
     var reviews by remember(spotId) { mutableStateOf<List<Review>>(emptyList()) }
+    var reviewLoadError by remember(spotId) { mutableStateOf<String?>(null) }
     var friendsAtSpot by remember(spotId) { mutableStateOf<List<FriendProfile>>(emptyList()) }
     var acceptedFriendIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var selfId by remember { mutableStateOf<String?>(null) }
@@ -83,12 +84,14 @@ internal fun SpotDetailScreen(
 
     LaunchedEffect(spotId) {
         error = null
+        reviewLoadError = null
         runCatching { homeRepository.spotDetail(spotId) }
             .onSuccess { spot = it }
             .onFailure { error = it.message ?: "Could not load this spot." }
 
-        reviews = runCatching { reviewRepository.reviewsFor(spotId) }
-            .getOrDefault(emptyList())
+        runCatching { reviewRepository.reviewsFor(spotId) }
+            .onSuccess { reviews = it }
+            .onFailure { reviewLoadError = "Could not load reviews." }
         if (friendRepository != null) {
             friendsAtSpot = runCatching { friendRepository.fetchFriendsAtSpot(spotId) }.getOrDefault(emptyList())
             val profiles = runCatching { friendRepository.fetchFriendProfiles() }.getOrNull()
@@ -121,8 +124,7 @@ internal fun SpotDetailScreen(
         SpotDetailHeader(
             spot = detail,
             friendsStudying = friendsAtSpot,
-            onBack = onBack,
-            onCheckIn = { onCheckIn(detail.toSummary()) }
+            onBack = onBack
         )
         LazyColumn(
             modifier = Modifier
@@ -135,13 +137,14 @@ internal fun SpotDetailScreen(
             detail.bookingUrl?.let { url ->
                 item { BookRoomBanner(url = url) }
             }
-            if (reviews.isNotEmpty()) {
+            if (reviews.isNotEmpty() || reviewLoadError != null) {
                 item {
                     SpotReviewsSection(
                         reviews = displayedReviews,
                         reviewFilter = reviewFilter,
                         onFilterChange = { reviewFilter = it },
-                        showFilter = friendRepository != null
+                        showFilter = friendRepository != null,
+                        loadError = reviewLoadError,
                     )
                 }
             }
@@ -196,8 +199,7 @@ private fun SpotDetailLoadingOrError(message: String?, onBack: () -> Unit) {
 private fun SpotDetailHeader(
     spot: StudySpotDetail,
     friendsStudying: List<FriendProfile>,
-    onBack: () -> Unit,
-    onCheckIn: () -> Unit
+    onBack: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -225,19 +227,7 @@ private fun SpotDetailHeader(
                     modifier = Modifier.size(22.dp)
                 )
             }
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .background(HeaderButton, RoundedCornerShape(12.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.BookmarkBorder,
-                    contentDescription = "Bookmark",
-                    tint = Color.White,
-                    modifier = Modifier.size(22.dp)
-                )
-            }
+            Spacer(Modifier.size(44.dp))
         }
 
         Spacer(Modifier.height(18.dp))
@@ -276,7 +266,7 @@ private fun SpotDetailHeader(
                 Box(Modifier.size(9.dp).background(CheckedInDot, CircleShape))
                 Spacer(Modifier.width(7.dp))
                 Text(
-                    text = "Live · ${spot.peopleHere} people here now",
+                    text = "${spot.peopleHere} ${if (spot.peopleHere == 1) "person" else "people"} checked in now",
                     color = CheckedInText,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold
@@ -339,14 +329,14 @@ private fun SpotStatTiles(spot: StudySpotDetail) {
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             StatTile(
-                value = spot.rating?.let { String.format("%.1f", it) } ?: "New",
+                value = spot.rating?.let { String.format(Locale.US, "%.1f", it) } ?: "New",
                 label = "RATING",
                 valueColor = SoloBlue,
                 modifier = Modifier.weight(1f)
             )
             StatTile(
                 value = spot.occupancyPercent?.let { "$it%" } ?: "No data",
-                label = if (spot.occupancyPercentIsLive) "LIVE FULL" else "FULL",
+                label = "% FULL",
                 valueColor = if ((spot.occupancyPercent ?: 0) > 70) DPAtriumRed else GroupGreen,
                 modifier = Modifier.weight(1f)
             )
@@ -418,7 +408,8 @@ private fun SpotReviewsSection(
     reviews: List<Review>,
     reviewFilter: ReviewFilter = ReviewFilter.All,
     onFilterChange: (ReviewFilter) -> Unit = {},
-    showFilter: Boolean = false
+    showFilter: Boolean = false,
+    loadError: String? = null,
 ) {
     Column(
         modifier = Modifier
@@ -451,15 +442,20 @@ private fun SpotReviewsSection(
             }
         }
         Spacer(Modifier.height(12.dp))
-        if (reviews.isEmpty()) {
-            Text(
+        when {
+            loadError != null -> Text(
+                text = loadError,
+                color = DPAtriumRed,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium
+            )
+            reviews.isEmpty() -> Text(
                 text = if (reviewFilter == ReviewFilter.Friends) "No friend reviews yet." else "No reviews yet.",
                 color = HeaderMuted,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Medium
             )
-        } else {
-            reviews.forEachIndexed { index, review ->
+            else -> reviews.forEachIndexed { index, review ->
                 ReviewRow(review = review)
                 if (index < reviews.lastIndex) {
                     Spacer(Modifier.height(1.dp))

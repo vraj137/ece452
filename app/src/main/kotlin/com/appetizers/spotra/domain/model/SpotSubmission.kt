@@ -8,5 +8,6 @@ data class SpotSubmission(
     val building: String,
     val floor: String,
     val submittedByEmail: String,
-    val submittedByUserId: String?
+    val submittedByUserId: String?,
+    val bookingUrl: String? = null,
 )

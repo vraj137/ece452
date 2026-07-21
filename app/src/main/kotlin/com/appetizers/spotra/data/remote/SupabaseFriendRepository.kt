@@ -88,43 +88,68 @@ class SupabaseFriendRepository(
     }
 
     override suspend fun fetchSuggested(acceptedFriendIds: Set<String>): List<FriendProfile> {
-        if (acceptedFriendIds.isEmpty()) return emptyList()
         val selfId = currentUserId() ?: return emptyList()
 
-        val mutualIds = mutableSetOf<String>()
-        coroutineScope {
-            acceptedFriendIds.map { friendId ->
-                async {
-                    runCatching {
-                        client.from("friendships")
-                            .select {
-                                filter {
-                                    or {
-                                        eq("requester_id", friendId)
-                                        eq("addressee_id", friendId)
+        if (acceptedFriendIds.isNotEmpty()) {
+            val mutualIds = mutableSetOf<String>()
+            coroutineScope {
+                acceptedFriendIds.map { friendId ->
+                    async {
+                        runCatching {
+                            client.from("friendships")
+                                .select {
+                                    filter {
+                                        or {
+                                            eq("requester_id", friendId)
+                                            eq("addressee_id", friendId)
+                                        }
+                                        eq("status", "accepted")
                                     }
-                                    eq("status", "accepted")
                                 }
-                            }
-                            .decodeList<FriendshipRow>()
-                    }.getOrDefault(emptyList())
+                                .decodeList<FriendshipRow>()
+                        }.getOrDefault(emptyList())
+                    }
+                }.forEach { deferred ->
+                    deferred.await().forEach { f ->
+                        val otherId = if (f.requesterId in acceptedFriendIds) f.addresseeId else f.requesterId
+                        if (otherId != selfId && otherId !in acceptedFriendIds) mutualIds.add(otherId)
+                    }
                 }
-            }.forEach { deferred ->
-                deferred.await().forEach { f ->
-                    val otherId = if (f.requesterId in acceptedFriendIds) f.addresseeId else f.requesterId
-                    if (otherId != selfId && otherId !in acceptedFriendIds) mutualIds.add(otherId)
-                }
+            }
+
+            if (mutualIds.isNotEmpty()) {
+                return client.from("profiles")
+                    .select {
+                        filter { isIn("id", mutualIds.toList()) }
+                        limit(10)
+                    }
+                    .decodeList<FriendProfileRow>()
+                    .map { FriendProfile(it.id, it.firstName, it.lastName, it.email, it.program, it.term) }
             }
         }
 
-        if (mutualIds.isEmpty()) return emptyList()
-        return client.from("profiles")
-            .select {
-                filter { isIn("id", mutualIds.toList()) }
-                limit(10)
-            }
-            .decodeList<FriendProfileRow>()
-            .map { FriendProfile(it.id, it.firstName, it.lastName, it.email, it.program, it.term) }
+        // Fallback: suggest users in the same academic program
+        val selfProfile = runCatching {
+            client.from("profiles")
+                .select { filter { eq("id", selfId) } }
+                .decodeSingleOrNull<FriendProfileRow>()
+        }.getOrNull() ?: return emptyList()
+
+        if (selfProfile.program.isBlank()) return emptyList()
+
+        return runCatching {
+            client.from("profiles")
+                .select {
+                    filter {
+                        ilike("program", selfProfile.program)
+                        neq("id", selfId)
+                    }
+                    limit(10)
+                }
+                .decodeList<FriendProfileRow>()
+                .filter { it.id !in acceptedFriendIds }
+                .map { FriendProfile(it.id, it.firstName, it.lastName, it.email, it.program, it.term) }
+        }.getOrDefault(emptyList())
     }
 
     override suspend fun sendRequest(toUserId: String) {
