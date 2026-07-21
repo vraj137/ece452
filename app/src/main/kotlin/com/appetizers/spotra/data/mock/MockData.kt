@@ -9,25 +9,21 @@ import com.appetizers.spotra.domain.model.StudySpotSummary
 import com.appetizers.spotra.domain.model.StudyTerm
 import com.appetizers.spotra.domain.model.UserProfile
 
-// Single source of truth for all mock/debug data used across the app.
-// Screens and debug repositories both draw from here so adding a spot
-// only needs to happen in one place.
-
 data class MockSpot(
     val id: String,
     val name: String,
     val building: String,
-    val shortLabel: String,       // abbreviated label for map pins
+    val shortLabel: String,
     val latitude: Double,
     val longitude: Double,
-    val mapPinX: Float,           // fractional x position on placeholder map (0..1)
-    val mapPinY: Float,           // fractional y position on placeholder map (0..1)
+    val mapPinX: Float,
+    val mapPinY: Float,
     val distanceMeters: Int,
     val rating: Double,
-    val badge: String,            // Quiet / Silent / Moderate / Lively
+    val badge: String,
     val studyContextLabel: String? = null,
-    val noiseLevel: String,       // Low / Silent / Moderate / Lively
-    val lighting: String,         // Good / Natural / Bright / Poor
+    val noiseLevel: String,
+    val lighting: String,
     val fullPercent: Int,
     val peopleHere: Int,
     val amenities: List<String>,
@@ -41,6 +37,7 @@ data class MockSpot(
         id = id,
         name = name,
         badge = badge,
+        building = building.substringBefore(",").trim(),
         distanceMeters = distanceMeters,
         rating = rating,
         studyContextLabel = studyContextLabel,
@@ -49,6 +46,11 @@ data class MockSpot(
         latitude = latitude,
         longitude = longitude,
         occupancyPercent = fullPercent,
+        soloFriendly = studyContextLabel?.contains("Solo") != false,
+        groupFriendly = studyContextLabel?.contains("Group") != false,
+        amenities = amenities,
+        noiseLevel = noiseLevel,
+        lighting = lighting,
     )
 
     fun toDetail() = StudySpotDetail(
@@ -84,8 +86,6 @@ data class MockReview(
 
 object MockData {
 
-    // ── User ─────────────────────────────────────────────────────────────────
-
     val user = UserProfile(
         userId = "debug-user-001",
         firstName = "Vraj",
@@ -96,10 +96,8 @@ object MockData {
         onboardingComplete = true
     )
 
-    val selfInitials = "${user.firstName.first()}${user.lastName.first()}"   // "VP"
-    val selfDisplayName = "${user.firstName} ${user.lastName.first()}."      // "Vraj P."
-
-    // ── Group session ─────────────────────────────────────────────────────────
+    val selfInitials = "${user.firstName.first()}${user.lastName.first()}"
+    val selfDisplayName = "${user.firstName} ${user.lastName.first()}."
 
     val groupSession = GroupStudySession(
         id = "app-etizers-cs341",
@@ -108,10 +106,6 @@ object MockData {
         proximityLabel = "invite friends below",
         members = listOf(GroupMember("you", selfDisplayName, selfInitials))
     )
-
-    // ── Study spots ───────────────────────────────────────────────────────────
-    // UW campus coordinates (WGS-84).  mapPinX/Y are fractional positions on
-    // the placeholder grid in HomeScreen (0..1 in each axis).
 
     val spots: List<MockSpot> = listOf(
 
@@ -275,18 +269,14 @@ object MockData {
         )
     )
 
-    // ── Convenience lookups ───────────────────────────────────────────────────
-
     fun spotById(id: String): MockSpot? = spots.find { it.id == id }
 
-    // Spots that appear in the group mode spot list, ordered by fit.
     val groupSpots: List<MockSpot> = listOf(
         spotById("slc-boardroom-2a")!!,
         spotById("e5-collab-lab")!!,
         spotById("mc-atrium")!!
     )
 
-    // Solo-mode map pins: (spotId, selectedByDefault)
     val soloMapPins: List<Pair<String, Boolean>> = listOf(
         "e7-study-hall" to true,
         "dc-library-3f" to false,
@@ -294,7 +284,6 @@ object MockData {
         "dp-library" to false
     )
 
-    // Group-mode map pins: (spotId, selectedByDefault)
     val groupMapPins: List<Pair<String, Boolean>> = listOf(
         "dc-library-3f" to true,
         "e7-study-hall" to false,
@@ -302,7 +291,6 @@ object MockData {
         "e5-collab-lab" to false
     )
 
-    // Students checked into the solo spot (used by DebugHomeRepository)
     val soloCheckInStudents = listOf(
         Triple("akshat", "AJ", "Akshat J."),
         Triple("eric", "EZ", "Eric Z."),

@@ -7,6 +7,7 @@ import com.appetizers.spotra.domain.model.HomeSnapshot
 import com.appetizers.spotra.domain.model.OnboardingDraft
 import com.appetizers.spotra.domain.model.Review
 import com.appetizers.spotra.domain.model.ReviewDraft
+import com.appetizers.spotra.domain.model.CompletedSession
 import com.appetizers.spotra.domain.model.SpotSubmission
 import com.appetizers.spotra.domain.model.StudyMode
 import com.appetizers.spotra.domain.model.StudySpotDetail
@@ -48,6 +49,7 @@ interface ReviewRepository {
 interface StreakRepository {
     suspend fun recordLogin(userId: String): Int
     suspend fun recordCheckout(userId: String, spotId: String, spotName: String, durationSeconds: Int): Int
+    suspend fun fetchRecentSessions(userId: String): List<CompletedSession>
 }
 
 interface BadgeRepository {

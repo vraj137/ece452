@@ -11,17 +11,14 @@ CREATE TABLE IF NOT EXISTS group_sessions (
 CREATE TABLE IF NOT EXISTS group_session_members (
     session_id  UUID NOT NULL REFERENCES group_sessions(id) ON DELETE CASCADE,
     user_id     UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-    role        TEXT NOT NULL DEFAULT 'member',   -- 'owner' | 'member'
+    role        TEXT NOT NULL DEFAULT 'member',
     joined_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (session_id, user_id)
 );
 
--- ── RLS ──────────────────────────────────────────────────────────────────────
-
 ALTER TABLE group_sessions        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE group_session_members ENABLE ROW LEVEL SECURITY;
 
--- A user can see any session they belong to.
 CREATE POLICY "members can view session"
     ON group_sessions FOR SELECT
     USING (
@@ -31,17 +28,14 @@ CREATE POLICY "members can view session"
         )
     );
 
--- Any authenticated user can create a session.
 CREATE POLICY "authenticated users can create sessions"
     ON group_sessions FOR INSERT
     WITH CHECK (auth.uid() = created_by);
 
--- Owner can update (e.g. set ended_at, change title).
 CREATE POLICY "owner can update session"
     ON group_sessions FOR UPDATE
     USING (created_by = auth.uid());
 
--- Members can see who else is in sessions they belong to.
 CREATE POLICY "members can view membership"
     ON group_session_members FOR SELECT
     USING (
@@ -51,7 +45,6 @@ CREATE POLICY "members can view membership"
         )
     );
 
--- Owner can add members.
 CREATE POLICY "owner can add members"
     ON group_session_members FOR INSERT
     WITH CHECK (
@@ -61,7 +54,6 @@ CREATE POLICY "owner can add members"
         )
     );
 
--- Members can remove themselves; owners can remove anyone.
 CREATE POLICY "members can leave or owner can remove"
     ON group_session_members FOR DELETE
     USING (
@@ -71,8 +63,6 @@ CREATE POLICY "members can leave or owner can remove"
             WHERE s.id = session_id AND s.created_by = auth.uid()
         )
     );
-
--- ── Indexes ───────────────────────────────────────────────────────────────────
 
 CREATE INDEX IF NOT EXISTS idx_group_session_members_user
     ON group_session_members (user_id);

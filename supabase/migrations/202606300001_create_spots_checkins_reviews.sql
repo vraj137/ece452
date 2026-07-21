@@ -1,12 +1,3 @@
--- Phase 1: real study spots, check-ins, and reviews.
--- Spots are the source of truth for the map/explore screens. A review can only be
--- created for a spot the user has physically checked into — that gate is enforced
--- here (RLS) as both the harm-mitigation feature and an anti-spam control.
-
--- ── Spots ────────────────────────────────────────────────────────────────────
--- Managed by admins (seeded below / approved from user_spot_submissions in Phase 5).
--- Regular users get read-only access; there is no insert/update policy for them.
-
 create table if not exists public.spots (
     id uuid primary key default gen_random_uuid(),
     slug text unique not null,
@@ -30,11 +21,6 @@ using (true);
 
 grant select on public.spots to authenticated;
 revoke all on public.spots from anon;
-
--- ── Check-ins ────────────────────────────────────────────────────────────────
--- One row per visit; ended_at null means the user is currently there.
--- Privacy: a user can only read their OWN check-in rows. Aggregate occupancy is
--- exposed separately through the spot_occupancy view (counts only, no identities).
 
 create table if not exists public.check_ins (
     id uuid primary key default gen_random_uuid(),
@@ -67,8 +53,6 @@ with check ((select auth.uid()) = user_id);
 grant select, insert, update on public.check_ins to authenticated;
 revoke all on public.check_ins from anon;
 
--- Occupancy as counts only. A view (security definer by default) aggregates over
--- all check-ins without exposing individual rows, so privacy is preserved.
 create or replace view public.spot_occupancy as
 select spot_slug, count(*)::int as active_count
 from public.check_ins
@@ -77,10 +61,6 @@ group by spot_slug;
 
 grant select on public.spot_occupancy to authenticated;
 revoke all on public.spot_occupancy from anon;
-
--- ── Reviews ──────────────────────────────────────────────────────────────────
--- Self-reported noise/lighting/wifi/occupancy + rating. reviewer_name is captured
--- at submit time ("Anonymous" when the user opts in) so reads need no profile join.
 
 create table if not exists public.reviews (
     id uuid primary key default gen_random_uuid(),
@@ -104,7 +84,6 @@ on public.reviews for select
 to authenticated
 using (true);
 
--- The gate: you may only insert a review for a spot you have a check-in at.
 create policy "Users can review spots they have checked into"
 on public.reviews for insert
 to authenticated
@@ -126,7 +105,6 @@ with check ((select auth.uid()) = user_id);
 grant select, insert, update on public.reviews to authenticated;
 revoke all on public.reviews from anon;
 
--- ── Seed spots (UW campus, coordinates matching the app's MockData) ───────────
 insert into public.spots (slug, name, building, floor, latitude, longitude, solo_friendly, group_friendly, amenities)
 values
     ('e7-study-hall',    'E7 Study Hall',     'Engineering 7',       'Room 2101',         43.47295, -80.53951, true,  false, '{"Fast Wi-Fi","Outlets","Accessible","Soft seating","Near café"}'),

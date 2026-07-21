@@ -102,14 +102,6 @@ private fun Int.toDurationLabel(): String {
     }
 }
 
-private val mockRecentSessions = listOf(
-    RecentSession("E7 Study Hall", "Yesterday", "2h 15min"),
-    RecentSession("DC Library 3F", "2 days ago", "1h 30min"),
-    RecentSession("SLC Boardroom 2A", "3 days ago", "45min"),
-    RecentSession("MC Atrium", "5 days ago", "2h 00min"),
-    RecentSession("DP Library", "Last week", "1h 10min")
-)
-
 enum class LocationVisibility {
     Visible, Approximate, Hidden;
     val label get() = when (this) {
@@ -156,7 +148,18 @@ class ProfileViewModel(
             val badges = user?.let {
                 runCatching { badgeRepository.getBadges(it.id) }.getOrDefault(emptyList())
             } ?: emptyList()
-            _state.value = State(isLoading = false, profile = profile, friends = friends, badges = badges)
+            val restoredVisibility = when (profile?.locationVisibility) {
+                "visible" -> LocationVisibility.Visible
+                "approximate" -> LocationVisibility.Approximate
+                else -> LocationVisibility.Hidden
+            }
+            _state.value = State(
+                isLoading = false,
+                profile = profile,
+                friends = friends,
+                badges = badges,
+                locationVisibility = restoredVisibility,
+            )
         }
     }
 
@@ -170,6 +173,14 @@ class ProfileViewModel(
 
     fun setLocationVisibility(visibility: LocationVisibility) {
         _state.value = _state.value.copy(locationVisibility = visibility)
+        viewModelScope.launch {
+            val profile = _state.value.profile ?: return@launch
+            runCatching {
+                profileRepository.saveProfile(
+                    profile.copy(locationVisibility = visibility.name.lowercase())
+                )
+            }
+        }
     }
 
     fun signOut(onDone: () -> Unit) {
@@ -218,7 +229,7 @@ internal fun ProfileTabContent(
             .statusBarsPadding()
     ) {
         ProfileHeader(profile = state.profile, onSettingsClick = { showSettings = true })
-        val displaySessions = recentSessions.map { it.toRecentSession() } + mockRecentSessions
+        val displaySessions = recentSessions.map { it.toRecentSession() }
         LazyColumn(
             modifier = Modifier.fillMaxWidth().weight(1f),
             contentPadding = PaddingValues(bottom = 24.dp)

@@ -2,6 +2,9 @@ package com.appetizers.spotra
 
 import android.app.Application
 import com.appetizers.spotra.data.local.DataStoreOnboardingDraftRepository
+import com.appetizers.spotra.data.location.DebugLocationRepository
+import com.appetizers.spotra.data.location.FusedLocationRepository
+import com.appetizers.spotra.data.location.LocationRepository
 import com.appetizers.spotra.data.remote.DebugAuthRepository
 import com.appetizers.spotra.data.remote.DebugBadgeRepository
 import com.appetizers.spotra.data.remote.DebugFriendRepository
@@ -59,6 +62,8 @@ class AppContainer(application: Application) {
     val draftRepository: OnboardingDraftRepository =
         DataStoreOnboardingDraftRepository(application, json)
 
+    val locationRepository: LocationRepository
+
     val authRepository: AuthRepository
     val profileRepository: ProfileRepository
     val homeRepository: HomeRepository
@@ -73,6 +78,12 @@ class AppContainer(application: Application) {
     init {
         val hasCredentials = BuildConfig.SUPABASE_URL.isNotBlank() &&
             BuildConfig.SUPABASE_PUBLISHABLE_KEY.isNotBlank()
+
+        locationRepository = if (hasCredentials || BuildConfig.DEBUG) {
+            FusedLocationRepository(application)
+        } else {
+            DebugLocationRepository()
+        }
 
         if (hasCredentials) {
             val client = createSupabaseClient(

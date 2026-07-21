@@ -4,6 +4,7 @@ import com.appetizers.spotra.data.mock.MockData
 import com.appetizers.spotra.domain.model.BadgeId
 import com.appetizers.spotra.domain.model.CheckInSession
 import com.appetizers.spotra.domain.model.CheckedInStudent
+import com.appetizers.spotra.domain.model.CompletedSession
 import com.appetizers.spotra.domain.model.GroupMember
 import com.appetizers.spotra.domain.model.GroupStudySession
 import com.appetizers.spotra.domain.model.HomeSnapshot
@@ -118,8 +119,6 @@ class DebugSpotSubmissionRepository : SpotSubmissionRepository {
     override suspend fun submitSpot(submission: SpotSubmission) = Unit
 }
 
-// ── Spots / check-ins / home ────────────────────────────────────────────────
-
 @Serializable
 private data class SpotDto(
     val slug: String,
@@ -134,6 +133,8 @@ private data class SpotDto(
     val capacity: Int? = null,
     @SerialName("parent_slug") val parentSlug: String? = null,
     @SerialName("booking_url") val bookingUrl: String? = null,
+    @SerialName("noise_level") val noiseLevel: String? = null,
+    val lighting: String? = null,
 )
 
 @Serializable
@@ -150,8 +151,6 @@ private data class CheckInRow(
     @SerialName("spot_slug") val spotSlug: String,
     @SerialName("ended_at") val endedAt: String? = null
 )
-
-// ── Group sessions ──────────────────────────────────────────────────────────
 
 @Serializable
 private data class GroupSessionDto(
@@ -183,14 +182,12 @@ private data class GroupSessionMemberRow(
     val role: String,
 )
 
-// Active occupancy counts.
 @Serializable
 private data class OccupancyRow(
     @SerialName("spot_slug") val spotSlug: String,
     @SerialName("active_count") val activeCount: Int
 )
 
-// Weekly trend counts.
 @Serializable
 private data class TrendingRow(
     @SerialName("spot_slug") val spotSlug: String,
@@ -217,7 +214,6 @@ class SupabaseHomeRepository(
         val groupSessionDeferred = async {
             runCatching { loadOrCreateGroupSession() }.getOrDefault(MockData.groupSession)
         }
-
         cachedFirstName = firstNameDeferred.await()
         val activeCounts = activeCountsDeferred.await()
         val trendingCounts = trendingDeferred.await()
@@ -259,7 +255,7 @@ class SupabaseHomeRepository(
             groupSession = groupSession,
             groupSpots = groupSpots,
             mapSpots = summaries,
-            trendingCounts = trendingCounts
+            trendingCounts = trendingCounts,
         )
     }
 
@@ -346,13 +342,18 @@ class SupabaseHomeRepository(
         }
     }
 
-    // TODO: Back with Supabase social graph.
-    override suspend fun sendBuddyRequest(studentId: String) = Unit
+    override suspend fun sendBuddyRequest(studentId: String) {
+        val userId = client.auth.currentUserOrNull()?.id ?: return
+        runCatching {
+            client.from("friendships").insert(
+                BuddyRequestInsert(requesterId = userId, addresseeId = studentId)
+            )
+        }
+    }
 
     override suspend fun inviteToGroup(groupSessionId: String, inviteText: String): GroupMember {
         val sessionId = activeGroupSessionId ?: return fallbackInvite(inviteText)
 
-        // If inviteText looks like an email, try to find the matching profile.
         val profile = if (inviteText.contains("@")) {
             runCatching {
                 client.from("profiles")
@@ -394,7 +395,6 @@ class SupabaseHomeRepository(
         val userId = client.auth.currentUserOrNull()?.id
             ?: return@coroutineScope MockData.groupSession
 
-        // RLS ensures we only see sessions we're a member of; grab the newest active one.
         val existingSession = runCatching {
             client.from("group_sessions")
                 .select { order("created_at", Order.DESCENDING) }
@@ -470,14 +470,12 @@ class SupabaseHomeRepository(
             ?: "there"
     }
 
-    // Active visits per spot from spot_occupancy.
     private suspend fun activeCheckInCounts(): Map<String, Int> =
         runCatching {
             client.from("spot_occupancy").select().decodeList<OccupancyRow>()
                 .associate { it.spotSlug to it.activeCount }
         }.getOrDefault(emptyMap())
 
-    // Weekly check-in counts from spot_trending.
     private suspend fun trendingCheckInCounts(): Map<String, Int> =
         runCatching {
             client.from("spot_trending").select().decodeList<TrendingRow>()
@@ -508,11 +506,17 @@ class SupabaseHomeRepository(
         id = slug,
         name = name,
         badge = occupancyBadge(activeCount),
+        building = building,
         parentSlug = parentSlug,
         childCount = childCount,
         latitude = latitude,
         longitude = longitude,
         occupancyPercent = liveOccupancyPercent(activeCount, capacity),
+        soloFriendly = soloFriendly,
+        groupFriendly = groupFriendly,
+        amenities = amenities,
+        noiseLevel = noiseLevel,
+        lighting = lighting,
     )
 
     private fun SpotDto.toDetail(
@@ -586,7 +590,12 @@ private fun initialsOf(name: String): String =
         .ifBlank { "?" }
         .take(2)
 
-// ── Reviews ─────────────────────────────────────────────────────────────────
+@Serializable
+private data class BuddyRequestInsert(
+    @SerialName("requester_id") val requesterId: String,
+    @SerialName("addressee_id") val addresseeId: String,
+    val status: String = "pending",
+)
 
 @Serializable
 private data class ReviewInsert(
@@ -713,6 +722,13 @@ private data class StudySessionInsert(
     @SerialName("duration_seconds") val durationSeconds: Int,
 )
 
+@Serializable
+private data class StudySessionRow(
+    @SerialName("spot_name") val spotName: String,
+    @SerialName("duration_seconds") val durationSeconds: Int,
+    @SerialName("finished_at") val finishedAt: String,
+)
+
 class SupabaseStreakRepository(
     private val client: SupabaseClient
 ) : StreakRepository {
@@ -772,6 +788,26 @@ class SupabaseStreakRepository(
         }
         return newCount
     }
+
+    override suspend fun fetchRecentSessions(userId: String): List<CompletedSession> =
+        runCatching {
+            client.from("study_sessions")
+                .select {
+                    filter { eq("user_id", userId) }
+                    order("finished_at", Order.DESCENDING)
+                    limit(20)
+                }
+                .decodeList<StudySessionRow>()
+                .map { row ->
+                    CompletedSession(
+                        spotName = row.spotName,
+                        durationSeconds = row.durationSeconds,
+                        finishedAtMillis = runCatching {
+                            java.time.Instant.parse(row.finishedAt).toEpochMilli()
+                        }.getOrDefault(0L)
+                    )
+                }
+        }.getOrDefault(emptyList())
 }
 
 @Serializable

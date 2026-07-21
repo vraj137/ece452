@@ -153,6 +153,7 @@ class SupabaseFriendRepository(
                 .decodeList<FriendAtSpotRow>()
                 .map { FriendProfile(it.id, it.firstName, it.lastName) }
         }.getOrDefault(emptyList())
+
 }
 
 @Serializable

@@ -25,6 +25,7 @@ data class StudySpotSummary(
     val id: String,
     val name: String,
     val badge: String,
+    val building: String? = null,
     val parentSlug: String? = null,
     val childCount: Int = 0,
     val distanceMeters: Int? = null,
@@ -35,6 +36,11 @@ data class StudySpotSummary(
     val latitude: Double? = null,
     val longitude: Double? = null,
     val occupancyPercent: Int? = null,
+    val soloFriendly: Boolean = true,
+    val groupFriendly: Boolean = true,
+    val amenities: List<String> = emptyList(),
+    val noiseLevel: String? = null,
+    val lighting: String? = null,
 )
 
 data class StudySpotDetail(
@@ -67,6 +73,7 @@ data class StudySpotDetail(
         id = id,
         name = name,
         badge = badge,
+        building = building,
         parentSlug = parentSlug,
         childCount = childCount,
         distanceMeters = distanceMeters,
@@ -77,6 +84,9 @@ data class StudySpotDetail(
         latitude = latitude,
         longitude = longitude,
         occupancyPercent = occupancyPercent,
+        noiseLevel = noiseLevel,
+        lighting = lighting,
+        amenities = amenities,
     )
 }
 
@@ -117,8 +127,7 @@ data class HomeSnapshot(
     val groupSession: GroupStudySession,
     val groupSpots: List<StudySpotSummary>,
     val mapSpots: List<StudySpotSummary> = emptyList(),
-    // Real check-in counts per spot slug over the last 7 days (Explore ranking).
-    val trendingCounts: Map<String, Int> = emptyMap()
+    val trendingCounts: Map<String, Int> = emptyMap(),
 )
 
 data class CompletedSession(

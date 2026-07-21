@@ -3,6 +3,7 @@ package com.appetizers.spotra.data.remote
 import com.appetizers.spotra.data.mock.MockData
 import com.appetizers.spotra.domain.model.CheckInSession
 import com.appetizers.spotra.domain.model.CheckedInStudent
+import com.appetizers.spotra.domain.model.CompletedSession
 import com.appetizers.spotra.domain.model.FriendProfile
 import com.appetizers.spotra.domain.model.GroupMember
 import com.appetizers.spotra.domain.model.HomeSnapshot
@@ -23,10 +24,6 @@ import com.appetizers.spotra.domain.repository.ProfileRepository
 import com.appetizers.spotra.domain.repository.ReviewRepository
 import com.appetizers.spotra.domain.repository.StreakRepository
 
-// In-memory debug implementations — used when Supabase credentials are absent.
-// All spot and user data is sourced from MockData so there is a single source
-// of truth; do not hard-code names, IDs, or spot lists here.
-
 class DebugAuthRepository : AuthRepository {
     private var session: AuthUser? = null
 
@@ -46,9 +43,6 @@ class DebugAuthRepository : AuthRepository {
 }
 
 class DebugProfileRepository : ProfileRepository {
-    // Pre-seeded with the mock user so the Profile screen is populated in debug
-    // builds even before onboarding is completed.  saveProfile() overwrites this
-    // with the user's actual input, so the two flows do not conflict.
     private var profile: UserProfile? = MockData.user
 
     override suspend fun getProfile(userId: String): UserProfile? = profile
@@ -212,8 +206,6 @@ class DebugFriendRepository : FriendRepository {
 }
 
 class DebugReviewRepository : ReviewRepository {
-    // Seeded from MockData reviews; locally submitted reviews are kept in memory
-    // so the debug build reflects new submissions without a backend.
     private val submitted = mutableListOf<Review>()
 
     override suspend fun reviewsFor(spotSlug: String): List<Review> {
@@ -259,6 +251,7 @@ class DebugReviewRepository : ReviewRepository {
 class DebugStreakRepository : StreakRepository {
     override suspend fun recordLogin(userId: String): Int = 0
     override suspend fun recordCheckout(userId: String, spotId: String, spotName: String, durationSeconds: Int): Int = 0
+    override suspend fun fetchRecentSessions(userId: String): List<CompletedSession> = emptyList()
 }
 
 class DebugBadgeRepository : BadgeRepository {

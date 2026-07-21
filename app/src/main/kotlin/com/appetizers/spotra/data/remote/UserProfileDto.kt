@@ -17,6 +17,7 @@ data class UserProfileDto(
     @SerialName("login_streak") val loginStreak: Int = 0,
     @SerialName("longest_login_streak") val longestLoginStreak: Int = 0,
     @SerialName("checkout_count") val checkoutCount: Int = 0,
+    @SerialName("location_visibility") val locationVisibility: String = "hidden",
 ) {
     fun toDomain() = UserProfile(
         userId = userId,
@@ -29,6 +30,7 @@ data class UserProfileDto(
         loginStreak = loginStreak,
         longestLoginStreak = longestLoginStreak,
         checkoutCount = checkoutCount,
+        locationVisibility = locationVisibility,
     )
 }
 
@@ -43,4 +45,5 @@ fun UserProfile.toDto() = UserProfileDto(
     loginStreak = loginStreak,
     longestLoginStreak = longestLoginStreak,
     checkoutCount = checkoutCount,
+    locationVisibility = locationVisibility,
 )
