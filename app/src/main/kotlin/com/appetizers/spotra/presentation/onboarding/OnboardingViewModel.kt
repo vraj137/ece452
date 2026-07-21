@@ -67,11 +67,21 @@ class OnboardingViewModel(
     }
 
     fun beginRegistration() {
-        _uiState.update { it.copy(isRegistration = true, otp = "", error = null) }
+        resetAuthFlow(isRegistration = true)
     }
 
     fun beginSignIn() {
-        _uiState.update { it.copy(isRegistration = false, otp = "", error = null) }
+        resetAuthFlow(isRegistration = false)
+    }
+
+    private fun resetAuthFlow(isRegistration: Boolean) {
+        draftSaveJob?.cancel()
+        hasLocalDraftChanges = true
+        _uiState.value = OnboardingUiState(isRegistration = isRegistration)
+        viewModelScope.launch {
+            draftRepository.clear()
+            hasLocalDraftChanges = false
+        }
     }
 
     fun updateName(firstName: String? = null, lastName: String? = null) {
