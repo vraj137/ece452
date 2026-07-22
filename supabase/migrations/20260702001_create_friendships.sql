@@ -34,12 +34,6 @@ create trigger friendships_set_updated_at
 before update on public.friendships
 for each row execute function public.set_updated_at();
 
--- ── friends_at_spot ───────────────────────────────────────────────────────────
--- Returns first_name + last_name for accepted friends currently checked in at
--- the given spot (no ended_at, started within the last 2 hours).
--- SECURITY DEFINER lets it read all check_ins rows without loosening the base
--- RLS policy ("users can only read their own check-ins").
-
 create or replace function public.friends_at_spot(p_spot_slug text)
 returns table (
     id uuid,

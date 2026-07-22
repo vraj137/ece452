@@ -116,6 +116,7 @@ private class FakeProfileRepository(
 private class NoOpStreakRepository : StreakRepository {
     override suspend fun recordLogin(userId: String) = 0
     override suspend fun recordCheckout(userId: String, spotId: String, spotName: String, durationSeconds: Int) = 0
+    override suspend fun fetchRecentSessions(userId: String) = emptyList<com.appetizers.spotra.domain.model.CompletedSession>()
 }
 
 private class NoOpBadgeRepository : BadgeRepository {

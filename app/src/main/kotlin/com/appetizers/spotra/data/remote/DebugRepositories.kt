@@ -3,6 +3,7 @@ package com.appetizers.spotra.data.remote
 import com.appetizers.spotra.data.mock.MockData
 import com.appetizers.spotra.domain.model.CheckInSession
 import com.appetizers.spotra.domain.model.CheckedInStudent
+import com.appetizers.spotra.domain.model.CompletedSession
 import com.appetizers.spotra.domain.model.FriendProfile
 import com.appetizers.spotra.domain.model.GroupMember
 import com.appetizers.spotra.domain.model.HomeSnapshot
@@ -27,10 +28,6 @@ import com.appetizers.spotra.domain.model.StudyTerm
 import com.appetizers.spotra.domain.repository.ReviewRepository
 import com.appetizers.spotra.domain.repository.StreakRepository
 
-// In-memory debug implementations — used when Supabase credentials are absent.
-// All spot and user data is sourced from MockData so there is a single source
-// of truth; do not hard-code names, IDs, or spot lists here.
-
 class DebugAuthRepository : AuthRepository {
     private var session: AuthUser? = null
 
@@ -50,9 +47,6 @@ class DebugAuthRepository : AuthRepository {
 }
 
 class DebugProfileRepository : ProfileRepository {
-    // Pre-seeded with the mock user so the Profile screen is populated in debug
-    // builds even before onboarding is completed.  saveProfile() overwrites this
-    // with the user's actual input, so the two flows do not conflict.
     private var profile: UserProfile? = MockData.user
 
     override suspend fun getProfile(userId: String): UserProfile? = profile
@@ -105,7 +99,44 @@ class DebugHomeRepository : HomeRepository {
         MockData.spotById(spotId)?.toDetail()
             ?: error("Unknown study spot: $spotId")
 
-    override suspend fun childSpots(parentSpotId: String): List<StudySpotDetail> = emptyList()
+    override suspend fun childSpots(parentSpotId: String): List<StudySpotDetail> {
+        val parent = MockData.spotById(parentSpotId) ?: return emptyList()
+        val building = parent.building.substringBefore(",").trim()
+        return listOf(
+            StudySpotDetail(
+                id = "$parentSpotId-floor-2",
+                name = "${parent.name} – 2nd Floor",
+                building = building,
+                floor = "2nd",
+                badge = "Quiet",
+                rating = 4.1,
+                noiseLevel = "Quiet",
+                lighting = "Bright",
+                capacity = 20,
+                occupancyPercent = 30,
+                peopleHere = 6,
+                amenities = listOf("Wi-Fi", "Outlets"),
+                latitude = parent.latitude,
+                longitude = parent.longitude,
+            ),
+            StudySpotDetail(
+                id = "$parentSpotId-floor-3",
+                name = "${parent.name} – 3rd Floor",
+                building = building,
+                floor = "3rd",
+                badge = "Moderate",
+                rating = 3.8,
+                noiseLevel = "Moderate",
+                lighting = "Natural",
+                capacity = 30,
+                occupancyPercent = 55,
+                peopleHere = 16,
+                amenities = listOf("Wi-Fi", "Whiteboards", "Outlets"),
+                latitude = parent.latitude,
+                longitude = parent.longitude,
+            ),
+        )
+    }
 
     override suspend fun startCheckIn(
         spotId: String,
@@ -123,8 +154,6 @@ class DebugHomeRepository : HomeRepository {
     }
 
     override suspend fun checkOut(sessionId: String) = Unit
-
-    override suspend fun sendBuddyRequest(studentId: String) = Unit
 
     override suspend fun inviteToGroup(groupSessionId: String, inviteText: String): GroupMember {
         val initials = inviteText
@@ -243,8 +272,6 @@ class DebugFriendRepository : FriendRepository {
 }
 
 class DebugReviewRepository : ReviewRepository {
-    // Seeded from MockData reviews; locally submitted reviews are kept in memory
-    // so the debug build reflects new submissions without a backend.
     private val submitted = mutableListOf<Review>()
 
     override suspend fun reviewsFor(spotSlug: String): List<Review> {
@@ -290,6 +317,7 @@ class DebugReviewRepository : ReviewRepository {
 class DebugStreakRepository : StreakRepository {
     override suspend fun recordLogin(userId: String): Int = 0
     override suspend fun recordCheckout(userId: String, spotId: String, spotName: String, durationSeconds: Int): Int = 0
+    override suspend fun fetchRecentSessions(userId: String): List<CompletedSession> = emptyList()
 }
 
 class DebugBadgeRepository : BadgeRepository {

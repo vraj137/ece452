@@ -1,8 +1,11 @@
 package com.appetizers.spotra.presentation.home
 
+import com.appetizers.spotra.data.location.LocationRepository
 import com.appetizers.spotra.domain.model.BadgeId
 import com.appetizers.spotra.domain.model.CheckInSession
 import com.appetizers.spotra.domain.model.CheckedInStudent
+import com.appetizers.spotra.domain.model.CompletedSession
+import com.appetizers.spotra.domain.model.FriendProfile
 import com.appetizers.spotra.domain.model.GroupMember
 import com.appetizers.spotra.domain.model.GroupStudySession
 import com.appetizers.spotra.domain.model.HomeSnapshot
@@ -15,6 +18,7 @@ import com.appetizers.spotra.domain.model.UserBadge
 import com.appetizers.spotra.domain.repository.AuthRepository
 import com.appetizers.spotra.domain.repository.AuthUser
 import com.appetizers.spotra.domain.repository.BadgeRepository
+import com.appetizers.spotra.domain.repository.FriendRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.ReviewRepository
 import com.appetizers.spotra.domain.repository.StreakRepository
@@ -54,6 +58,8 @@ class HomeViewModelTest {
         streakRepository = NoOpStreakRepository(),
         reviewRepository = NoOpReviewRepository(),
         awardBadgesUseCase = AwardBadgesUseCase(NoOpBadgeRepository(), NoOpReviewRepository()),
+        locationRepository = NoOpLocationRepository(),
+        friendRepository = NoOpFriendRepository(),
     )
 
     @Test
@@ -250,8 +256,6 @@ private class FakeHomeRepository : HomeRepository {
 
     override suspend fun checkOut(sessionId: String) = Unit
 
-    override suspend fun sendBuddyRequest(studentId: String) = Unit
-
     override suspend fun inviteToGroup(
         groupSessionId: String,
         inviteText: String
@@ -269,6 +273,22 @@ private class NullAuthRepository : AuthRepository {
 private class NoOpStreakRepository : StreakRepository {
     override suspend fun recordLogin(userId: String) = 0
     override suspend fun recordCheckout(userId: String, spotId: String, spotName: String, durationSeconds: Int) = 0
+    override suspend fun fetchRecentSessions(userId: String): List<CompletedSession> = emptyList()
+}
+
+private class NoOpLocationRepository : LocationRepository {
+    override suspend fun getLastLocation(): Pair<Double, Double>? = null
+}
+
+private class NoOpFriendRepository : FriendRepository {
+    override suspend fun currentUserId(): String? = null
+    override suspend fun fetchFriendProfiles(): List<FriendProfile> = emptyList()
+    override suspend fun searchUsers(query: String, excludeIds: Set<String>): List<FriendProfile> = emptyList()
+    override suspend fun fetchSuggested(acceptedFriendIds: Set<String>): List<FriendProfile> = emptyList()
+    override suspend fun sendRequest(toUserId: String) = Unit
+    override suspend fun acceptRequest(friendshipId: String) = Unit
+    override suspend fun declineRequest(friendshipId: String) = Unit
+    override suspend fun fetchFriendsAtSpot(spotSlug: String): List<FriendProfile> = emptyList()
 }
 
 private class NoOpBadgeRepository : BadgeRepository {

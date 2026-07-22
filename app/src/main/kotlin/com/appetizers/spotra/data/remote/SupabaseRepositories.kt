@@ -4,6 +4,7 @@ import com.appetizers.spotra.data.mock.MockData
 import com.appetizers.spotra.domain.model.BadgeId
 import com.appetizers.spotra.domain.model.CheckInSession
 import com.appetizers.spotra.domain.model.CheckedInStudent
+import com.appetizers.spotra.domain.model.CompletedSession
 import com.appetizers.spotra.domain.model.GroupMember
 import com.appetizers.spotra.domain.model.GroupStudySession
 import com.appetizers.spotra.domain.model.HomeSnapshot
@@ -26,12 +27,12 @@ import com.appetizers.spotra.domain.repository.ReviewRepository
 import com.appetizers.spotra.domain.repository.SocialRepository
 import com.appetizers.spotra.domain.repository.SpotSubmissionRepository
 import com.appetizers.spotra.domain.repository.StreakRepository
-import com.appetizers.spotra.domain.usecase.ReviewQualityScorer
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.OtpType
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.OTP
 import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -152,6 +153,7 @@ private data class SpotSubmissionDto(
     val floor: String,
     @SerialName("submitted_by_email") val submittedByEmail: String,
     @SerialName("submitted_by_user_id") val submittedByUserId: String?,
+    @SerialName("booking_url") val bookingUrl: String? = null,
     val status: String = "pending"
 )
 
@@ -168,7 +170,8 @@ class SupabaseSpotSubmissionRepository(
                 building = submission.building,
                 floor = submission.floor,
                 submittedByEmail = submission.submittedByEmail,
-                submittedByUserId = submission.submittedByUserId
+                submittedByUserId = submission.submittedByUserId,
+                bookingUrl = submission.bookingUrl?.takeIf { it.isNotBlank() },
             )
         )
     }
@@ -177,8 +180,6 @@ class SupabaseSpotSubmissionRepository(
 class DebugSpotSubmissionRepository : SpotSubmissionRepository {
     override suspend fun submitSpot(submission: SpotSubmission) = Unit
 }
-
-// ── Spots / check-ins / home ────────────────────────────────────────────────
 
 @Serializable
 private data class SpotDto(
@@ -194,6 +195,8 @@ private data class SpotDto(
     val capacity: Int? = null,
     @SerialName("parent_slug") val parentSlug: String? = null,
     @SerialName("booking_url") val bookingUrl: String? = null,
+    @SerialName("noise_level") val noiseLevel: String? = null,
+    val lighting: String? = null,
 )
 
 @Serializable
@@ -210,8 +213,6 @@ private data class CheckInRow(
     @SerialName("spot_slug") val spotSlug: String,
     @SerialName("ended_at") val endedAt: String? = null
 )
-
-// ── Group sessions ──────────────────────────────────────────────────────────
 
 @Serializable
 private data class GroupSessionDto(
@@ -243,18 +244,48 @@ private data class GroupSessionMemberRow(
     val role: String,
 )
 
-// Active occupancy counts.
 @Serializable
 private data class OccupancyRow(
     @SerialName("spot_slug") val spotSlug: String,
     @SerialName("active_count") val activeCount: Int
 )
 
-// Weekly trend counts.
 @Serializable
 private data class TrendingRow(
     @SerialName("spot_slug") val spotSlug: String,
     @SerialName("checkins_7d") val checkins7d: Int
+)
+
+@Serializable
+private data class ActiveCheckInRow(
+    val id: String,
+    @SerialName("user_id") val userId: String,
+    @SerialName("spot_slug") val spotSlug: String,
+    @SerialName("ended_at") val endedAt: String? = null,
+)
+
+@Serializable
+private data class AttendeeProfileRow(
+    val id: String,
+    @SerialName("first_name") val firstName: String,
+    @SerialName("last_name") val lastName: String,
+    val program: String = "",
+)
+
+@Serializable
+private data class FriendshipReadRow(
+    val id: String,
+    @SerialName("requester_id") val requesterId: String,
+    @SerialName("addressee_id") val addresseeId: String,
+    val status: String,
+)
+
+@Serializable
+private data class FriendsAllSpotsRow(
+    @SerialName("spot_slug") val spotSlug: String,
+    val id: String,
+    @SerialName("first_name") val firstName: String,
+    @SerialName("last_name") val lastName: String,
 )
 
 class SupabaseHomeRepository(
@@ -275,7 +306,15 @@ class SupabaseHomeRepository(
             }.getOrDefault(emptyList())
         }
         val groupSessionDeferred = async {
-            runCatching { loadOrCreateGroupSession() }.getOrDefault(MockData.groupSession)
+            runCatching { loadOrCreateGroupSession() }.getOrNull()
+        }
+        val friendsAtSpotsDeferred = async {
+            runCatching {
+                client.postgrest.rpc("friends_all_spots")
+                    .decodeList<FriendsAllSpotsRow>()
+                    .groupBy { it.spotSlug }
+                    .mapValues { (_, rows) -> rows.size }
+            }.getOrDefault(emptyMap())
         }
 
         cachedFirstName = firstNameDeferred.await()
@@ -285,7 +324,7 @@ class SupabaseHomeRepository(
         val childCounts = dbSpots.childCountsByParentSlug()
         val parentSpots = dbSpots.filter { it.parentSlug == null }
 
-        val summaries = if (parentSpots.isNotEmpty()) {
+        val baseSummaries = if (parentSpots.isNotEmpty()) {
             parentSpots.map { spot ->
                 spot.toSummary(
                     activeCount = activeCounts[spot.slug] ?: 0,
@@ -294,6 +333,12 @@ class SupabaseHomeRepository(
             }
         } else {
             MockData.spots.map { it.toSummary() }
+        }
+
+        val friendsPerSpot = friendsAtSpotsDeferred.await()
+        val summaries = baseSummaries.map { s ->
+            val count = friendsPerSpot[s.id] ?: 0
+            if (count > 0) s.copy(friendsHere = count) else s
         }
         spotCache = summaries.associateBy { it.id }
 
@@ -311,15 +356,16 @@ class SupabaseHomeRepository(
             MockData.groupSpots.map { it.toSummary() }
         }
 
-        groupSession = groupSessionDeferred.await()
+        val loadedGroupSession = groupSessionDeferred.await()
+        if (loadedGroupSession != null) groupSession = loadedGroupSession
 
         HomeSnapshot(
             userFirstName = cachedFirstName,
             soloSpot = soloSpot,
-            groupSession = groupSession,
+            groupSession = loadedGroupSession,
             groupSpots = groupSpots,
             mapSpots = summaries,
-            trendingCounts = trendingCounts
+            trendingCounts = trendingCounts,
         )
     }
 
@@ -375,6 +421,16 @@ class SupabaseHomeRepository(
     ): CheckInSession {
         val userId = client.auth.currentUserOrNull()?.id
             ?: error("You need to be signed in to check in.")
+        runCatching {
+            client.from("check_ins").update({
+                set("ended_at", Instant.now().toString())
+            }) {
+                filter {
+                    eq("user_id", userId)
+                    exact("ended_at", null)
+                }
+            }
+        }
         val inserted = client.from("check_ins").insert(
             CheckInInsert(
                 userId = userId,
@@ -395,7 +451,66 @@ class SupabaseHomeRepository(
             detail = "Studying now",
             isSelf = true
         )
-        return CheckInSession(id = inserted.id, spot = spot, mode = mode, attendees = listOf(self))
+        val coAttendees = loadCoAttendees(userId, spotId)
+        return CheckInSession(id = inserted.id, spot = spot, mode = mode, attendees = listOf(self) + coAttendees)
+    }
+
+    private suspend fun loadCoAttendees(selfId: String, spotId: String): List<CheckedInStudent> = coroutineScope {
+        val active = runCatching {
+            client.from("check_ins").select {
+                filter {
+                    eq("spot_slug", spotId)
+                    exact("ended_at", null)
+                }
+            }.decodeList<ActiveCheckInRow>().filter { it.userId != selfId }
+        }.getOrDefault(emptyList())
+
+        if (active.isEmpty()) return@coroutineScope emptyList()
+
+        val otherIds = active.map { it.userId }.distinct()
+
+        val profilesDeferred = async {
+            runCatching {
+                client.from("profiles").select {
+                    filter { isIn("id", otherIds) }
+                }.decodeList<AttendeeProfileRow>()
+            }.getOrDefault(emptyList()).associateBy { it.id }
+        }
+        val friendshipsDeferred = async {
+            runCatching {
+                client.from("friendships").select {
+                    filter { or { eq("requester_id", selfId); eq("addressee_id", selfId) } }
+                }.decodeList<FriendshipReadRow>()
+            }.getOrDefault(emptyList()).filter { f ->
+                (f.requesterId == selfId && f.addresseeId in otherIds) ||
+                (f.addresseeId == selfId && f.requesterId in otherIds)
+            }
+        }
+
+        val profiles = profilesDeferred.await()
+        val friendships = friendshipsDeferred.await()
+
+        val friendIds = friendships.filter { it.status == "accepted" }
+            .flatMap { listOf(it.requesterId, it.addresseeId) }
+            .filter { it != selfId }.toSet()
+        val sentMeIds = friendships
+            .filter { it.status == "pending" && it.addresseeId == selfId }
+            .map { it.requesterId }.toSet()
+
+        otherIds.mapNotNull { id ->
+            val p = profiles[id] ?: return@mapNotNull null
+            CheckedInStudent(
+                id = id,
+                initials = buildString {
+                    p.firstName.firstOrNull()?.uppercaseChar()?.let { append(it) }
+                    p.lastName.firstOrNull()?.uppercaseChar()?.let { append(it) }
+                }.ifBlank { "?" },
+                name = "${p.firstName} ${p.lastName.firstOrNull() ?: ""}.",
+                detail = p.program.ifBlank { "Studying here" },
+                isFriend = id in friendIds,
+                hasSentMeRequest = id in sentMeIds,
+            )
+        }
     }
 
     override suspend fun checkOut(sessionId: String) {
@@ -406,13 +521,9 @@ class SupabaseHomeRepository(
         }
     }
 
-    // TODO: Back with Supabase social graph.
-    override suspend fun sendBuddyRequest(studentId: String) = Unit
-
     override suspend fun inviteToGroup(groupSessionId: String, inviteText: String): GroupMember {
         val sessionId = activeGroupSessionId ?: return fallbackInvite(inviteText)
 
-        // If inviteText looks like an email, try to find the matching profile.
         val profile = if (inviteText.contains("@")) {
             runCatching {
                 client.from("profiles")
@@ -436,8 +547,10 @@ class SupabaseHomeRepository(
                 .also { member ->
                     groupSession = groupSession.copy(members = groupSession.members + member)
                 }
+        } else if (!inviteText.contains("@")) {
+            error("Enter the email address associated with their Spotra account to invite them.")
         } else {
-            fallbackInvite(inviteText)
+            error("No Spotra account found for that email. Check the address and try again.")
         }
     }
 
@@ -454,7 +567,6 @@ class SupabaseHomeRepository(
         val userId = client.auth.currentUserOrNull()?.id
             ?: return@coroutineScope MockData.groupSession
 
-        // RLS ensures we only see sessions we're a member of; grab the newest active one.
         val existingSession = runCatching {
             client.from("group_sessions")
                 .select { order("created_at", Order.DESCENDING) }
@@ -530,14 +642,12 @@ class SupabaseHomeRepository(
             ?: "there"
     }
 
-    // Active visits per spot from spot_occupancy.
     private suspend fun activeCheckInCounts(): Map<String, Int> =
         runCatching {
             client.from("spot_occupancy").select().decodeList<OccupancyRow>()
                 .associate { it.spotSlug to it.activeCount }
         }.getOrDefault(emptyMap())
 
-    // Weekly check-in counts from spot_trending.
     private suspend fun trendingCheckInCounts(): Map<String, Int> =
         runCatching {
             client.from("spot_trending").select().decodeList<TrendingRow>()
@@ -568,11 +678,17 @@ class SupabaseHomeRepository(
         id = slug,
         name = name,
         badge = occupancyBadge(activeCount),
+        building = building,
         parentSlug = parentSlug,
         childCount = childCount,
         latitude = latitude,
         longitude = longitude,
         occupancyPercent = liveOccupancyPercent(activeCount, capacity),
+        soloFriendly = soloFriendly,
+        groupFriendly = groupFriendly,
+        amenities = amenities,
+        noiseLevel = noiseLevel,
+        lighting = lighting,
     )
 
     private fun SpotDto.toDetail(
@@ -645,8 +761,6 @@ private fun initialsOf(name: String): String =
         .joinToString("") { it.first().uppercase() }
         .ifBlank { "?" }
         .take(2)
-
-// ── Reviews ─────────────────────────────────────────────────────────────────
 
 @Serializable
 private data class ReviewInsert(
@@ -734,7 +848,7 @@ class SupabaseReviewRepository(
                 occupancyPercent = draft.occupancyPercent,
                 comment = draft.comment,
                 anonymous = draft.anonymous,
-                qualityScore = ReviewQualityScorer.score(draft.comment),
+                qualityScore = draft.qualityScore,
             )
         )
     }
@@ -771,6 +885,13 @@ private data class StudySessionInsert(
     @SerialName("spot_id") val spotId: String,
     @SerialName("spot_name") val spotName: String,
     @SerialName("duration_seconds") val durationSeconds: Int,
+)
+
+@Serializable
+private data class StudySessionRow(
+    @SerialName("spot_name") val spotName: String,
+    @SerialName("duration_seconds") val durationSeconds: Int,
+    @SerialName("finished_at") val finishedAt: String,
 )
 
 class SupabaseStreakRepository(
@@ -832,6 +953,26 @@ class SupabaseStreakRepository(
         }
         return newCount
     }
+
+    override suspend fun fetchRecentSessions(userId: String): List<CompletedSession> =
+        runCatching {
+            client.from("study_sessions")
+                .select {
+                    filter { eq("user_id", userId) }
+                    order("finished_at", Order.DESCENDING)
+                    limit(20)
+                }
+                .decodeList<StudySessionRow>()
+                .map { row ->
+                    CompletedSession(
+                        spotName = row.spotName,
+                        durationSeconds = row.durationSeconds,
+                        finishedAtMillis = runCatching {
+                            java.time.Instant.parse(row.finishedAt).toEpochMilli()
+                        }.getOrDefault(0L)
+                    )
+                }
+        }.getOrDefault(emptyList())
 }
 
 @Serializable

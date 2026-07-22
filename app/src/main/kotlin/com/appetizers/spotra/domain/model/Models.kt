@@ -28,6 +28,7 @@ data class UserProfile(
     val loginStreak: Int = 0,
     val longestLoginStreak: Int = 0,
     val checkoutCount: Int = 0,
+    val locationVisibility: String = "hidden",
 )
 
 /** A peer shown in the social directory. Profiles are intentionally limited to

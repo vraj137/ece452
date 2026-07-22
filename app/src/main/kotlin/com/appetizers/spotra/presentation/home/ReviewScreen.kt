@@ -7,8 +7,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,9 +27,12 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarOutline
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,20 +48,26 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.appetizers.spotra.domain.model.ReviewDraft
 import com.appetizers.spotra.domain.repository.ReviewRepository
+import com.appetizers.spotra.domain.usecase.ReviewQualityScorer
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 private val NOISE_OPTIONS = listOf("Silent", "Low", "Moderate", "Lively")
 private val LIGHTING_OPTIONS = listOf("Poor", "Good", "Bright", "Natural")
-private val WIFI_OPTIONS = listOf("Poor", "OK", "Good", "Fast")
+internal val WIFI_OPTIONS = listOf("Poor", "OK", "Good", "Fast")
 private val OCCUPANCY_OPTIONS = listOf("Empty", "Some", "Busy", "Packed")
 
-private fun occupancyToPercent(label: String?): Int? = when (label) {
-    "Empty" -> 10
-    "Some" -> 40
-    "Busy" -> 70
-    "Packed" -> 95
+internal fun wifiLabel(index: Int?): String? = index?.let { WIFI_OPTIONS.getOrNull(it) }
+internal fun occupancyToPercent(index: Int?): Int? = when (index) {
+    0 -> 10
+    1 -> 40
+    2 -> 70
+    3 -> 95
     else -> null
 }
+
+internal fun noiseLabel(index: Int?): String? = index?.let { NOISE_OPTIONS.getOrNull(it) }
+internal fun lightingLabel(index: Int?): String? = index?.let { LIGHTING_OPTIONS.getOrNull(it) }
 
 @Composable
 internal fun ReviewScreen(
@@ -70,10 +77,10 @@ internal fun ReviewScreen(
     onBack: () -> Unit
 ) {
     var rating by remember { mutableIntStateOf(0) }
-    var noise by remember { mutableStateOf<String?>(null) }
-    var lighting by remember { mutableStateOf<String?>(null) }
-    var wifi by remember { mutableStateOf<String?>(null) }
-    var occupancy by remember { mutableStateOf<String?>(null) }
+    var noiseIndex by remember { mutableStateOf<Int?>(null) }
+    var lightingIndex by remember { mutableStateOf<Int?>(null) }
+    var wifiIndex by remember { mutableStateOf<Int?>(null) }
+    var occupancyIndex by remember { mutableStateOf<Int?>(null) }
     var comment by remember { mutableStateOf("") }
     var anonymous by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
@@ -105,10 +112,10 @@ internal fun ReviewScreen(
         ) {
             StarRatingRow(rating = rating, onRatingChange = { rating = it })
 
-            ChoicePicker(label = "Noise level", options = NOISE_OPTIONS, selected = noise, onSelect = { noise = it })
-            ChoicePicker(label = "Lighting", options = LIGHTING_OPTIONS, selected = lighting, onSelect = { lighting = it })
-            ChoicePicker(label = "WiFi", options = WIFI_OPTIONS, selected = wifi, onSelect = { wifi = it })
-            ChoicePicker(label = "How busy was it?", options = OCCUPANCY_OPTIONS, selected = occupancy, onSelect = { occupancy = it })
+            LabelSlider(label = "Noise level", options = NOISE_OPTIONS, selectedIndex = noiseIndex, onSelect = { noiseIndex = it })
+            LabelSlider(label = "Lighting", options = LIGHTING_OPTIONS, selectedIndex = lightingIndex, onSelect = { lightingIndex = it })
+            LabelSlider(label = "WiFi quality", options = WIFI_OPTIONS, selectedIndex = wifiIndex, onSelect = { wifiIndex = it })
+            LabelSlider(label = "How busy was it?", options = OCCUPANCY_OPTIONS, selectedIndex = occupancyIndex, onSelect = { occupancyIndex = it })
 
             ReviewCommentField(value = comment, onValueChange = { comment = it })
 
@@ -123,13 +130,14 @@ internal fun ReviewScreen(
                 )
             }
 
-            val canSubmit = rating > 0 && !isLoading
+            val hasAnyInput = rating > 0 || noiseIndex != null || lightingIndex != null || wifiIndex != null || occupancyIndex != null || comment.isNotBlank()
+            val canSubmit = hasAnyInput && !isLoading
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp)
                     .background(
-                        if (rating > 0) SoloBlue else SoloBlue.copy(alpha = 0.4f),
+                        if (hasAnyInput) SoloBlue else SoloBlue.copy(alpha = 0.4f),
                         RoundedCornerShape(16.dp)
                     )
                     .clickable(enabled = canSubmit) {
@@ -141,12 +149,13 @@ internal fun ReviewScreen(
                                     ReviewDraft(
                                         spotSlug = spotSlug,
                                         rating = rating,
-                                        noiseLevel = noise,
-                                        lighting = lighting,
-                                        wifiQuality = wifi,
-                                        occupancyPercent = occupancyToPercent(occupancy),
+                                        noiseLevel = noiseLabel(noiseIndex),
+                                        lighting = lightingLabel(lightingIndex),
+                                        wifiQuality = wifiLabel(wifiIndex),
+                                        occupancyPercent = occupancyToPercent(occupancyIndex),
                                         comment = comment.trim().ifBlank { null },
-                                        anonymous = anonymous
+                                        anonymous = anonymous,
+                                        qualityScore = ReviewQualityScorer.score(comment.trim().ifBlank { null })
                                     )
                                 )
                                 submitted = true
@@ -172,8 +181,6 @@ internal fun ReviewScreen(
     }
 }
 
-// The DB only allows a review for a spot the user has checked into (RLS). Surface
-// that as a friendly prompt rather than a raw Postgrest error.
 private fun friendlyError(raw: String?): String {
     val message = raw.orEmpty()
     val blockedByGate = message.contains("row-level security", ignoreCase = true) ||
@@ -253,41 +260,54 @@ private fun ratingLabel(rating: Int): String = when (rating) {
     else -> "Excellent"
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ChoicePicker(
+internal fun LabelSlider(
     label: String,
     options: List<String>,
-    selected: String?,
-    onSelect: (String) -> Unit
+    selectedIndex: Int?,
+    onSelect: (Int) -> Unit,
+    accentColor: Color = SoloBlue,
 ) {
-    Column {
-        Text(text = label, color = Ink, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
-        Spacer(Modifier.height(10.dp))
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+    val hasValue = selectedIndex != null
+    var sliderPosition by remember(selectedIndex) {
+        mutableFloatStateOf(selectedIndex?.toFloat() ?: 0f)
+    }
+    val displayLabel = selectedIndex?.let { options.getOrNull(it) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(label, color = Ink, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+            Text(
+                text = displayLabel ?: "optional",
+                color = if (hasValue) accentColor else HeaderMuted,
+                fontSize = 14.sp,
+                fontWeight = if (hasValue) FontWeight.ExtraBold else FontWeight.Normal,
+            )
+        }
+        Slider(
+            value = sliderPosition,
+            onValueChange = { newValue ->
+                sliderPosition = newValue
+                onSelect(newValue.roundToInt())
+            },
+            valueRange = 0f..(options.size - 1).toFloat(),
+            steps = options.size - 2,
+            colors = SliderDefaults.colors(
+                thumbColor = if (hasValue) accentColor else HeaderMuted,
+                activeTrackColor = if (hasValue) accentColor else HeaderMuted,
+                inactiveTrackColor = DividerLine,
+            )
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
             options.forEach { option ->
-                val isSelected = option == selected
-                Text(
-                    text = option,
-                    modifier = Modifier
-                        .background(
-                            if (isSelected) SoloBlue else Color.White,
-                            RoundedCornerShape(22.dp)
-                        )
-                        .border(
-                            1.5.dp,
-                            if (isSelected) SoloBlue else DividerLine,
-                            RoundedCornerShape(22.dp)
-                        )
-                        .clickable { onSelect(option) }
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    color = if (isSelected) Color.White else BodyText,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Text(option, color = HeaderMuted, fontSize = 11.sp, fontWeight = FontWeight.Medium)
             }
         }
     }

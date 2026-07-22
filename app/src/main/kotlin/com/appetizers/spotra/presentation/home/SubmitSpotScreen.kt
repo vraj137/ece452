@@ -71,6 +71,7 @@ internal fun SubmitSpotScreen(
     var description by remember { mutableStateOf("") }
     var building by remember { mutableStateOf("") }
     var floor by remember { mutableStateOf("") }
+    var bookingUrl by remember { mutableStateOf("") }
     var pinLat by remember { mutableDoubleStateOf(UW_LAT) }
     var pinLng by remember { mutableDoubleStateOf(UW_LNG) }
     var pinPlaced by remember { mutableStateOf(false) }
@@ -157,6 +158,13 @@ internal fun SubmitSpotScreen(
                 }
             }
 
+            SubmitField(
+                label = "Booking URL (optional)",
+                value = bookingUrl,
+                onValueChange = { bookingUrl = it },
+                placeholder = "e.g. https://uwaterloo.ca/rooms/book/..."
+            )
+
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -228,7 +236,8 @@ internal fun SubmitSpotScreen(
                                         building = building.trim(),
                                         floor = floor.trim(),
                                         submittedByEmail = user?.email ?: "",
-                                        submittedByUserId = user?.id
+                                        submittedByUserId = user?.id,
+                                        bookingUrl = bookingUrl.trim().ifBlank { null },
                                     )
                                 )
                                 submitted = true

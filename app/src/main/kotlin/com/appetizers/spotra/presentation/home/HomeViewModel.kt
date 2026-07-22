@@ -3,6 +3,7 @@ package com.appetizers.spotra.presentation.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.appetizers.spotra.data.location.LocationRepository
 import com.appetizers.spotra.domain.model.BadgeId
 import com.appetizers.spotra.domain.model.CheckInSession
 import com.appetizers.spotra.domain.model.CompletedSession
@@ -11,6 +12,7 @@ import com.appetizers.spotra.domain.model.ReviewDraft
 import com.appetizers.spotra.domain.model.StudyMode
 import com.appetizers.spotra.domain.model.StudySpotSummary
 import com.appetizers.spotra.domain.repository.AuthRepository
+import com.appetizers.spotra.domain.repository.FriendRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.ReviewRepository
 import com.appetizers.spotra.domain.repository.StreakRepository
@@ -48,6 +50,9 @@ data class HomeUiState(
     val pendingReviewSpotId: String? = null,
     val pendingReviewSpotName: String? = null,
     val noiseFilter: String? = null,
+    val spaceTypeFilter: StudyMode? = null,
+    val amenityFilter: String? = null,
+    val occupancyFilter: Int? = null,
 )
 
 enum class HomeSection {
@@ -69,6 +74,8 @@ class HomeViewModel(
     private val streakRepository: StreakRepository,
     private val reviewRepository: ReviewRepository,
     private val awardBadgesUseCase: AwardBadgesUseCase,
+    private val locationRepository: LocationRepository,
+    private val friendRepository: FriendRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
@@ -189,12 +196,28 @@ class HomeViewModel(
         }
     }
 
-    fun submitPostCheckoutReview(rating: Int, comment: String?) {
+    fun submitPostCheckoutReview(
+        rating: Int,
+        noiseLevel: String?,
+        lighting: String?,
+        wifiQuality: String?,
+        occupancyPercent: Int?,
+        comment: String?,
+    ) {
         val spotId = uiState.value.pendingReviewSpotId ?: return
         val checkoutBadge = uiState.value.pendingCheckoutBadge
         viewModelScope.launch {
             val qualityScore = ReviewQualityScorer.score(comment)
-            val draft = ReviewDraft(spotSlug = spotId, rating = rating, comment = comment)
+            val draft = ReviewDraft(
+                spotSlug = spotId,
+                rating = rating,
+                noiseLevel = noiseLevel,
+                lighting = lighting,
+                wifiQuality = wifiQuality,
+                occupancyPercent = occupancyPercent,
+                comment = comment,
+                qualityScore = qualityScore,
+            )
             runCatching { reviewRepository.submit(draft) }
                 .onSuccess {
                     var reviewBadge: BadgeId? = null
@@ -254,7 +277,7 @@ class HomeViewModel(
     fun sendBuddyRequest(studentId: String) {
         if (studentId in uiState.value.requestedBuddyIds) return
         viewModelScope.launch {
-            runCatching { repository.sendBuddyRequest(studentId) }
+            runCatching { friendRepository.sendRequest(studentId) }
                 .onSuccess {
                     _uiState.update { state ->
                         state.copy(
@@ -271,6 +294,32 @@ class HomeViewModel(
 
     fun setNoiseFilter(filter: String?) {
         _uiState.update { it.copy(noiseFilter = filter, error = null) }
+    }
+
+    fun setSpaceTypeFilter(mode: StudyMode?) {
+        _uiState.update { it.copy(spaceTypeFilter = mode, error = null) }
+    }
+
+    fun setAmenityFilter(amenity: String?) {
+        _uiState.update { it.copy(amenityFilter = amenity, error = null) }
+    }
+
+    fun setOccupancyFilter(maxPercent: Int?) {
+        _uiState.update { it.copy(occupancyFilter = maxPercent, error = null) }
+    }
+
+    fun updateUserLocation() {
+        viewModelScope.launch {
+            val latLng = runCatching { locationRepository.getLastLocation() }.getOrNull()
+            if (latLng != null) {
+                val updatedSpots = _uiState.value.mapSpots.map { spot ->
+                    if (spot.latitude != null && spot.longitude != null) {
+                        spot.copy(distanceMeters = haversineMeters(latLng.first, latLng.second, spot.latitude, spot.longitude))
+                    } else spot
+                }
+                _uiState.update { it.copy(mapSpots = updatedSpots, error = null) }
+            }
+        }
     }
 
     fun updateInviteText(value: String) {
@@ -319,6 +368,18 @@ class HomeViewModel(
                             error = null
                         )
                     }
+                    launch {
+                        val userId = runCatching { authRepository.currentUser()?.id }.getOrNull()
+                        if (userId != null) {
+                            val sessions = runCatching { streakRepository.fetchRecentSessions(userId) }.getOrDefault(emptyList())
+                            if (sessions.isNotEmpty()) {
+                                _uiState.update { state ->
+                                    state.copy(completedSessions = sessions + state.completedSessions)
+                                }
+                            }
+                        }
+                    }
+                    launch { updateUserLocation() }
                 }
                 .onFailure { error ->
                     _uiState.update {
@@ -329,6 +390,16 @@ class HomeViewModel(
                     }
                 }
         }
+    }
+
+    private fun haversineMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Int {
+        val r = 6_371_000.0
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val a = Math.sin(dLat / 2).let { it * it } +
+            Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+            Math.sin(dLon / 2).let { it * it }
+        return (r * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))).toInt()
     }
 
     fun refresh() {
@@ -349,6 +420,7 @@ class HomeViewModel(
                             error = null
                         )
                     }
+                    launch { updateUserLocation() }
                 }
                 .onFailure { error ->
                     _uiState.update {
@@ -371,6 +443,8 @@ class HomeViewModel(
         private val streakRepository: StreakRepository,
         private val reviewRepository: ReviewRepository,
         private val awardBadgesUseCase: AwardBadgesUseCase,
+        private val locationRepository: LocationRepository,
+        private val friendRepository: FriendRepository,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
@@ -380,6 +454,8 @@ class HomeViewModel(
                 streakRepository,
                 reviewRepository,
                 awardBadgesUseCase,
+                locationRepository,
+                friendRepository,
             ) as T
     }
 }

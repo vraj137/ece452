@@ -2,6 +2,9 @@ package com.appetizers.spotra
 
 import android.app.Application
 import com.appetizers.spotra.data.local.DataStoreOnboardingDraftRepository
+import com.appetizers.spotra.data.location.DebugLocationRepository
+import com.appetizers.spotra.data.location.FusedLocationRepository
+import com.appetizers.spotra.data.location.LocationRepository
 import com.appetizers.spotra.data.remote.DebugAuthRepository
 import com.appetizers.spotra.data.remote.DebugBadgeRepository
 import com.appetizers.spotra.data.remote.DebugFriendRepository
@@ -16,10 +19,8 @@ import com.appetizers.spotra.data.remote.SupabaseAuthRepository
 import com.appetizers.spotra.data.remote.SupabaseBadgeRepository
 import com.appetizers.spotra.data.remote.SupabaseFriendRepository
 import com.appetizers.spotra.data.remote.SupabaseHomeRepository
-import com.appetizers.spotra.data.remote.DebugSocialRepository
 import com.appetizers.spotra.data.remote.SupabaseProfileRepository
 import com.appetizers.spotra.data.remote.SupabaseReviewRepository
-import com.appetizers.spotra.data.remote.SupabaseSocialRepository
 import com.appetizers.spotra.data.remote.SupabaseSpotSubmissionRepository
 import com.appetizers.spotra.data.remote.SupabaseStreakRepository
 import com.appetizers.spotra.domain.repository.AuthRepository
@@ -29,7 +30,6 @@ import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.OnboardingDraftRepository
 import com.appetizers.spotra.domain.repository.ProfileRepository
 import com.appetizers.spotra.domain.repository.ReviewRepository
-import com.appetizers.spotra.domain.repository.SocialRepository
 import com.appetizers.spotra.domain.repository.SpotSubmissionRepository
 import com.appetizers.spotra.domain.repository.StreakRepository
 import com.appetizers.spotra.domain.usecase.AwardBadgesUseCase
@@ -62,10 +62,11 @@ class AppContainer(application: Application) {
     val draftRepository: OnboardingDraftRepository =
         DataStoreOnboardingDraftRepository(application, json)
 
+    val locationRepository: LocationRepository
+
     val authRepository: AuthRepository
     val profileRepository: ProfileRepository
     val homeRepository: HomeRepository
-    val socialRepository: SocialRepository
     val spotSubmissionRepository: SpotSubmissionRepository
     val reviewRepository: ReviewRepository
     val friendRepository: FriendRepository
@@ -78,6 +79,12 @@ class AppContainer(application: Application) {
         val hasCredentials = BuildConfig.SUPABASE_URL.isNotBlank() &&
             BuildConfig.SUPABASE_PUBLISHABLE_KEY.isNotBlank()
 
+        locationRepository = if (hasCredentials || BuildConfig.DEBUG) {
+            FusedLocationRepository(application)
+        } else {
+            DebugLocationRepository()
+        }
+
         if (hasCredentials) {
             val client = createSupabaseClient(
                 supabaseUrl = BuildConfig.SUPABASE_URL,
@@ -88,7 +95,6 @@ class AppContainer(application: Application) {
             }
             authRepository = SupabaseAuthRepository(client)
             profileRepository = SupabaseProfileRepository(client)
-            socialRepository = SupabaseSocialRepository(client)
             spotSubmissionRepository = SupabaseSpotSubmissionRepository(client)
             homeRepository = SupabaseHomeRepository(client)
             reviewRepository = SupabaseReviewRepository(client)
@@ -98,7 +104,6 @@ class AppContainer(application: Application) {
         } else if (BuildConfig.DEBUG) {
             authRepository = DebugAuthRepository()
             profileRepository = DebugProfileRepository()
-            socialRepository = DebugSocialRepository()
             spotSubmissionRepository = DebugSpotSubmissionRepository()
             homeRepository = DebugHomeRepository()
             reviewRepository = DebugReviewRepository()
@@ -108,7 +113,6 @@ class AppContainer(application: Application) {
         } else {
             authRepository = MissingConfigurationAuthRepository()
             profileRepository = MissingConfigurationProfileRepository()
-            socialRepository = DebugSocialRepository()
             spotSubmissionRepository = DebugSpotSubmissionRepository()
             homeRepository = DebugHomeRepository()
             reviewRepository = DebugReviewRepository()

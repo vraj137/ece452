@@ -40,8 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.appetizers.spotra.data.mock.MockData
-import com.appetizers.spotra.data.mock.MockSpot
+import com.appetizers.spotra.domain.model.StudySpotSummary
 import java.util.Locale
 
 private enum class LeaderboardCategory(val label: String, val subtitle: String) {
@@ -54,6 +53,7 @@ private enum class LeaderboardCategory(val label: String, val subtitle: String) 
 @Composable
 internal fun ExploreTabContent(
     accent: Color,
+    spots: List<StudySpotSummary> = emptyList(),
     trendingCounts: Map<String, Int>,
     onSpotSelected: (String) -> Unit,
     onSuggestSpot: () -> Unit = {},
@@ -66,16 +66,16 @@ internal fun ExploreTabContent(
         listState.scrollToItem(0)
     }
 
-    val rankedSpots = remember(trendingCounts, selectedCategory) {
+    val rankedSpots = remember(spots, trendingCounts, selectedCategory) {
         when (selectedCategory) {
             LeaderboardCategory.Trending ->
-                MockData.spots.sortedByDescending { trendingCounts[it.id] ?: 0 }
+                spots.sortedByDescending { trendingCounts[it.id] ?: 0 }
             LeaderboardCategory.Quietest ->
-                MockData.spots.sortedBy { noiseSortKey(it.noiseLevel) }
+                spots.sortedBy { noiseSortKey(it.noiseLevel) }
             LeaderboardCategory.BestLighting ->
-                MockData.spots.sortedBy { lightingSortKey(it.lighting) }
+                spots.sortedBy { lightingSortKey(it.lighting) }
             LeaderboardCategory.TopRated ->
-                MockData.spots.sortedByDescending { it.rating }
+                spots.sortedByDescending { it.rating ?: 0.0 }
         }
     }
 
@@ -223,7 +223,7 @@ private fun CategoryChip(
 
 @Composable
 private fun LeaderboardSpotCard(
-    spot: MockSpot,
+    spot: StudySpotSummary,
     rank: Int,
     category: LeaderboardCategory,
     checkIns: Int,
@@ -259,7 +259,7 @@ private fun LeaderboardSpotCard(
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    text = spot.building,
+                    text = spot.building ?: "",
                     color = HeaderMuted,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
@@ -288,7 +288,7 @@ private fun LeaderboardSpotCard(
                 LeaderboardCategory.Quietest -> {
                     Column(horizontalAlignment = Alignment.End) {
                         Text(
-                            text = spot.noiseLevel,
+                            text = spot.noiseLevel ?: "—",
                             color = accent,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.ExtraBold
@@ -304,7 +304,7 @@ private fun LeaderboardSpotCard(
                 LeaderboardCategory.BestLighting -> {
                     Column(horizontalAlignment = Alignment.End) {
                         Text(
-                            text = spot.lighting,
+                            text = spot.lighting ?: "—",
                             color = accent,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.ExtraBold
@@ -327,7 +327,7 @@ private fun LeaderboardSpotCard(
                         )
                         Spacer(Modifier.width(4.dp))
                         Text(
-                            text = String.format(Locale.US, "%.1f", spot.rating),
+                            text = if (spot.rating != null) String.format(Locale.US, "%.1f", spot.rating) else "—",
                             color = accent,
                             fontSize = 20.sp,
                             fontWeight = FontWeight.ExtraBold
@@ -347,10 +347,10 @@ private fun LeaderboardSpotCard(
         Spacer(Modifier.height(12.dp))
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SpotAttributePill(label = spot.noiseLevel, category = "Noise")
-            SpotAttributePill(label = spot.lighting, category = "Light")
-            RatingPill(rating = spot.rating)
-            FullnessPill(percent = spot.fullPercent)
+            if (spot.noiseLevel != null) SpotAttributePill(label = spot.noiseLevel, category = "Noise")
+            if (spot.lighting != null) SpotAttributePill(label = spot.lighting, category = "Light")
+            if (spot.rating != null) RatingPill(rating = spot.rating)
+            if (spot.occupancyPercent != null) FullnessPill(percent = spot.occupancyPercent)
         }
     }
 }
@@ -442,18 +442,18 @@ private fun FullnessPill(percent: Int) {
     )
 }
 
-private fun noiseSortKey(noiseLevel: String): Int = when (noiseLevel.lowercase()) {
+private fun noiseSortKey(noiseLevel: String?): Int = when (noiseLevel?.lowercase()) {
     "silent" -> 0
     "low" -> 1
     "moderate" -> 2
     "lively" -> 3
-    else -> 4
+    else -> 5
 }
 
-private fun lightingSortKey(lighting: String): Int = when (lighting.lowercase()) {
+private fun lightingSortKey(lighting: String?): Int = when (lighting?.lowercase()) {
     "bright" -> 0
     "natural" -> 1
     "good" -> 2
     "poor" -> 3
-    else -> 4
+    else -> 5
 }
