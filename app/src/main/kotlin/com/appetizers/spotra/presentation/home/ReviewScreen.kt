@@ -130,13 +130,14 @@ internal fun ReviewScreen(
                 )
             }
 
-            val canSubmit = rating > 0 && !isLoading
+            val hasAnyInput = rating > 0 || noiseIndex != null || lightingIndex != null || wifiIndex != null || occupancyIndex != null || comment.isNotBlank()
+            val canSubmit = hasAnyInput && !isLoading
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp)
                     .background(
-                        if (rating > 0) SoloBlue else SoloBlue.copy(alpha = 0.4f),
+                        if (hasAnyInput) SoloBlue else SoloBlue.copy(alpha = 0.4f),
                         RoundedCornerShape(16.dp)
                     )
                     .clickable(enabled = canSubmit) {

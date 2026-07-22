@@ -113,6 +113,8 @@ import com.mapbox.maps.Style
 import com.mapbox.maps.ViewAnnotationAnchor
 import com.mapbox.maps.dsl.cameraOptions
 import com.mapbox.maps.extension.compose.MapboxMap
+import com.mapbox.maps.extension.compose.MapEffect
+import com.mapbox.maps.plugin.locationcomponent.location
 import com.mapbox.maps.extension.compose.animation.viewport.rememberMapViewportState
 import com.mapbox.maps.extension.compose.annotation.ViewAnnotation
 import com.mapbox.maps.extension.compose.style.MapStyle
@@ -2033,12 +2035,6 @@ private fun HomeHeader(
         ModeSwitcher(selectedMode = selectedMode, accent = accent, onModeSelected = onModeSelected)
         Spacer(Modifier.height(14.dp))
         NoiseFilterChips(selected = noiseFilter, accent = accent, onSelect = onNoiseFilterChange)
-        Spacer(Modifier.height(8.dp))
-        SpaceTypeFilterChips(selected = spaceTypeFilter, accent = accent, onSelect = onSpaceTypeFilterChange)
-        Spacer(Modifier.height(8.dp))
-        AmenityFilterChips(selected = amenityFilter, accent = accent, onSelect = onAmenityFilterChange)
-        Spacer(Modifier.height(8.dp))
-        OccupancyFilterChips(selected = occupancyFilter, accent = accent, onSelect = onOccupancyFilterChange)
         Spacer(Modifier.height(4.dp))
     }
 }
@@ -2260,6 +2256,12 @@ private fun CampusMap(
             logo = {},
             attribution = {}
         ) {
+            MapEffect(Unit) { mapView ->
+                mapView.location.updateSettings {
+                    enabled = true
+                    pulsingEnabled = true
+                }
+            }
             located.forEach { spot ->
                 key(spot.id) {
                     val options = remember(spot.id) {
@@ -2701,7 +2703,9 @@ private fun StudySpotCard(
     onClick: (() -> Unit)? = null
 ) {
     val clickModifier = onClick?.let { Modifier.clickable(onClick = it) } ?: Modifier
-    val distanceLabel = spot.distanceMeters?.let { "${it}m -" }
+    val distanceLabel = spot.distanceMeters?.let {
+        if (it >= 1000) "${"%.1f".format(it / 1000.0)}km -" else "${it}m -"
+    }
     val contextLabel = spot.studyContextLabel.orEmpty()
 
     Row(
