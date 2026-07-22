@@ -110,7 +110,11 @@ class HomeViewModel(
         _uiState.update { it.copy(selectedMode = StudyMode.Solo, selectedSection = HomeSection.Map, error = null) }
     }
 
-    fun startCheckIn(spot: StudySpotSummary, mode: StudyMode = uiState.value.selectedMode) {
+    fun startCheckIn(
+        spot: StudySpotSummary,
+        mode: StudyMode = uiState.value.selectedMode,
+        onSuccess: () -> Unit = {}
+    ) {
         val groupSessionId = if (mode == StudyMode.Group) {
             uiState.value.groupSession?.id ?: run {
                 showError("Could not start a group session. Try again.")
@@ -131,6 +135,7 @@ class HomeViewModel(
                             error = null
                         )
                     }
+                    onSuccess()
                 }
                 .onFailure { error ->
                     showError(error.message ?: "Could not check in. Try again.")
@@ -435,6 +440,10 @@ class HomeViewModel(
 
     private fun showError(message: String) {
         _uiState.update { it.copy(error = message) }
+    }
+
+    fun clearError() {
+        _uiState.update { it.copy(error = null) }
     }
 
     class Factory(
