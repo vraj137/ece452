@@ -162,6 +162,25 @@ class HomeViewModelTest {
     }
 
     @Test
+    fun `successful group check in uses group session and invokes success callback`() = runTest(dispatcher) {
+        val repository = FakeHomeRepository()
+        val viewModel = buildViewModel(repository)
+        advanceUntilIdle()
+        var succeeded = false
+
+        viewModel.startCheckIn(
+            requireNotNull(viewModel.uiState.value.soloSpot),
+            StudyMode.Group,
+            onSuccess = { succeeded = true }
+        )
+        advanceUntilIdle()
+
+        assertTrue(succeeded)
+        assertEquals("group-1", repository.lastStartGroupSessionId)
+        assertEquals(StudyMode.Group, viewModel.uiState.value.activeCheckIn?.mode)
+    }
+
+    @Test
     fun `buddy request records requested student`() = runTest(dispatcher) {
         val viewModel = buildViewModel()
         advanceUntilIdle()

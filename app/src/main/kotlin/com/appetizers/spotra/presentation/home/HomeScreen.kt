@@ -186,6 +186,13 @@ fun HomeScreen(
         }
     }
 
+    LaunchedEffect(state.error) {
+        state.error?.let { message ->
+            snackbarHostState.showSnackbar(message)
+            viewModel.clearError()
+        }
+    }
+
     if (state.showReviewPrompt && state.pendingReviewSpotId != null) {
         PostCheckoutReviewSheet(
             spotName = state.pendingReviewSpotName ?: "this spot",
@@ -239,25 +246,32 @@ fun HomeScreen(
             return
         }
 
-        SpotDetailScreen(
-            spotId = spotId,
-            accent = accent,
-            onBack = { viewingSpotId = null },
-            onCheckIn = { spot ->
-                viewModel.startCheckIn(spot, state.selectedMode)
-                viewingSpotId = null
-            },
-            checkInLabel = if (state.selectedMode == StudyMode.Group) "Join with group" else "Start Session",
-            homeRepository = homeRepository,
-            reviewRepository = reviewRepository,
-            friendRepository = friendRepository,
-            onReview = { reviewingSpotId = spotId },
-            activeCheckInSpotId = activeCheckIn?.spot?.id,
-            onEndSession = {
-                viewModel.checkOut()
-                viewingSpotId = null
-            }
-        )
+        Box(Modifier.fillMaxSize()) {
+            SpotDetailScreen(
+                spotId = spotId,
+                accent = accent,
+                onBack = { viewingSpotId = null },
+                onCheckIn = { spot ->
+                    viewModel.startCheckIn(spot, state.selectedMode) {
+                        viewingSpotId = null
+                    }
+                },
+                checkInLabel = if (state.selectedMode == StudyMode.Group) "Join with group" else "Start Session",
+                homeRepository = homeRepository,
+                reviewRepository = reviewRepository,
+                friendRepository = friendRepository,
+                onReview = { reviewingSpotId = spotId },
+                activeCheckInSpotId = activeCheckIn?.spot?.id,
+                onEndSession = {
+                    viewModel.checkOut()
+                    viewingSpotId = null
+                }
+            )
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding()
+            )
+        }
         return
     }
 
