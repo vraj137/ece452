@@ -85,6 +85,20 @@ class HomeViewModelTest {
     }
 
     @Test
+    fun `live load failure stops loading and exposes retry state`() = runTest(dispatcher) {
+        val viewModel = buildViewModel(FailingHomeRepository())
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertFalse(state.isLoading)
+        assertNull(state.soloSpot)
+        assertEquals(
+            "We couldn't load live places. Check your connection and try again.",
+            state.loadError
+        )
+    }
+
+    @Test
     fun `selectMapSpot updates selected spot id`() = runTest(dispatcher) {
         val viewModel = buildViewModel()
         advanceUntilIdle()
@@ -190,6 +204,20 @@ class HomeViewModelTest {
 
         assertTrue("akshat" in viewModel.uiState.value.requestedBuddyIds)
     }
+}
+
+private class FailingHomeRepository : HomeRepository {
+    private fun failed(): Nothing = error("Supabase query failed")
+    override suspend fun loadHome(): HomeSnapshot = failed()
+    override suspend fun spotDetail(spotId: String): StudySpotDetail = failed()
+    override suspend fun childSpots(parentSpotId: String): List<StudySpotDetail> = failed()
+    override suspend fun startCheckIn(
+        spotId: String,
+        mode: StudyMode,
+        groupSessionId: String?
+    ): CheckInSession = failed()
+    override suspend fun checkOut(sessionId: String) = failed()
+    override suspend fun inviteToGroup(groupSessionId: String, inviteText: String): GroupMember = failed()
 }
 
 private class FakeHomeRepository : HomeRepository {

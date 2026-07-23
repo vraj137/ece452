@@ -22,7 +22,3 @@ class FusedLocationRepository(private val context: Context) : LocationRepository
         return fresh?.let { Pair(it.latitude, it.longitude) }
     }
 }
-
-class DebugLocationRepository : LocationRepository {
-    override suspend fun getLastLocation() = Pair(43.4720, -80.5430)
-}
