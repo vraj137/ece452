@@ -3,6 +3,8 @@ package com.appetizers.spotra.domain.repository
 import com.appetizers.spotra.domain.model.BadgeId
 import com.appetizers.spotra.domain.model.CheckInSession
 import com.appetizers.spotra.domain.model.GroupMember
+import com.appetizers.spotra.domain.model.GroupStudySession
+import com.appetizers.spotra.domain.model.GroupVisibility
 import com.appetizers.spotra.domain.model.HomeSnapshot
 import com.appetizers.spotra.domain.model.OnboardingDraft
 import com.appetizers.spotra.domain.model.Review
@@ -62,6 +64,9 @@ interface HomeRepository {
     suspend fun loadHome(): HomeSnapshot
     suspend fun spotDetail(spotId: String): StudySpotDetail
     suspend fun childSpots(parentSpotId: String): List<StudySpotDetail>
+    suspend fun createGroup(title: String, visibility: GroupVisibility): GroupStudySession
+    suspend fun joinPublicGroup(groupSessionId: String): GroupStudySession
+    suspend fun leaveGroup(groupSessionId: String)
     suspend fun startCheckIn(
         spotId: String,
         mode: StudyMode,

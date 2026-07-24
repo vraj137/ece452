@@ -7,6 +7,7 @@ import com.appetizers.spotra.domain.model.CompletedSession
 import com.appetizers.spotra.domain.model.DailyOperatingHours
 import com.appetizers.spotra.domain.model.GroupMember
 import com.appetizers.spotra.domain.model.GroupStudySession
+import com.appetizers.spotra.domain.model.GroupVisibility
 import com.appetizers.spotra.domain.model.HomeSnapshot
 import com.appetizers.spotra.domain.model.Review
 import com.appetizers.spotra.domain.model.ReviewDraft
@@ -225,6 +226,7 @@ private data class GroupSessionDto(
     val id: String,
     val title: String,
     val subtitle: String? = null,
+    val visibility: String = "private",
     @SerialName("created_by") val createdBy: String,
     @SerialName("ended_at") val endedAt: String? = null,
 )
@@ -233,6 +235,7 @@ private data class GroupSessionDto(
 private data class GroupSessionInsert(
     val title: String,
     val subtitle: String? = null,
+    val visibility: String,
     @SerialName("created_by") val createdBy: String,
 )
 
@@ -310,8 +313,8 @@ class SupabaseHomeRepository(
         val dbSpotsDeferred = async {
             client.from("spots").select().decodeList<SpotDto>()
         }
-        val groupSessionDeferred = async {
-            runCatching { loadOrCreateGroupSession() }.getOrNull()
+        val groupDataDeferred = async {
+            runCatching { loadGroupData() }.getOrDefault(GroupData())
         }
         val friendsAtSpotsDeferred = async {
             runCatching {
@@ -347,13 +350,14 @@ class SupabaseHomeRepository(
             ?: error("No live study spots are available in Supabase yet.")
         val groupSpots = summaries.filter { it.groupFriendly }
 
-        val loadedGroupSession = groupSessionDeferred.await()
+        val groupData = groupDataDeferred.await()
 
         HomeSnapshot(
             userFirstName = cachedFirstName,
             soloSpot = soloSpot,
-            groupSession = loadedGroupSession,
+            groupSession = groupData.activeGroup,
             groupSpots = groupSpots,
+            publicGroups = groupData.publicGroups,
             mapSpots = summaries,
             trendingCounts = trendingCounts,
         )
@@ -495,6 +499,99 @@ class SupabaseHomeRepository(
         }
     }
 
+    override suspend fun createGroup(
+        title: String,
+        visibility: GroupVisibility
+    ): GroupStudySession {
+        val userId = client.auth.currentUserOrNull()?.id
+            ?: error("You need to be signed in to create a group.")
+        val cleanTitle = title.trim()
+        require(cleanTitle.length in 2..50) { "Group names must be between 2 and 50 characters." }
+        require(loadActiveGroupSession() == null) {
+            "Leave your current group before creating another one."
+        }
+
+        val created = client.from("group_sessions").insert(
+            GroupSessionInsert(
+                title = cleanTitle,
+                subtitle = "Pick a spot and invite your friends",
+                visibility = visibility.toDatabaseValue(),
+                createdBy = userId
+            )
+        ) { select() }.decodeSingle<GroupSessionDto>()
+        client.from("group_session_members").insert(
+            GroupSessionMemberInsert(
+                sessionId = created.id,
+                userId = userId,
+                role = "owner"
+            )
+        )
+        activeGroupSessionId = created.id
+        return loadGroupSession(created, userId)
+    }
+
+    override suspend fun joinPublicGroup(groupSessionId: String): GroupStudySession {
+        val userId = client.auth.currentUserOrNull()?.id
+            ?: error("You need to be signed in to join a public group.")
+        require(loadActiveGroupSession() == null) {
+            "Leave your current group before joining another one."
+        }
+
+        val session = client.from("group_sessions")
+            .select {
+                filter {
+                    eq("id", groupSessionId)
+                    eq("visibility", "public")
+                    exact("ended_at", null)
+                }
+            }
+            .decodeSingleOrNull<GroupSessionDto>()
+            ?: error("This public group is no longer open.")
+
+        client.from("group_session_members").insert(
+            GroupSessionMemberInsert(
+                sessionId = session.id,
+                userId = userId,
+                role = "member"
+            )
+        )
+        activeGroupSessionId = session.id
+        return loadGroupSession(session, userId)
+    }
+
+    override suspend fun leaveGroup(groupSessionId: String) {
+        val userId = client.auth.currentUserOrNull()?.id
+            ?: error("You need to be signed in to leave a group.")
+        require(groupSessionId.isNotBlank()) { "A live group session is required." }
+
+        val session = client.from("group_sessions")
+            .select { filter { eq("id", groupSessionId) } }
+            .decodeSingleOrNull<GroupSessionDto>()
+            ?: error("This group is no longer active.")
+
+        if (session.createdBy == userId) {
+            client.from("group_sessions").update({
+                set("ended_at", Instant.now().toString())
+            }) {
+                filter {
+                    eq("id", groupSessionId)
+                    exact("ended_at", null)
+                }
+            }
+        } else {
+            client.from("group_session_members").delete {
+                filter {
+                    eq("session_id", groupSessionId)
+                    eq("user_id", userId)
+                }
+            }
+        }
+
+        if (activeGroupSessionId == groupSessionId) {
+            activeGroupSessionId = null
+        }
+    }
+
     override suspend fun inviteToGroup(groupSessionId: String, inviteText: String): GroupMember {
         require(groupSessionId.isNotBlank()) { "A live group session is required before inviting members." }
         require(activeGroupSessionId == null || activeGroupSessionId == groupSessionId) {
@@ -524,34 +621,80 @@ class SupabaseHomeRepository(
         }
     }
 
-    private suspend fun loadOrCreateGroupSession(): GroupStudySession = coroutineScope {
+    private data class GroupData(
+        val activeGroup: GroupStudySession? = null,
+        val publicGroups: List<GroupStudySession> = emptyList(),
+    )
+
+    private suspend fun loadGroupData(): GroupData {
+        val activeGroup = loadActiveGroupSession()
+        return GroupData(
+            activeGroup = activeGroup,
+            publicGroups = loadPublicGroups(excludingId = activeGroup?.id),
+        )
+    }
+
+    private suspend fun loadActiveGroupSession(): GroupStudySession? {
         val userId = client.auth.currentUserOrNull()?.id
-            ?: error("You need to be signed in to use group mode.")
+            ?: return null
 
-        val existingSession = client.from("group_sessions")
-            .select { order("created_at", Order.DESCENDING) }
-            .decodeList<GroupSessionDto>()
-            .firstOrNull { it.endedAt == null }
-
-        val session = existingSession ?: run {
-            val created = client.from("group_sessions").insert(
-                GroupSessionInsert(
-                    title = "Study sesh",
-                    subtitle = "Let's find a spot!",
-                    createdBy = userId
-                )
-            ) { select() }.decodeSingle<GroupSessionDto>()
-            client.from("group_session_members").insert(
-                GroupSessionMemberInsert(
-                    sessionId = created.id,
-                    userId = userId,
-                    role = "owner"
-                )
-            )
-            created
+        val sessionIds = client.from("group_session_members")
+            .select {
+                filter { eq("user_id", userId) }
+            }
+            .decodeList<GroupSessionMemberRow>()
+            .map { it.sessionId }
+        if (sessionIds.isEmpty()) {
+            activeGroupSessionId = null
+            return null
         }
-        activeGroupSessionId = session.id
 
+        val session = client.from("group_sessions")
+            .select {
+                filter {
+                    isIn("id", sessionIds)
+                    exact("ended_at", null)
+                }
+                order("created_at", Order.DESCENDING)
+            }
+            .decodeList<GroupSessionDto>()
+            .firstOrNull()
+            ?: run {
+                activeGroupSessionId = null
+                return null
+            }
+
+        activeGroupSessionId = session.id
+        return loadGroupSession(session, userId)
+    }
+
+    private suspend fun loadPublicGroups(excludingId: String?): List<GroupStudySession> =
+        client.from("group_sessions")
+            .select {
+                filter {
+                    eq("visibility", "public")
+                    exact("ended_at", null)
+                }
+                order("created_at", Order.DESCENDING)
+            }
+            .decodeList<GroupSessionDto>()
+            .filterNot { it.id == excludingId }
+            .map { session ->
+                GroupStudySession(
+                    id = session.id,
+                    title = session.title,
+                    subtitle = session.subtitle ?: "Open study group",
+                    proximityLabel = "",
+                    members = emptyList(),
+                    isOwner = false,
+                    visibility = GroupVisibility.Public,
+                )
+            }
+
+    private suspend fun loadGroupSession(
+        session: GroupSessionDto,
+        userId: String
+    ): GroupStudySession = coroutineScope {
         val memberUserIds = client.from("group_session_members")
             .select { filter { eq("session_id", session.id) } }
             .decodeList<GroupSessionMemberRow>()
@@ -583,7 +726,9 @@ class SupabaseHomeRepository(
             title = session.title,
             subtitle = session.subtitle ?: "Study session",
             proximityLabel = "",
-            members = members
+            members = members,
+            isOwner = session.createdBy == userId,
+            visibility = session.visibility.toGroupVisibility(),
         )
     }
 
@@ -620,6 +765,14 @@ class SupabaseHomeRepository(
             .decodeSingleOrNull<SpotDto>()
             ?.toSummary(activeCount = activeCount, childCount = 0)
     }
+
+    private fun GroupVisibility.toDatabaseValue(): String = when (this) {
+        GroupVisibility.Private -> "private"
+        GroupVisibility.Public -> "public"
+    }
+
+    private fun String.toGroupVisibility(): GroupVisibility =
+        if (equals("public", ignoreCase = true)) GroupVisibility.Public else GroupVisibility.Private
 
     private fun SpotDto.toSummary(activeCount: Int, childCount: Int = 0) = StudySpotSummary(
         id = slug,

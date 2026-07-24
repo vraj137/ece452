@@ -5,6 +5,8 @@ import com.appetizers.spotra.domain.model.CheckInSession
 import com.appetizers.spotra.domain.model.CompletedSession
 import com.appetizers.spotra.domain.model.FriendProfile
 import com.appetizers.spotra.domain.model.GroupMember
+import com.appetizers.spotra.domain.model.GroupStudySession
+import com.appetizers.spotra.domain.model.GroupVisibility
 import com.appetizers.spotra.domain.model.HomeSnapshot
 import com.appetizers.spotra.domain.model.Review
 import com.appetizers.spotra.domain.model.ReviewDraft
@@ -28,6 +30,13 @@ class MissingConfigurationHomeRepository : HomeRepository {
     override suspend fun loadHome(): HomeSnapshot = missingSupabaseConfiguration()
     override suspend fun spotDetail(spotId: String): StudySpotDetail = missingSupabaseConfiguration()
     override suspend fun childSpots(parentSpotId: String): List<StudySpotDetail> = missingSupabaseConfiguration()
+    override suspend fun createGroup(
+        title: String,
+        visibility: GroupVisibility
+    ): GroupStudySession = missingSupabaseConfiguration()
+    override suspend fun joinPublicGroup(groupSessionId: String): GroupStudySession =
+        missingSupabaseConfiguration()
+    override suspend fun leaveGroup(groupSessionId: String) = missingSupabaseConfiguration()
     override suspend fun startCheckIn(
         spotId: String,
         mode: StudyMode,

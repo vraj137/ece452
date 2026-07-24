@@ -8,6 +8,7 @@ import com.appetizers.spotra.domain.model.BadgeId
 import com.appetizers.spotra.domain.model.CheckInSession
 import com.appetizers.spotra.domain.model.CompletedSession
 import com.appetizers.spotra.domain.model.GroupStudySession
+import com.appetizers.spotra.domain.model.GroupVisibility
 import com.appetizers.spotra.domain.model.ReviewDraft
 import com.appetizers.spotra.domain.model.StudyMode
 import com.appetizers.spotra.domain.model.StudySpotSummary
@@ -35,6 +36,7 @@ data class HomeUiState(
     val soloSpot: StudySpotSummary? = null,
     val groupSession: GroupStudySession? = null,
     val groupSpots: List<StudySpotSummary> = emptyList(),
+    val publicGroups: List<GroupStudySession> = emptyList(),
     val mapSpots: List<StudySpotSummary> = emptyList(),
     val trendingCounts: Map<String, Int> = emptyMap(),
     val selectedSpotId: String? = null,
@@ -43,7 +45,10 @@ data class HomeUiState(
     val showLiveSession: Boolean = false,
     val completedSessions: List<CompletedSession> = emptyList(),
     val requestedBuddyIds: Set<String> = emptySet(),
+    val groupName: String = "",
+    val groupVisibility: GroupVisibility = GroupVisibility.Private,
     val inviteText: String = "",
+    val isGroupActionInProgress: Boolean = false,
     val error: String? = null,
     val newBadge: BadgeId? = null,
     val pendingCheckoutBadge: BadgeId? = null,
@@ -69,6 +74,9 @@ enum class SocialTab {
     Requests,
     Discover
 }
+
+private const val MIN_GROUP_NAME_LENGTH = 2
+private const val MAX_GROUP_NAME_LENGTH = 50
 
 class HomeViewModel(
     private val repository: HomeRepository,
@@ -333,12 +341,110 @@ class HomeViewModel(
         _uiState.update { it.copy(inviteText = value, error = null) }
     }
 
+    fun updateGroupName(value: String) {
+        if (value.length <= MAX_GROUP_NAME_LENGTH) {
+            _uiState.update { it.copy(groupName = value, error = null) }
+        }
+    }
+
+    fun selectGroupVisibility(visibility: GroupVisibility) {
+        if (!uiState.value.isGroupActionInProgress) {
+            _uiState.update { it.copy(groupVisibility = visibility, error = null) }
+        }
+    }
+
+    fun createGroup() {
+        val title = uiState.value.groupName.trim()
+        val visibility = uiState.value.groupVisibility
+        if (title.length < MIN_GROUP_NAME_LENGTH || uiState.value.isGroupActionInProgress) return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isGroupActionInProgress = true, error = null) }
+            runCatching { repository.createGroup(title, visibility) }
+                .onSuccess { session ->
+                    _uiState.update {
+                        it.copy(
+                            groupSession = session,
+                            publicGroups = it.publicGroups.filterNot { group -> group.id == session.id },
+                            groupName = "",
+                            groupVisibility = GroupVisibility.Private,
+                            isGroupActionInProgress = false,
+                            error = null
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update { it.copy(isGroupActionInProgress = false) }
+                    showError(error.toUserMessage("Could not create your group. Try again."))
+                }
+        }
+    }
+
+    fun joinPublicGroup(groupSessionId: String) {
+        if (uiState.value.groupSession != null || uiState.value.isGroupActionInProgress) return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isGroupActionInProgress = true, error = null) }
+            runCatching { repository.joinPublicGroup(groupSessionId) }
+                .onSuccess { session ->
+                    _uiState.update {
+                        it.copy(
+                            groupSession = session,
+                            publicGroups = it.publicGroups.filterNot { group -> group.id == session.id },
+                            isGroupActionInProgress = false,
+                            error = null
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update { it.copy(isGroupActionInProgress = false) }
+                    showError(error.toUserMessage("Could not join this public group. Try again."))
+                }
+        }
+    }
+
+    fun leaveGroup() {
+        val groupSession = uiState.value.groupSession ?: return
+        if (uiState.value.isGroupActionInProgress) return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isGroupActionInProgress = true, error = null) }
+            runCatching { repository.leaveGroup(groupSession.id) }
+                .onSuccess {
+                    _uiState.update { state ->
+                        val publicGroups = if (
+                            groupSession.visibility == GroupVisibility.Public && !groupSession.isOwner
+                        ) {
+                            (state.publicGroups + groupSession.copy(
+                                members = emptyList(),
+                                isOwner = false
+                            )).distinctBy { it.id }
+                        } else {
+                            state.publicGroups.filterNot { it.id == groupSession.id }
+                        }
+                        state.copy(
+                            groupSession = null,
+                            publicGroups = publicGroups,
+                            inviteText = "",
+                            isGroupActionInProgress = false,
+                            error = null
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update { it.copy(isGroupActionInProgress = false) }
+                    showError(error.toUserMessage("Could not leave the group. Try again."))
+                }
+        }
+    }
+
     fun sendGroupInvite() {
         val inviteText = uiState.value.inviteText.trim()
         val groupSession = uiState.value.groupSession ?: return
-        if (inviteText.isEmpty()) return
+        if (inviteText.isEmpty() || uiState.value.isGroupActionInProgress) return
 
         viewModelScope.launch {
+            _uiState.update { it.copy(isGroupActionInProgress = true, error = null) }
             runCatching { repository.inviteToGroup(groupSession.id, inviteText) }
                 .onSuccess { member ->
                     _uiState.update { state ->
@@ -347,11 +453,13 @@ class HomeViewModel(
                                 members = groupSession.members + member
                             ),
                             inviteText = "",
+                            isGroupActionInProgress = false,
                             error = null
                         )
                     }
                 }
                 .onFailure { error ->
+                    _uiState.update { it.copy(isGroupActionInProgress = false) }
                     showError(error.toUserMessage("Could not send invite."))
                 }
         }
@@ -370,6 +478,7 @@ class HomeViewModel(
                             soloSpot = snapshot.soloSpot,
                             groupSession = snapshot.groupSession,
                             groupSpots = snapshot.groupSpots,
+                            publicGroups = snapshot.publicGroups,
                             mapSpots = snapshot.mapSpots,
                             trendingCounts = snapshot.trendingCounts,
                             selectedSpotId = snapshot.soloSpot.id,
@@ -426,6 +535,7 @@ class HomeViewModel(
                             soloSpot = snapshot.soloSpot,
                             groupSession = snapshot.groupSession,
                             groupSpots = snapshot.groupSpots,
+                            publicGroups = snapshot.publicGroups,
                             mapSpots = snapshot.mapSpots,
                             trendingCounts = snapshot.trendingCounts,
                             error = null
