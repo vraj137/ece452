@@ -42,6 +42,7 @@ data class StudySpotSummary(
     val noiseLevel: String? = null,
     val lighting: String? = null,
     val friendsHere: Int = 0,
+    val operatingHours: WeeklyOperatingHours? = null,
 )
 
 data class StudySpotDetail(
@@ -69,6 +70,7 @@ data class StudySpotDetail(
     val latitude: Double? = null,
     val longitude: Double? = null,
     val bookingUrl: String? = null,
+    val operatingHours: WeeklyOperatingHours? = null,
 ) {
     fun toSummary() = StudySpotSummary(
         id = id,
@@ -88,6 +90,7 @@ data class StudySpotDetail(
         noiseLevel = noiseLevel,
         lighting = lighting,
         amenities = amenities,
+        operatingHours = operatingHours,
     )
 }
 

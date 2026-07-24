@@ -53,6 +53,7 @@ import com.appetizers.spotra.domain.model.StudySpotSummary
 import com.appetizers.spotra.domain.repository.FriendRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.ReviewRepository
+import com.appetizers.spotra.presentation.toUserMessage
 import java.util.Locale
 
 private enum class ReviewFilter { Friends, All }
@@ -87,7 +88,7 @@ internal fun SpotDetailScreen(
         reviewLoadError = null
         runCatching { homeRepository.spotDetail(spotId) }
             .onSuccess { spot = it }
-            .onFailure { error = it.message ?: "Could not load this spot." }
+            .onFailure { error = it.toUserMessage("Could not load this place.") }
 
         runCatching { reviewRepository.reviewsFor(spotId) }
             .onSuccess { reviews = it }

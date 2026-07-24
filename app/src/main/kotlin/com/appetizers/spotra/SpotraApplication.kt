@@ -2,19 +2,16 @@ package com.appetizers.spotra
 
 import android.app.Application
 import com.appetizers.spotra.data.local.DataStoreOnboardingDraftRepository
-import com.appetizers.spotra.data.location.DebugLocationRepository
 import com.appetizers.spotra.data.location.FusedLocationRepository
 import com.appetizers.spotra.data.location.LocationRepository
-import com.appetizers.spotra.data.remote.DebugAuthRepository
-import com.appetizers.spotra.data.remote.DebugBadgeRepository
-import com.appetizers.spotra.data.remote.DebugFriendRepository
-import com.appetizers.spotra.data.remote.DebugHomeRepository
-import com.appetizers.spotra.data.remote.DebugProfileRepository
-import com.appetizers.spotra.data.remote.DebugReviewRepository
-import com.appetizers.spotra.data.remote.DebugSpotSubmissionRepository
-import com.appetizers.spotra.data.remote.DebugStreakRepository
 import com.appetizers.spotra.data.remote.MissingConfigurationAuthRepository
+import com.appetizers.spotra.data.remote.MissingConfigurationBadgeRepository
+import com.appetizers.spotra.data.remote.MissingConfigurationFriendRepository
+import com.appetizers.spotra.data.remote.MissingConfigurationHomeRepository
 import com.appetizers.spotra.data.remote.MissingConfigurationProfileRepository
+import com.appetizers.spotra.data.remote.MissingConfigurationReviewRepository
+import com.appetizers.spotra.data.remote.MissingConfigurationSpotSubmissionRepository
+import com.appetizers.spotra.data.remote.MissingConfigurationStreakRepository
 import com.appetizers.spotra.data.remote.SupabaseAuthRepository
 import com.appetizers.spotra.data.remote.SupabaseBadgeRepository
 import com.appetizers.spotra.data.remote.SupabaseFriendRepository
@@ -79,11 +76,7 @@ class AppContainer(application: Application) {
         val hasCredentials = BuildConfig.SUPABASE_URL.isNotBlank() &&
             BuildConfig.SUPABASE_PUBLISHABLE_KEY.isNotBlank()
 
-        locationRepository = if (hasCredentials || BuildConfig.DEBUG) {
-            FusedLocationRepository(application)
-        } else {
-            DebugLocationRepository()
-        }
+        locationRepository = FusedLocationRepository(application)
 
         if (hasCredentials) {
             val client = createSupabaseClient(
@@ -101,24 +94,15 @@ class AppContainer(application: Application) {
             friendRepository = SupabaseFriendRepository(client)
             streakRepository = SupabaseStreakRepository(client)
             badgeRepository = SupabaseBadgeRepository(client)
-        } else if (BuildConfig.DEBUG) {
-            authRepository = DebugAuthRepository()
-            profileRepository = DebugProfileRepository()
-            spotSubmissionRepository = DebugSpotSubmissionRepository()
-            homeRepository = DebugHomeRepository()
-            reviewRepository = DebugReviewRepository()
-            friendRepository = DebugFriendRepository()
-            streakRepository = DebugStreakRepository()
-            badgeRepository = DebugBadgeRepository()
         } else {
             authRepository = MissingConfigurationAuthRepository()
             profileRepository = MissingConfigurationProfileRepository()
-            spotSubmissionRepository = DebugSpotSubmissionRepository()
-            homeRepository = DebugHomeRepository()
-            reviewRepository = DebugReviewRepository()
-            friendRepository = DebugFriendRepository()
-            streakRepository = DebugStreakRepository()
-            badgeRepository = DebugBadgeRepository()
+            spotSubmissionRepository = MissingConfigurationSpotSubmissionRepository()
+            homeRepository = MissingConfigurationHomeRepository()
+            reviewRepository = MissingConfigurationReviewRepository()
+            friendRepository = MissingConfigurationFriendRepository()
+            streakRepository = MissingConfigurationStreakRepository()
+            badgeRepository = MissingConfigurationBadgeRepository()
         }
 
         awardBadgesUseCase = AwardBadgesUseCase(badgeRepository, reviewRepository)

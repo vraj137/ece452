@@ -46,6 +46,7 @@ import com.appetizers.spotra.BuildConfig
 import com.appetizers.spotra.domain.model.SpotSubmission
 import com.appetizers.spotra.domain.repository.AuthRepository
 import com.appetizers.spotra.domain.repository.SpotSubmissionRepository
+import com.appetizers.spotra.presentation.toUserMessage
 import com.mapbox.geojson.Point
 import com.mapbox.maps.Style
 import com.mapbox.maps.extension.compose.MapboxMap
@@ -242,7 +243,7 @@ internal fun SubmitSpotScreen(
                                 )
                                 submitted = true
                             }.onFailure {
-                                error = it.message ?: "Something went wrong. Try again."
+                                error = it.toUserMessage("Could not submit this place. Try again.")
                             }
                             isLoading = false
                         }

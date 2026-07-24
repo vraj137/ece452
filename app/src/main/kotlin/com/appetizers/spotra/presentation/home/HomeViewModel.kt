@@ -18,6 +18,7 @@ import com.appetizers.spotra.domain.repository.ReviewRepository
 import com.appetizers.spotra.domain.repository.StreakRepository
 import com.appetizers.spotra.domain.usecase.AwardBadgesUseCase
 import com.appetizers.spotra.domain.usecase.ReviewQualityScorer
+import com.appetizers.spotra.presentation.toUserMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -53,6 +54,7 @@ data class HomeUiState(
     val spaceTypeFilter: StudyMode? = null,
     val amenityFilter: String? = null,
     val occupancyFilter: Int? = null,
+    val loadError: String? = null,
 )
 
 enum class HomeSection {
@@ -138,7 +140,7 @@ class HomeViewModel(
                     onSuccess()
                 }
                 .onFailure { error ->
-                    showError(error.message ?: "Could not check in. Try again.")
+                    showError(error.toUserMessage("Could not check in. Try again."))
                 }
         }
     }
@@ -196,7 +198,7 @@ class HomeViewModel(
                     onCheckedOut(session)
                 }
                 .onFailure { error ->
-                    showError(error.message ?: "Could not check out. Try again.")
+                    showError(error.toUserMessage("Could not check out. Try again."))
                 }
         }
     }
@@ -292,7 +294,7 @@ class HomeViewModel(
                     }
                 }
                 .onFailure { error ->
-                    showError(error.message ?: "Could not send buddy request.")
+                    showError(error.toUserMessage("Could not send buddy request."))
                 }
         }
     }
@@ -350,7 +352,7 @@ class HomeViewModel(
                     }
                 }
                 .onFailure { error ->
-                    showError(error.message ?: "Could not send invite.")
+                    showError(error.toUserMessage("Could not send invite."))
                 }
         }
     }
@@ -363,6 +365,7 @@ class HomeViewModel(
                     _uiState.update {
                         it.copy(
                             isLoading = false,
+                            loadError = null,
                             userFirstName = snapshot.userFirstName,
                             soloSpot = snapshot.soloSpot,
                             groupSession = snapshot.groupSession,
@@ -390,7 +393,9 @@ class HomeViewModel(
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            error = error.message ?: "Could not load study spots."
+                            loadError = error.toUserMessage(
+                                "We couldn't load live places. Check your connection and try again."
+                            )
                         )
                     }
                 }
@@ -416,6 +421,7 @@ class HomeViewModel(
                     _uiState.update {
                         it.copy(
                             isRefreshing = false,
+                            loadError = null,
                             userFirstName = snapshot.userFirstName,
                             soloSpot = snapshot.soloSpot,
                             groupSession = snapshot.groupSession,
@@ -431,11 +437,26 @@ class HomeViewModel(
                     _uiState.update {
                         it.copy(
                             isRefreshing = false,
-                            error = error.message ?: "Could not refresh spots."
+                            loadError = if (it.soloSpot == null) {
+                                error.toUserMessage(
+                                    "We couldn't load live places. Check your connection and try again."
+                                )
+                            } else {
+                                it.loadError
+                            },
+                            error = if (it.soloSpot == null) {
+                                null
+                            } else {
+                                error.toUserMessage("Could not refresh live places. Try again.")
+                            }
                         )
                     }
                 }
         }
+    }
+
+    fun retryLoad() {
+        loadHome()
     }
 
     private fun showError(message: String) {

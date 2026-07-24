@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.sp
 import com.appetizers.spotra.domain.model.ReviewDraft
 import com.appetizers.spotra.domain.repository.ReviewRepository
 import com.appetizers.spotra.domain.usecase.ReviewQualityScorer
+import com.appetizers.spotra.presentation.toUserMessage
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -160,7 +161,7 @@ internal fun ReviewScreen(
                                 )
                                 submitted = true
                             }.onFailure {
-                                error = friendlyError(it.message)
+                                error = friendlyError(it)
                             }
                             isLoading = false
                         }
@@ -181,15 +182,15 @@ internal fun ReviewScreen(
     }
 }
 
-private fun friendlyError(raw: String?): String {
-    val message = raw.orEmpty()
+private fun friendlyError(error: Throwable): String {
+    val message = error.message.orEmpty()
     val blockedByGate = message.contains("row-level security", ignoreCase = true) ||
         message.contains("policy", ignoreCase = true) ||
         message.contains("403")
     return if (blockedByGate) {
         "You can only review a spot after checking in here. Check in first, then post your review."
     } else {
-        message.ifBlank { "Something went wrong. Try again." }
+        error.toUserMessage("Could not post your review. Try again.")
     }
 }
 

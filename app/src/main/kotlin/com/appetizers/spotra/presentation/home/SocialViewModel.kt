@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.appetizers.spotra.domain.model.FriendProfile
 import com.appetizers.spotra.domain.repository.FriendRepository
+import com.appetizers.spotra.presentation.toUserMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -54,7 +55,9 @@ class SocialViewModel(
                     )
                 }
             }.onFailure { e ->
-                _state.update { it.copy(isLoading = false, error = e.message) }
+                _state.update {
+                    it.copy(isLoading = false, error = e.toUserMessage("Could not load social data."))
+                }
             }
         }
     }
@@ -75,7 +78,7 @@ class SocialViewModel(
             }.onSuccess { results ->
                 _state.update { it.copy(searchResults = results) }
             }.onFailure { e ->
-                _state.update { it.copy(error = e.message) }
+                _state.update { it.copy(error = e.toUserMessage("Could not search for users.")) }
             }
         }
     }
@@ -94,7 +97,9 @@ class SocialViewModel(
                         )
                     }
                 }
-                .onFailure { e -> _state.update { it.copy(error = e.message) } }
+                .onFailure { e ->
+                    _state.update { it.copy(error = e.toUserMessage("Could not send friend request.")) }
+                }
         }
     }
 
@@ -112,7 +117,9 @@ class SocialViewModel(
                         )
                     }
                 }
-                .onFailure { e -> _state.update { it.copy(error = e.message) } }
+                .onFailure { e ->
+                    _state.update { it.copy(error = e.toUserMessage("Could not accept friend request.")) }
+                }
         }
     }
 
@@ -128,7 +135,9 @@ class SocialViewModel(
                         )
                     }
                 }
-                .onFailure { e -> _state.update { it.copy(error = e.message) } }
+                .onFailure { e ->
+                    _state.update { it.copy(error = e.toUserMessage("Could not decline friend request.")) }
+                }
         }
     }
 
