@@ -100,12 +100,19 @@ data class GroupMember(
     val initials: String
 )
 
+enum class GroupVisibility {
+    Private,
+    Public,
+}
+
 data class GroupStudySession(
     val id: String,
     val title: String,
     val subtitle: String,
     val proximityLabel: String,
-    val members: List<GroupMember>
+    val members: List<GroupMember>,
+    val isOwner: Boolean = false,
+    val visibility: GroupVisibility = GroupVisibility.Private,
 )
 
 data class CheckedInStudent(
@@ -130,6 +137,7 @@ data class HomeSnapshot(
     val soloSpot: StudySpotSummary,
     val groupSession: GroupStudySession?,
     val groupSpots: List<StudySpotSummary>,
+    val publicGroups: List<GroupStudySession> = emptyList(),
     val mapSpots: List<StudySpotSummary> = emptyList(),
     val trendingCounts: Map<String, Int> = emptyMap(),
 )
