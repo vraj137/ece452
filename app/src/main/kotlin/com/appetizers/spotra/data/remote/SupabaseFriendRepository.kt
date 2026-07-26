@@ -7,6 +7,8 @@ import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
@@ -40,7 +42,17 @@ class SupabaseFriendRepository(
             if (f.requesterId == userId) f.addresseeId else f.requesterId
         }.distinct()
 
-        val profiles = safeProfiles(ids = otherIds)
+        val (profiles, streaks) = coroutineScope {
+            val profilesDeferred = async { safeProfiles(ids = otherIds) }
+            val streaksDeferred = async {
+                runCatching {
+                    client.postgrest.rpc("friend_streaks")
+                        .decodeList<FriendStreakRow>()
+                        .associate { it.userId to it.loginStreak }
+                }.getOrDefault(emptyMap())
+            }
+            profilesDeferred.await() to streaksDeferred.await()
+        }
 
         val profileMap = profiles.associateBy { it.id }
         return friendships.mapNotNull { f ->
@@ -59,7 +71,8 @@ class SupabaseFriendRepository(
                     "declined" -> FriendshipStatus.DECLINED
                     else -> FriendshipStatus.PENDING
                 },
-                isRequester = f.requesterId == userId
+                isRequester = f.requesterId == userId,
+                streakDays = streaks[profile.id]?.takeIf { f.status == "accepted" },
             )
         }
     }
@@ -73,18 +86,12 @@ class SupabaseFriendRepository(
     }
 
     override suspend fun fetchSuggested(acceptedFriendIds: Set<String>): List<FriendProfile> {
-        val selfId = currentUserId() ?: return emptyList()
-
-        val selfProfile = runCatching {
-            client.from("profiles")
-                .select { filter { eq("id", selfId) } }
-                .decodeSingleOrNull<FriendProfileRow>()
-        }.getOrNull() ?: return emptyList()
-
-        if (selfProfile.program.isBlank()) return emptyList()
-
         return runCatching {
-            safeProfiles(program = selfProfile.program, limit = 10)
+            client.postgrest.rpc(
+                "discover_profiles",
+                buildJsonObject { put("p_limit", 20) }
+            )
+                .decodeList<FriendProfileRow>()
                 .filter { it.id !in acceptedFriendIds }
                 .map { FriendProfile(it.id, it.firstName, it.lastName, it.email, it.program, it.term) }
         }.getOrDefault(emptyList())
@@ -166,4 +173,10 @@ private data class FriendAtSpotRow(
     val id: String,
     @SerialName("first_name") val firstName: String,
     @SerialName("last_name") val lastName: String
+)
+
+@Serializable
+private data class FriendStreakRow(
+    @SerialName("user_id") val userId: String,
+    @SerialName("login_streak") val loginStreak: Int,
 )
