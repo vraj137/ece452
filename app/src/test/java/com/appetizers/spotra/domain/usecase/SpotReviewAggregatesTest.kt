@@ -32,6 +32,40 @@ class SpotReviewAggregatesTest {
     }
 
     @Test
+    fun `matches the spot_review_stats view on a half-rounding tie`() {
+        // Cross-checked against the view on a local Postgres: the same four reviews
+        // (5,4,4,4 with a 2-2 Silent/Moderate split) return 4.3 and "Moderate" there too.
+        // This is the case most likely to drift if either side's rounding changes.
+        val result = SpotReviewAggregator.aggregate(
+            ratings = listOf(5, 4, 4, 4),
+            noiseLevels = listOf("Silent", "Moderate", "Silent", "Moderate"),
+            lightings = listOf("Bright", "Bright", "Bright", "Bright"),
+            wifiQualities = emptyList(),
+        )
+
+        assertEquals(4.3, result.averageRating!!, 0.0001)
+        assertEquals(4, result.reviewCount)
+        assertEquals("Moderate", result.noiseLevel)
+        assertEquals("Bright", result.lighting)
+    }
+
+    @Test
+    fun `matches the view when the average is not exactly representable in binary`() {
+        // 87/20 = 4.35. Multiplying by 10 in floating point gives 43.499999999999996, which
+        // rounds down to 4.3 — Postgres computes it as an exact numeric and returns 4.4.
+        val ratings = List(17) { 5 } + List(1) { 2 } + List(2) { 0 }
+        val result = SpotReviewAggregator.aggregate(
+            ratings = ratings,
+            noiseLevels = emptyList(),
+            lightings = emptyList(),
+            wifiQualities = emptyList(),
+        )
+
+        assertEquals(20, result.reviewCount)
+        assertEquals(4.4, result.averageRating!!, 0.0001)
+    }
+
+    @Test
     fun `no reviews yields a null rating and zero count`() {
         val result = SpotReviewAggregator.aggregate(
             ratings = emptyList(),
