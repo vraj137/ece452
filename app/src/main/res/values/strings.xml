@@ -1,9 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Spotra</string>
-    <string name="home_subtitle">Find study spaces around campus based on noise, lighting, Wi-Fi, occupancy, and study style.</string>
-    <string name="section_discover">Discover study spaces</string>
-    <string name="map_placeholder">Map, filters, ratings, and campus room booking links will connect here.</string>
-    <string name="section_foundation">Project foundation</string>
-    <string name="foundation_placeholder">Base Android module, manifest, resources, data models, and repository placeholders are ready for feature work.</string>
 </resources>
