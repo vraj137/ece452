@@ -45,6 +45,8 @@ interface SpotSubmissionRepository {
 interface ReviewRepository {
     suspend fun reviewsFor(spotSlug: String): List<Review>
     suspend fun submit(draft: ReviewDraft)
+    suspend fun update(reviewId: String, draft: ReviewDraft)
+    suspend fun delete(reviewId: String)
     suspend fun getReviewCount(userId: String): Int
     suspend fun getQualityReviewCount(userId: String): Int
 }
@@ -70,7 +72,9 @@ interface HomeRepository {
     suspend fun startCheckIn(
         spotId: String,
         mode: StudyMode,
-        groupSessionId: String?
+        groupSessionId: String?,
+        latitude: Double,
+        longitude: Double,
     ): CheckInSession
     suspend fun checkOut(sessionId: String)
     suspend fun inviteToGroup(groupSessionId: String, inviteText: String): GroupMember

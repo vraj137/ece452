@@ -12,7 +12,8 @@ data class Review(
     val wifiQuality: String? = null,
     val occupancyPercent: Int? = null,
     val comment: String? = null,
-    val anonymous: Boolean = false
+    val anonymous: Boolean = false,
+    val isOwnedByCurrentUser: Boolean = false,
 )
 
 data class ReviewDraft(

@@ -59,8 +59,8 @@ import com.mapbox.maps.viewannotation.viewAnnotationOptions
 import com.mapbox.maps.ViewAnnotationAnchor
 import kotlinx.coroutines.launch
 
-private const val UW_LAT = 43.4720
-private const val UW_LNG = -80.5430
+private const val UW_LAT = MapConfig.CAMPUS_LAT
+private const val UW_LNG = MapConfig.CAMPUS_LNG
 
 @Composable
 internal fun SubmitSpotScreen(
@@ -81,6 +81,8 @@ internal fun SubmitSpotScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var showFullMap by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val pinIsSupported = pinPlaced && MapConfig.isWithinSupportedUwCampus(pinLat, pinLng)
+    val canSubmit = name.isNotBlank() && pinIsSupported && !isLoading
 
     BackHandler {
         if (showFullMap) {
@@ -203,6 +205,15 @@ internal fun SubmitSpotScreen(
                     },
                     onExpand = { showFullMap = true }
                 )
+                if (pinPlaced && !pinIsSupported) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "Choose a location on UW main campus, Pharmacy, or Architecture.",
+                        color = Color(0xFFD83D3C),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
             }
 
             if (error != null) {
@@ -219,10 +230,10 @@ internal fun SubmitSpotScreen(
                     .fillMaxWidth()
                     .height(56.dp)
                     .background(
-                        if (name.isNotBlank()) SoloBlue else SoloBlue.copy(alpha = 0.4f),
+                        if (canSubmit) SoloBlue else SoloBlue.copy(alpha = 0.4f),
                         RoundedCornerShape(16.dp)
                     )
-                    .clickable(enabled = name.isNotBlank() && !isLoading) {
+                    .clickable(enabled = canSubmit) {
                         scope.launch {
                             isLoading = true
                             error = null

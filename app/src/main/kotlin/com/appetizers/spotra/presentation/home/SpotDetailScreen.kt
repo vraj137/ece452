@@ -30,12 +30,15 @@ import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarOutline
 import androidx.compose.material3.Icon
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,6 +58,7 @@ import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.ReviewRepository
 import com.appetizers.spotra.presentation.toUserMessage
 import java.util.Locale
+import kotlinx.coroutines.launch
 
 private enum class ReviewFilter { Friends, All }
 
@@ -69,6 +73,7 @@ internal fun SpotDetailScreen(
     reviewRepository: ReviewRepository,
     friendRepository: FriendRepository? = null,
     onReview: () -> Unit,
+    onEditReview: (Review) -> Unit = {},
     activeCheckInSpotId: String? = null,
     onEndSession: () -> Unit = {}
 ) {
@@ -82,6 +87,8 @@ internal fun SpotDetailScreen(
     var selfId by remember { mutableStateOf<String?>(null) }
     var reviewFilter by remember { mutableStateOf(ReviewFilter.All) }
     var error by remember(spotId) { mutableStateOf<String?>(null) }
+    var pendingDeleteReview by remember { mutableStateOf<Review?>(null) }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(spotId) {
         error = null
@@ -146,6 +153,8 @@ internal fun SpotDetailScreen(
                         onFilterChange = { reviewFilter = it },
                         showFilter = friendRepository != null,
                         loadError = reviewLoadError,
+                        onEditReview = onEditReview,
+                        onDeleteReview = { pendingDeleteReview = it },
                     )
                 }
             }
@@ -160,6 +169,33 @@ internal fun SpotDetailScreen(
                 )
             }
         }
+    }
+
+    pendingDeleteReview?.let { review ->
+        AlertDialog(
+            onDismissRequest = { pendingDeleteReview = null },
+            title = { Text("Delete review?") },
+            text = { Text("This removes your review from this study spot.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingDeleteReview = null
+                        scope.launch {
+                            runCatching { reviewRepository.delete(review.id) }
+                                .onSuccess { reviews = reviews.filterNot { it.id == review.id } }
+                                .onFailure { reviewLoadError = it.toUserMessage("Could not delete your review.") }
+                        }
+                    }
+                ) {
+                    Text("Delete", color = DPAtriumRed)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeleteReview = null }) {
+                    Text("Cancel")
+                }
+            },
+        )
     }
 }
 
@@ -411,6 +447,8 @@ private fun SpotReviewsSection(
     onFilterChange: (ReviewFilter) -> Unit = {},
     showFilter: Boolean = false,
     loadError: String? = null,
+    onEditReview: (Review) -> Unit = {},
+    onDeleteReview: (Review) -> Unit = {},
 ) {
     Column(
         modifier = Modifier
@@ -457,7 +495,11 @@ private fun SpotReviewsSection(
                 fontWeight = FontWeight.Medium
             )
             else -> reviews.forEachIndexed { index, review ->
-                ReviewRow(review = review)
+                ReviewRow(
+                    review = review,
+                    onEdit = { onEditReview(review) },
+                    onDelete = { onDeleteReview(review) },
+                )
                 if (index < reviews.lastIndex) {
                     Spacer(Modifier.height(1.dp))
                     Box(Modifier.fillMaxWidth().height(1.dp).background(DividerLine))
@@ -469,7 +511,11 @@ private fun SpotReviewsSection(
 }
 
 @Composable
-private fun ReviewRow(review: Review) {
+private fun ReviewRow(
+    review: Review,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+) {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Box(
             modifier = Modifier
@@ -496,6 +542,25 @@ private fun ReviewRow(review: Review) {
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
+            }
+            if (review.isOwnedByCurrentUser) {
+                Spacer(Modifier.height(5.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Text(
+                        text = "Edit",
+                        color = SoloBlue,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable(onClick = onEdit),
+                    )
+                    Text(
+                        text = "Delete",
+                        color = DPAtriumRed,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable(onClick = onDelete),
+                    )
+                }
             }
         }
         Spacer(Modifier.width(8.dp))

@@ -41,6 +41,7 @@ data class StudySpotSummary(
     val amenities: List<String> = emptyList(),
     val noiseLevel: String? = null,
     val lighting: String? = null,
+    val wifiQuality: String? = null,
     val friendsHere: Int = 0,
     val operatingHours: WeeklyOperatingHours? = null,
 )
@@ -89,6 +90,7 @@ data class StudySpotDetail(
         occupancyPercent = occupancyPercent,
         noiseLevel = noiseLevel,
         lighting = lighting,
+        wifiQuality = wifiQuality,
         amenities = amenities,
         operatingHours = operatingHours,
     )

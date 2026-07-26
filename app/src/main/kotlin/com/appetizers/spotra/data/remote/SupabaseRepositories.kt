@@ -15,6 +15,7 @@ import com.appetizers.spotra.domain.model.SocialSnapshot
 import com.appetizers.spotra.domain.model.SocialUser
 import com.appetizers.spotra.domain.model.SpotSubmission
 import com.appetizers.spotra.domain.model.StudyMode
+import com.appetizers.spotra.domain.model.StudyTerm
 import com.appetizers.spotra.domain.model.StudySpotDetail
 import com.appetizers.spotra.domain.model.StudySpotSummary
 import com.appetizers.spotra.domain.model.UserBadge
@@ -42,9 +43,12 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.put
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
@@ -108,17 +112,22 @@ class SupabaseSocialRepository(private val client: SupabaseClient) : SocialRepos
         val me = requireNotNull(client.from("profiles").select { filter { eq("id", userId) } }
             .decodeSingleOrNull<UserProfileDto>()) { "Complete your profile before using Social." }
         val studyTerm = me.studyTerm ?: return SocialSnapshot()
-        val peers = client.from("profiles").select {
-            filter {
-                eq("program", me.program)
-                eq("study_term", studyTerm.label)
-                neq("id", userId)
+        val peers = client.postgrest.rpc(
+            "safe_profiles",
+            buildJsonObject {
+                put("p_program", me.program)
+                put("p_limit", 50)
             }
-        }.decodeList<UserProfileDto>().mapNotNull { dto ->
-            dto.studyTerm?.let { term ->
-                SocialUser(dto.userId, "${dto.firstName} ${dto.lastName}", dto.program, term)
+        ).decodeList<SafeProfileRow>().mapNotNull { profile ->
+            StudyTerm.entries.firstOrNull { it.label == profile.studyTerm }?.let { term ->
+                SocialUser(
+                    profile.id,
+                    "${profile.firstName} ${profile.lastName}",
+                    profile.program,
+                    term,
+                )
             }
-        }
+        }.filter { it.studyTerm == studyTerm }
         val sent = client.from("friend_requests").select {
             filter { eq("requester_id", userId) }
         }.decodeList<FriendRequestDto>()
@@ -202,16 +211,9 @@ private data class SpotDto(
     @SerialName("booking_url") val bookingUrl: String? = null,
     @SerialName("noise_level") val noiseLevel: String? = null,
     val lighting: String? = null,
+    @SerialName("wifi_quality") val wifiQuality: String? = null,
     @SerialName("hours_of_operation") val hoursOfOperation: JsonObject? = null,
     @SerialName("time_zone") val timeZone: String = WATERLOO_TIME_ZONE,
-)
-
-@Serializable
-private data class CheckInInsert(
-    @SerialName("user_id") val userId: String,
-    @SerialName("spot_slug") val spotSlug: String,
-    val mode: String,
-    @SerialName("group_session_id") val groupSessionId: String? = null
 )
 
 @Serializable
@@ -229,14 +231,6 @@ private data class GroupSessionDto(
     val visibility: String = "private",
     @SerialName("created_by") val createdBy: String,
     @SerialName("ended_at") val endedAt: String? = null,
-)
-
-@Serializable
-private data class GroupSessionInsert(
-    val title: String,
-    val subtitle: String? = null,
-    val visibility: String,
-    @SerialName("created_by") val createdBy: String,
 )
 
 @Serializable
@@ -266,27 +260,22 @@ private data class TrendingRow(
 )
 
 @Serializable
-private data class ActiveCheckInRow(
-    val id: String,
-    @SerialName("user_id") val userId: String,
-    @SerialName("spot_slug") val spotSlug: String,
-    @SerialName("ended_at") val endedAt: String? = null,
-)
-
-@Serializable
 private data class AttendeeProfileRow(
     val id: String,
     @SerialName("first_name") val firstName: String,
     @SerialName("last_name") val lastName: String,
     val program: String = "",
+    @SerialName("is_friend") val isFriend: Boolean = false,
+    @SerialName("has_sent_me_request") val hasSentMeRequest: Boolean = false,
 )
 
 @Serializable
-private data class FriendshipReadRow(
+private data class SafeProfileRow(
     val id: String,
-    @SerialName("requester_id") val requesterId: String,
-    @SerialName("addressee_id") val addresseeId: String,
-    val status: String,
+    @SerialName("first_name") val firstName: String,
+    @SerialName("last_name") val lastName: String,
+    val program: String = "",
+    @SerialName("study_term") val studyTerm: String? = null,
 )
 
 @Serializable
@@ -404,26 +393,22 @@ class SupabaseHomeRepository(
     override suspend fun startCheckIn(
         spotId: String,
         mode: StudyMode,
-        groupSessionId: String?
+        groupSessionId: String?,
+        latitude: Double,
+        longitude: Double,
     ): CheckInSession {
         val userId = client.auth.currentUserOrNull()?.id
             ?: error("You need to be signed in to check in.")
-        client.from("check_ins").update({
-            set("ended_at", Instant.now().toString())
-        }) {
-            filter {
-                eq("user_id", userId)
-                exact("ended_at", null)
+        val inserted = client.postgrest.rpc(
+            "start_verified_check_in",
+            buildJsonObject {
+                put("p_spot_slug", spotId)
+                put("p_mode", if (mode == StudyMode.Group) "group" else "solo")
+                put("p_group_session_id", groupSessionId?.let(::JsonPrimitive) ?: JsonNull)
+                put("p_latitude", latitude)
+                put("p_longitude", longitude)
             }
-        }
-        val inserted = client.from("check_ins").insert(
-            CheckInInsert(
-                userId = userId,
-                spotSlug = spotId,
-                mode = if (mode == StudyMode.Group) "group" else "solo",
-                groupSessionId = groupSessionId
-            )
-        ) { select() }.decodeSingle<CheckInRow>()
+        ).decodeSingle<CheckInRow>()
 
         val spot = spotCache[spotId]
             ?: dbSpotSummary(spotId)
@@ -439,57 +424,23 @@ class SupabaseHomeRepository(
         return CheckInSession(id = inserted.id, spot = spot, mode = mode, attendees = listOf(self) + coAttendees)
     }
 
-    private suspend fun loadCoAttendees(selfId: String, spotId: String): List<CheckedInStudent> = coroutineScope {
-        val active = client.from("check_ins").select {
-            filter {
-                eq("spot_slug", spotId)
-                exact("ended_at", null)
-            }
-        }.decodeList<ActiveCheckInRow>().filter { it.userId != selfId }
-
-        if (active.isEmpty()) return@coroutineScope emptyList()
-
-        val otherIds = active.map { it.userId }.distinct()
-
-        val profilesDeferred = async {
-            client.from("profiles").select {
-                filter { isIn("id", otherIds) }
-            }.decodeList<AttendeeProfileRow>().associateBy { it.id }
-        }
-        val friendshipsDeferred = async {
-            client.from("friendships").select {
-                filter { or { eq("requester_id", selfId); eq("addressee_id", selfId) } }
-            }.decodeList<FriendshipReadRow>().filter { f ->
-                (f.requesterId == selfId && f.addresseeId in otherIds) ||
-                (f.addresseeId == selfId && f.requesterId in otherIds)
-            }
-        }
-
-        val profiles = profilesDeferred.await()
-        val friendships = friendshipsDeferred.await()
-
-        val friendIds = friendships.filter { it.status == "accepted" }
-            .flatMap { listOf(it.requesterId, it.addresseeId) }
-            .filter { it != selfId }.toSet()
-        val sentMeIds = friendships
-            .filter { it.status == "pending" && it.addresseeId == selfId }
-            .map { it.requesterId }.toSet()
-
-        otherIds.mapNotNull { id ->
-            val p = profiles[id] ?: return@mapNotNull null
+    private suspend fun loadCoAttendees(selfId: String, spotId: String): List<CheckedInStudent> =
+        client.postgrest.rpc(
+            "session_attendees",
+            buildJsonObject { put("p_spot_slug", spotId) }
+        ).decodeList<AttendeeProfileRow>().filter { it.id != selfId }.map { p ->
             CheckedInStudent(
-                id = id,
+                id = p.id,
                 initials = buildString {
                     p.firstName.firstOrNull()?.uppercaseChar()?.let { append(it) }
                     p.lastName.firstOrNull()?.uppercaseChar()?.let { append(it) }
                 }.ifBlank { "?" },
                 name = "${p.firstName} ${p.lastName.firstOrNull() ?: ""}.",
                 detail = p.program.ifBlank { "Studying here" },
-                isFriend = id in friendIds,
-                hasSentMeRequest = id in sentMeIds,
+                isFriend = p.isFriend,
+                hasSentMeRequest = p.hasSentMeRequest,
             )
         }
-    }
 
     override suspend fun checkOut(sessionId: String) {
         client.from("check_ins").update({
@@ -511,21 +462,13 @@ class SupabaseHomeRepository(
             "Leave your current group before creating another one."
         }
 
-        val created = client.from("group_sessions").insert(
-            GroupSessionInsert(
-                title = cleanTitle,
-                subtitle = "Pick a spot and invite your friends",
-                visibility = visibility.toDatabaseValue(),
-                createdBy = userId
-            )
-        ) { select() }.decodeSingle<GroupSessionDto>()
-        client.from("group_session_members").insert(
-            GroupSessionMemberInsert(
-                sessionId = created.id,
-                userId = userId,
-                role = "owner"
-            )
-        )
+        val created = client.postgrest.rpc(
+            "create_group_session",
+            buildJsonObject {
+                put("p_title", cleanTitle)
+                put("p_visibility", visibility.toDatabaseValue())
+            }
+        ).decodeSingle<GroupSessionDto>()
         activeGroupSessionId = created.id
         return loadGroupSession(created, userId)
     }
@@ -598,26 +541,23 @@ class SupabaseHomeRepository(
             "This group session is no longer active. Refresh and try again."
         }
 
-        val profile = if (inviteText.contains("@")) {
-            client.from("profiles")
-                .select { filter { eq("email", inviteText.trim()) } }
-                .decodeSingleOrNull<UserProfileDto>()
-        } else null
-
-        return if (profile != null) {
-            client.from("group_session_members").insert(
-                GroupSessionMemberInsert(sessionId = groupSessionId, userId = profile.userId)
-            )
+        if (!inviteText.contains("@")) {
+            error("Enter the email address associated with their Spotra account to invite them.")
+        }
+        val profile = client.postgrest.rpc(
+            "invite_group_member_by_email",
+            buildJsonObject {
+                put("p_group_id", groupSessionId)
+                put("p_email", inviteText.trim())
+            }
+        ).decodeSingle<SafeProfileRow>()
+        return run {
             val initials = buildString {
                 append(profile.firstName.firstOrNull()?.uppercaseChar() ?: '?')
                 append(profile.lastName.firstOrNull()?.uppercaseChar() ?: '?')
             }
-            val displayName = "${profile.firstName} ${profile.lastName.first()}."
-            GroupMember(id = profile.userId, name = displayName, initials = initials)
-        } else if (!inviteText.contains("@")) {
-            error("Enter the email address associated with their Spotra account to invite them.")
-        } else {
-            error("No Spotra account found for that email. Check the address and try again.")
+            val displayName = "${profile.firstName} ${profile.lastName.firstOrNull() ?: ""}."
+            GroupMember(id = profile.id, name = displayName, initials = initials)
         }
     }
 
@@ -700,23 +640,45 @@ class SupabaseHomeRepository(
             .decodeList<GroupSessionMemberRow>()
             .map { it.userId }
 
-        val profileDeferreds = memberUserIds.map { memberId ->
-            async {
-                client.from("profiles")
-                    .select { filter { eq("id", memberId) } }
-                    .decodeSingleOrNull<UserProfileDto>()
-            }
+        val profiles = if (memberUserIds.isEmpty()) {
+            emptyList()
+        } else {
+            client.postgrest.rpc(
+                "safe_profiles",
+                buildJsonObject {
+                    put("p_ids", kotlinx.serialization.json.JsonArray(
+                        memberUserIds.map(::JsonPrimitive)
+                    ))
+                    put("p_limit", 50)
+                }
+            ).decodeList<SafeProfileRow>()
         }
-        val profiles = profileDeferreds.map { it.await() }.filterNotNull()
+        val ownProfile = if (userId in memberUserIds) {
+            client.from("profiles")
+                .select { filter { eq("id", userId) } }
+                .decodeSingleOrNull<UserProfileDto>()
+                ?.let {
+                    SafeProfileRow(
+                        id = it.userId,
+                        firstName = it.firstName,
+                        lastName = it.lastName,
+                        program = it.program,
+                        studyTerm = it.studyTerm?.label,
+                    )
+                }
+        } else {
+            null
+        }
+        val allProfiles = (profiles + listOfNotNull(ownProfile)).distinctBy { it.id }
 
-        val members = profiles.map { profile ->
-            val isSelf = profile.userId == userId
+        val members = allProfiles.map { profile ->
+            val isSelf = profile.id == userId
             val initials = buildString {
                 append(profile.firstName.firstOrNull()?.uppercaseChar() ?: '?')
                 append(profile.lastName.firstOrNull()?.uppercaseChar() ?: '?')
             }
             val displayName = if (isSelf) "You" else "${profile.firstName} ${profile.lastName.first()}."
-            GroupMember(id = profile.userId, name = displayName, initials = initials)
+            GroupMember(id = profile.id, name = displayName, initials = initials)
         }.ifEmpty {
             listOf(GroupMember(userId, cachedFirstName, initialsOf(cachedFirstName)))
         }
@@ -751,12 +713,10 @@ class SupabaseHomeRepository(
             .associate { it.spotSlug to it.checkins7d }
 
     private suspend fun reviewRowsForSpot(spotSlug: String): List<ReviewRow> =
-        client.from("reviews")
-            .select {
-                filter { eq("spot_slug", spotSlug) }
-                order("created_at", Order.DESCENDING)
-            }
-            .decodeList<ReviewRow>()
+        client.postgrest.rpc(
+            "list_spot_reviews",
+            buildJsonObject { put("p_spot_slug", spotSlug) }
+        ).decodeList<ReviewRow>()
 
     private suspend fun dbSpotSummary(spotId: String): StudySpotSummary? {
         val activeCount = activeCheckInCounts()[spotId] ?: 0
@@ -789,6 +749,7 @@ class SupabaseHomeRepository(
         amenities = amenities,
         noiseLevel = noiseLevel,
         lighting = lighting,
+        wifiQuality = wifiQuality,
         operatingHours = toOperatingHours(),
     )
 
@@ -896,21 +857,6 @@ private fun initialsOf(name: String): String =
         .take(2)
 
 @Serializable
-private data class ReviewInsert(
-    @SerialName("spot_slug") val spotSlug: String,
-    @SerialName("user_id") val userId: String,
-    @SerialName("reviewer_name") val reviewerName: String?,
-    val rating: Int,
-    @SerialName("noise_level") val noiseLevel: String?,
-    val lighting: String?,
-    @SerialName("wifi_quality") val wifiQuality: String?,
-    @SerialName("occupancy_percent") val occupancyPercent: Int?,
-    val comment: String?,
-    val anonymous: Boolean,
-    @SerialName("quality_score") val qualityScore: Int = 0,
-)
-
-@Serializable
 private data class ReviewRow(
     val id: String,
     @SerialName("spot_slug") val spotSlug: String,
@@ -924,6 +870,7 @@ private data class ReviewRow(
     val comment: String? = null,
     val anonymous: Boolean = false,
     @SerialName("quality_score") val qualityScore: Int = 0,
+    @SerialName("is_owner") val isOwner: Boolean = false,
 ) {
     fun toReview(): Review {
         val displayName = if (anonymous || reviewerName.isNullOrBlank()) "Anonymous" else reviewerName
@@ -939,7 +886,8 @@ private data class ReviewRow(
             wifiQuality = wifiQuality,
             occupancyPercent = occupancyPercent,
             comment = comment,
-            anonymous = anonymous
+            anonymous = anonymous,
+            isOwnedByCurrentUser = isOwner,
         )
     }
 }
@@ -948,58 +896,71 @@ class SupabaseReviewRepository(
     private val client: SupabaseClient
 ) : ReviewRepository {
     override suspend fun reviewsFor(spotSlug: String): List<Review> =
-        client.from("reviews")
-            .select {
-                filter { eq("spot_slug", spotSlug) }
-                order("created_at", Order.DESCENDING)
-            }
+        client.postgrest.rpc(
+            "list_spot_reviews",
+            buildJsonObject { put("p_spot_slug", spotSlug) }
+        )
             .decodeList<ReviewRow>()
             .map { it.toReview() }
 
     override suspend fun submit(draft: ReviewDraft) {
-        val user = client.auth.currentUserOrNull()
-            ?: error("You need to be signed in to review.")
-        val displayName = if (draft.anonymous) {
-            "Anonymous"
-        } else {
-            client.from("profiles")
-                .select { filter { eq("id", user.id) } }
-                .decodeSingleOrNull<UserProfileDto>()
-                ?.firstName
-                ?.takeIf { it.isNotBlank() }
-                ?: "Student"
+        if (client.auth.currentUserOrNull() == null) {
+            error("You need to be signed in to review.")
         }
-        client.from("reviews").insert(
-            ReviewInsert(
-                spotSlug = draft.spotSlug,
-                userId = user.id,
-                reviewerName = displayName,
-                rating = draft.rating,
-                noiseLevel = draft.noiseLevel,
-                lighting = draft.lighting,
-                wifiQuality = draft.wifiQuality,
-                occupancyPercent = draft.occupancyPercent,
-                comment = draft.comment,
-                anonymous = draft.anonymous,
-                qualityScore = draft.qualityScore,
-            )
+        client.postgrest.rpc(
+            "submit_review",
+            buildJsonObject {
+                put("p_spot_slug", draft.spotSlug)
+                put("p_rating", draft.rating)
+                put("p_noise_level", draft.noiseLevel?.let(::JsonPrimitive) ?: JsonNull)
+                put("p_lighting", draft.lighting?.let(::JsonPrimitive) ?: JsonNull)
+                put("p_wifi_quality", draft.wifiQuality?.let(::JsonPrimitive) ?: JsonNull)
+                put("p_occupancy_percent", draft.occupancyPercent?.let(::JsonPrimitive) ?: JsonNull)
+                put("p_comment", draft.comment?.let(::JsonPrimitive) ?: JsonNull)
+                put("p_anonymous", draft.anonymous)
+                put("p_quality_score", draft.qualityScore)
+            }
+        )
+    }
+
+    override suspend fun update(reviewId: String, draft: ReviewDraft) {
+        client.postgrest.rpc(
+            "update_own_review",
+            buildJsonObject {
+                put("p_review_id", reviewId)
+                put("p_rating", draft.rating)
+                put("p_noise_level", draft.noiseLevel?.let(::JsonPrimitive) ?: JsonNull)
+                put("p_lighting", draft.lighting?.let(::JsonPrimitive) ?: JsonNull)
+                put("p_wifi_quality", draft.wifiQuality?.let(::JsonPrimitive) ?: JsonNull)
+                put("p_occupancy_percent", draft.occupancyPercent?.let(::JsonPrimitive) ?: JsonNull)
+                put("p_comment", draft.comment?.let(::JsonPrimitive) ?: JsonNull)
+                put("p_anonymous", draft.anonymous)
+                put("p_quality_score", draft.qualityScore)
+            }
+        )
+    }
+
+    override suspend fun delete(reviewId: String) {
+        client.postgrest.rpc(
+            "delete_own_review",
+            buildJsonObject { put("p_review_id", reviewId) }
         )
     }
 
     override suspend fun getReviewCount(userId: String): Int =
         runCatching {
-            client.from("reviews")
-                .select { filter { eq("user_id", userId) } }
-                .decodeList<ReviewRow>()
-                .size
+            client.postgrest.rpc(
+                "review_count",
+                buildJsonObject { put("p_quality_only", false) }
+            ).decodeAs<Int>()
         }.getOrDefault(0)
 
     override suspend fun getQualityReviewCount(userId: String): Int =
         runCatching {
-            client.from("reviews")
-                .select { filter { eq("user_id", userId); gte("quality_score", 5) } }
-                .decodeList<ReviewRow>()
-                .size
+            client.postgrest.rpc(
+                "review_count",
+                buildJsonObject { put("p_quality_only", true) }
+            ).decodeAs<Int>()
         }.getOrDefault(0)
 }
 

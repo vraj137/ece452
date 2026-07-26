@@ -296,7 +296,9 @@ private class FailingHomeRepository : HomeRepository {
     override suspend fun startCheckIn(
         spotId: String,
         mode: StudyMode,
-        groupSessionId: String?
+        groupSessionId: String?,
+        latitude: Double,
+        longitude: Double,
     ): CheckInSession = failed()
     override suspend fun checkOut(sessionId: String) = failed()
     override suspend fun inviteToGroup(groupSessionId: String, inviteText: String): GroupMember = failed()
@@ -406,7 +408,9 @@ private class FakeHomeRepository(
     override suspend fun startCheckIn(
         spotId: String,
         mode: StudyMode,
-        groupSessionId: String?
+        groupSessionId: String?,
+        latitude: Double,
+        longitude: Double,
     ): CheckInSession {
         lastStartGroupSessionId = groupSessionId
         return CheckInSession(
@@ -456,7 +460,8 @@ private class NoOpStreakRepository : StreakRepository {
 }
 
 private class NoOpLocationRepository : LocationRepository {
-    override suspend fun getLastLocation(): Pair<Double, Double>? = null
+    override suspend fun getLastLocation(): Pair<Double, Double> =
+        MapConfig.CAMPUS_LAT to MapConfig.CAMPUS_LNG
 }
 
 private class NoOpFriendRepository : FriendRepository {
@@ -478,6 +483,8 @@ private class NoOpBadgeRepository : BadgeRepository {
 private class NoOpReviewRepository : ReviewRepository {
     override suspend fun reviewsFor(spotSlug: String): List<Review> = emptyList()
     override suspend fun submit(draft: ReviewDraft) = Unit
+    override suspend fun update(reviewId: String, draft: ReviewDraft) = Unit
+    override suspend fun delete(reviewId: String) = Unit
     override suspend fun getReviewCount(userId: String) = 0
     override suspend fun getQualityReviewCount(userId: String) = 0
 }

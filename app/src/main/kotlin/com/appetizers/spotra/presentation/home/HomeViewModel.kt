@@ -55,7 +55,10 @@ data class HomeUiState(
     val showReviewPrompt: Boolean = false,
     val pendingReviewSpotId: String? = null,
     val pendingReviewSpotName: String? = null,
+    val isReviewSubmitting: Boolean = false,
     val noiseFilter: String? = null,
+    val lightingFilter: String? = null,
+    val wifiFilter: String? = null,
     val spaceTypeFilter: StudyMode? = null,
     val amenityFilter: String? = null,
     val occupancyFilter: Int? = null,
@@ -134,7 +137,20 @@ class HomeViewModel(
             null
         }
         viewModelScope.launch {
-            runCatching { repository.startCheckIn(spot.id, mode, groupSessionId) }
+            val location = runCatching { locationRepository.getLastLocation() }.getOrNull()
+            if (location == null) {
+                showError("Turn on location access and try again so Spotra can verify you are at this study spot.")
+                return@launch
+            }
+            runCatching {
+                repository.startCheckIn(
+                    spotId = spot.id,
+                    mode = mode,
+                    groupSessionId = groupSessionId,
+                    latitude = location.first,
+                    longitude = location.second,
+                )
+            }
                 .onSuccess { session ->
                     _uiState.update {
                         it.copy(
@@ -220,8 +236,10 @@ class HomeViewModel(
         comment: String?,
     ) {
         val spotId = uiState.value.pendingReviewSpotId ?: return
+        if (rating !in 1..5 || uiState.value.isReviewSubmitting) return
         val checkoutBadge = uiState.value.pendingCheckoutBadge
         viewModelScope.launch {
+            _uiState.update { it.copy(isReviewSubmitting = true, error = null) }
             val qualityScore = ReviewQualityScorer.score(comment)
             val draft = ReviewDraft(
                 spotSlug = spotId,
@@ -254,18 +272,16 @@ class HomeViewModel(
                             pendingReviewSpotId = null,
                             pendingReviewSpotName = null,
                             pendingCheckoutBadge = null,
+                            isReviewSubmitting = false,
                             newBadge = reviewBadge ?: checkoutBadge,
                         )
                     }
                 }
-                .onFailure {
+                .onFailure { throwable ->
                     _uiState.update {
                         it.copy(
-                            showReviewPrompt = false,
-                            pendingReviewSpotId = null,
-                            pendingReviewSpotName = null,
-                            pendingCheckoutBadge = null,
-                            newBadge = checkoutBadge,
+                            isReviewSubmitting = false,
+                            error = throwable.toUserMessage("Could not post your review. Your draft is still here."),
                         )
                     }
                 }
@@ -280,6 +296,7 @@ class HomeViewModel(
                 pendingReviewSpotId = null,
                 pendingReviewSpotName = null,
                 pendingCheckoutBadge = null,
+                isReviewSubmitting = false,
                 newBadge = checkoutBadge,
             )
         }
@@ -309,6 +326,14 @@ class HomeViewModel(
 
     fun setNoiseFilter(filter: String?) {
         _uiState.update { it.copy(noiseFilter = filter, error = null) }
+    }
+
+    fun setLightingFilter(filter: String?) {
+        _uiState.update { it.copy(lightingFilter = filter, error = null) }
+    }
+
+    fun setWifiFilter(filter: String?) {
+        _uiState.update { it.copy(wifiFilter = filter, error = null) }
     }
 
     fun setSpaceTypeFilter(mode: StudyMode?) {
