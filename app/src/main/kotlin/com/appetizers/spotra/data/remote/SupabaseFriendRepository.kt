@@ -114,6 +114,14 @@ class SupabaseFriendRepository(
         }
     }
 
+    override suspend fun removeFriendship(friendshipId: String) {
+        // Deleting from friendships directly is not granted; the RPC checks the caller is a party.
+        client.postgrest.rpc(
+            "remove_friendship",
+            buildJsonObject { put("p_friendship_id", friendshipId) }
+        )
+    }
+
     override suspend fun fetchFriendsAtSpot(spotSlug: String): List<FriendProfile> =
         runCatching {
             client.postgrest.rpc(

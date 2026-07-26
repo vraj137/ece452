@@ -72,6 +72,7 @@ class MissingConfigurationFriendRepository : FriendRepository {
     override suspend fun sendRequest(toUserId: String) = missingSupabaseConfiguration()
     override suspend fun acceptRequest(friendshipId: String) = missingSupabaseConfiguration()
     override suspend fun declineRequest(friendshipId: String) = missingSupabaseConfiguration()
+    override suspend fun removeFriendship(friendshipId: String) = missingSupabaseConfiguration()
     override suspend fun fetchFriendsAtSpot(spotSlug: String): List<FriendProfile> =
         missingSupabaseConfiguration()
 }
