@@ -1585,6 +1585,11 @@ private fun SocialScreen(
 ) {
     val vm: SocialViewModel = viewModel(factory = SocialViewModel.Factory(friendRepository))
     val state by vm.state.collectAsStateWithLifecycle()
+    LaunchedEffect(selectedTab) {
+        if (selectedTab == SocialTab.Discover) {
+            vm.loadAll()
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -1633,7 +1638,8 @@ private fun SocialScreen(
                                         id = friend.id,
                                         initials = friend.initials,
                                         name = friend.fullName,
-                                        detail = friend.displayDetail
+                                        detail = friend.displayDetail,
+                                        streakDays = friend.streakDays,
                                     ),
                                     actionLabel = "",
                                     actionEnabled = false,
@@ -1717,7 +1723,7 @@ private fun SocialScreen(
                                 }
                             }
                         } else if (state.suggestions.isNotEmpty()) {
-                            item { SectionHeader("PEOPLE YOU MAY KNOW") }
+                            item { SectionHeader("SAME PROGRAM OR YEAR") }
                             itemsIndexed(state.suggestions) { _, profile ->
                                 SocialPersonRow(
                                     person = SocialPerson(
@@ -1734,7 +1740,7 @@ private fun SocialScreen(
                         } else {
                             item {
                                 Text(
-                                    text = "Search by name or UWaterloo email to find friends.",
+                                    text = "No same-program or same-year suggestions yet. Search by name to find friends.",
                                     color = HeaderMuted,
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Medium
@@ -1946,16 +1952,46 @@ private fun SocialPersonRow(
             )
         }
         Spacer(Modifier.width(10.dp))
+        when {
+            person.streakDays != null -> FriendStreakBadge(person.streakDays)
+            actionLabel.isNotEmpty() -> Text(
+                text = actionLabel,
+                modifier = Modifier
+                    .background(if (actionEnabled) BuddyPill else SwitcherTrack, RoundedCornerShape(18.dp))
+                    .clickable(enabled = actionEnabled, onClick = onAction)
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                color = if (actionEnabled) SoloBlue else HeaderMuted,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+private fun FriendStreakBadge(streakDays: Int) {
+    Row(
+        modifier = Modifier
+            .background(StarGold.copy(alpha = 0.14f), RoundedCornerShape(18.dp))
+            .padding(horizontal = 11.dp, vertical = 8.dp)
+            .semantics(mergeDescendants = true) {
+                contentDescription = "$streakDays day login streak"
+            },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Bolt,
+            contentDescription = null,
+            tint = StarGold,
+            modifier = Modifier.size(17.dp),
+        )
         Text(
-            text = actionLabel,
-            modifier = Modifier
-                .background(if (actionEnabled) BuddyPill else SwitcherTrack, RoundedCornerShape(18.dp))
-                .clickable(enabled = actionEnabled, onClick = onAction)
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            color = if (actionEnabled) SoloBlue else HeaderMuted,
-            fontSize = 15.sp,
+            text = "${streakDays}d",
+            color = Ink,
+            fontSize = 14.sp,
             fontWeight = FontWeight.ExtraBold,
-            maxLines = 1
         )
     }
 }
@@ -3781,7 +3817,8 @@ private data class SocialPerson(
     val initials: String,
     val name: String,
     val detail: String,
-    val active: Boolean = true
+    val active: Boolean = true,
+    val streakDays: Int? = null,
 )
 
 private fun SocialUser.toSocialPerson(detail: String) = SocialPerson(
