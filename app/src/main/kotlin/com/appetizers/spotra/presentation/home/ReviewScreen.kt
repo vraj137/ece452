@@ -47,6 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.appetizers.spotra.domain.model.ReviewDraft
+import com.appetizers.spotra.domain.model.Review
 import com.appetizers.spotra.domain.repository.ReviewRepository
 import com.appetizers.spotra.domain.usecase.ReviewQualityScorer
 import com.appetizers.spotra.presentation.toUserMessage
@@ -75,15 +76,24 @@ internal fun ReviewScreen(
     spotName: String,
     spotSlug: String,
     reviewRepository: ReviewRepository,
+    existingReview: Review? = null,
     onBack: () -> Unit
 ) {
-    var rating by remember { mutableIntStateOf(0) }
-    var noiseIndex by remember { mutableStateOf<Int?>(null) }
-    var lightingIndex by remember { mutableStateOf<Int?>(null) }
-    var wifiIndex by remember { mutableStateOf<Int?>(null) }
-    var occupancyIndex by remember { mutableStateOf<Int?>(null) }
-    var comment by remember { mutableStateOf("") }
-    var anonymous by remember { mutableStateOf(false) }
+    var rating by remember(existingReview?.id) { mutableIntStateOf(existingReview?.rating ?: 0) }
+    var noiseIndex by remember(existingReview?.id) {
+        mutableStateOf(existingReview?.noiseLevel.optionIndex(NOISE_OPTIONS))
+    }
+    var lightingIndex by remember(existingReview?.id) {
+        mutableStateOf(existingReview?.lighting.optionIndex(LIGHTING_OPTIONS))
+    }
+    var wifiIndex by remember(existingReview?.id) {
+        mutableStateOf(existingReview?.wifiQuality.optionIndex(WIFI_OPTIONS))
+    }
+    var occupancyIndex by remember(existingReview?.id) {
+        mutableStateOf(existingReview?.occupancyPercent.toOccupancyIndex())
+    }
+    var comment by remember(existingReview?.id) { mutableStateOf(existingReview?.comment.orEmpty()) }
+    var anonymous by remember(existingReview?.id) { mutableStateOf(existingReview?.anonymous ?: false) }
     var isLoading by remember { mutableStateOf(false) }
     var submitted by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -131,14 +141,13 @@ internal fun ReviewScreen(
                 )
             }
 
-            val hasAnyInput = rating > 0 || noiseIndex != null || lightingIndex != null || wifiIndex != null || occupancyIndex != null || comment.isNotBlank()
-            val canSubmit = hasAnyInput && !isLoading
+            val canSubmit = rating in 1..5 && !isLoading
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp)
                     .background(
-                        if (hasAnyInput) SoloBlue else SoloBlue.copy(alpha = 0.4f),
+                        if (canSubmit) SoloBlue else SoloBlue.copy(alpha = 0.4f),
                         RoundedCornerShape(16.dp)
                     )
                     .clickable(enabled = canSubmit) {
@@ -146,19 +155,22 @@ internal fun ReviewScreen(
                             isLoading = true
                             error = null
                             runCatching {
-                                reviewRepository.submit(
-                                    ReviewDraft(
-                                        spotSlug = spotSlug,
-                                        rating = rating,
-                                        noiseLevel = noiseLabel(noiseIndex),
-                                        lighting = lightingLabel(lightingIndex),
-                                        wifiQuality = wifiLabel(wifiIndex),
-                                        occupancyPercent = occupancyToPercent(occupancyIndex),
-                                        comment = comment.trim().ifBlank { null },
-                                        anonymous = anonymous,
-                                        qualityScore = ReviewQualityScorer.score(comment.trim().ifBlank { null })
-                                    )
+                                val draft = ReviewDraft(
+                                    spotSlug = spotSlug,
+                                    rating = rating,
+                                    noiseLevel = noiseLabel(noiseIndex),
+                                    lighting = lightingLabel(lightingIndex),
+                                    wifiQuality = wifiLabel(wifiIndex),
+                                    occupancyPercent = occupancyToPercent(occupancyIndex),
+                                    comment = comment.trim().ifBlank { null },
+                                    anonymous = anonymous,
+                                    qualityScore = ReviewQualityScorer.score(comment.trim().ifBlank { null })
                                 )
+                                if (existingReview == null) {
+                                    reviewRepository.submit(draft)
+                                } else {
+                                    reviewRepository.update(existingReview.id, draft)
+                                }
                                 submitted = true
                             }.onFailure {
                                 error = friendlyError(it)
@@ -170,7 +182,11 @@ internal fun ReviewScreen(
                 horizontalArrangement = Arrangement.Center
             ) {
                 Text(
-                    text = if (isLoading) "Posting..." else "Post review",
+                    text = when {
+                        isLoading -> "Saving..."
+                        existingReview != null -> "Save changes"
+                        else -> "Post review"
+                    },
                     color = Color.White,
                     fontSize = 17.sp,
                     fontWeight = FontWeight.ExtraBold
@@ -180,6 +196,17 @@ internal fun ReviewScreen(
             Spacer(Modifier.height(8.dp))
         }
     }
+}
+
+private fun String?.optionIndex(options: List<String>): Int? =
+    this?.let { value -> options.indexOfFirst { it.equals(value, ignoreCase = true) }.takeIf { it >= 0 } }
+
+private fun Int?.toOccupancyIndex(): Int? = when (this) {
+    null -> null
+    in 0..24 -> 0
+    in 25..54 -> 1
+    in 55..84 -> 2
+    else -> 3
 }
 
 private fun friendlyError(error: Throwable): String {

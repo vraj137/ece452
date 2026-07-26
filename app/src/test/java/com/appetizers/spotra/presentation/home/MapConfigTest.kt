@@ -1,11 +1,11 @@
 package com.appetizers.spotra.presentation.home
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MapConfigTest {
-
     @Test
     fun `coerceZoom clamps below the minimum`() {
         assertEquals(MapConfig.MIN_ZOOM, MapConfig.coerceZoom(5.0), 0.0)
@@ -72,5 +72,18 @@ class MapConfigTest {
             BuildingSpacesDisplayState.CONTENT,
             buildingSpacesDisplayState(isLoading = false, error = null, spaceCount = 2)
         )
+    }
+
+    @Test
+    fun `accepts supported UW campus locations`() {
+        assertTrue(MapConfig.isWithinSupportedUwCampus(43.4720, -80.5430))
+        assertTrue(MapConfig.isWithinSupportedUwCampus(43.4528, -80.4990))
+        assertTrue(MapConfig.isWithinSupportedUwCampus(43.3586, -80.3169))
+    }
+
+    @Test
+    fun `rejects locations outside supported UW campuses`() {
+        assertFalse(MapConfig.isWithinSupportedUwCampus(43.6532, -79.3832))
+        assertFalse(MapConfig.isWithinSupportedUwCampus(0.0, 0.0))
     }
 }

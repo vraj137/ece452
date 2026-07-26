@@ -13,11 +13,14 @@ class FusedLocationRepository(private val context: Context) : LocationRepository
     @SuppressLint("MissingPermission")
     override suspend fun getLastLocation(): Pair<Double, Double>? {
         val last = runCatching { client.lastLocation.await() }.getOrNull()
-        if (last != null) return Pair(last.latitude, last.longitude)
+        last?.takeIf {
+            System.currentTimeMillis() - it.time <= 2 * 60 * 1000 &&
+                it.accuracy <= 200f
+        }?.let { return Pair(it.latitude, it.longitude) }
 
         val cancellation = CancellationTokenSource()
         val fresh = runCatching {
-            client.getCurrentLocation(Priority.PRIORITY_BALANCED_POWER_ACCURACY, cancellation.token).await()
+            client.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cancellation.token).await()
         }.getOrNull()
         return fresh?.let { Pair(it.latitude, it.longitude) }
     }

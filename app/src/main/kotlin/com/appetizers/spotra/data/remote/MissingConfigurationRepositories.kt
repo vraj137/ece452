@@ -40,7 +40,9 @@ class MissingConfigurationHomeRepository : HomeRepository {
     override suspend fun startCheckIn(
         spotId: String,
         mode: StudyMode,
-        groupSessionId: String?
+        groupSessionId: String?,
+        latitude: Double,
+        longitude: Double,
     ): CheckInSession = missingSupabaseConfiguration()
     override suspend fun checkOut(sessionId: String) = missingSupabaseConfiguration()
     override suspend fun inviteToGroup(groupSessionId: String, inviteText: String): GroupMember =
@@ -54,6 +56,8 @@ class MissingConfigurationSpotSubmissionRepository : SpotSubmissionRepository {
 class MissingConfigurationReviewRepository : ReviewRepository {
     override suspend fun reviewsFor(spotSlug: String): List<Review> = missingSupabaseConfiguration()
     override suspend fun submit(draft: ReviewDraft) = missingSupabaseConfiguration()
+    override suspend fun update(reviewId: String, draft: ReviewDraft) = missingSupabaseConfiguration()
+    override suspend fun delete(reviewId: String) = missingSupabaseConfiguration()
     override suspend fun getReviewCount(userId: String): Int = missingSupabaseConfiguration()
     override suspend fun getQualityReviewCount(userId: String): Int = missingSupabaseConfiguration()
 }

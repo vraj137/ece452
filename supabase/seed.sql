@@ -1,0 +1,2 @@
+-- Intentionally empty.
+-- Production-like spot data is maintained by versioned migrations.

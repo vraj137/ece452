@@ -31,9 +31,11 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Send
@@ -104,6 +106,7 @@ import com.appetizers.spotra.domain.model.CheckedInStudent
 import com.appetizers.spotra.domain.model.GroupMember
 import com.appetizers.spotra.domain.model.GroupStudySession
 import com.appetizers.spotra.domain.model.GroupVisibility
+import com.appetizers.spotra.domain.model.Review
 import com.appetizers.spotra.domain.model.SpotFeature
 import com.appetizers.spotra.domain.model.SpotFeatureType
 import com.appetizers.spotra.domain.model.StudyMode
@@ -172,18 +175,29 @@ fun HomeScreen(
     )
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) viewModel.updateUserLocation()
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        if (
+            permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        ) {
+            viewModel.updateUserLocation()
+        }
     }
     LaunchedEffect(Unit) {
-        locationPermissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+        locationPermissionLauncher.launch(
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+            )
+        )
     }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val accent = if (state.selectedMode == StudyMode.Solo) SoloBlue else GroupGreen
 
     var viewingSpotId by remember { mutableStateOf<String?>(null) }
     var reviewingSpotId by remember { mutableStateOf<String?>(null) }
+    var editingReview by remember { mutableStateOf<Review?>(null) }
     var showSubmitSpot by remember { mutableStateOf(false) }
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -243,7 +257,11 @@ fun HomeScreen(
             spotName = state.mapSpots.firstOrNull { it.id == slug }?.name ?: "this spot",
             spotSlug = slug,
             reviewRepository = reviewRepository,
-            onBack = { reviewingSpotId = null }
+            existingReview = editingReview,
+            onBack = {
+                reviewingSpotId = null
+                editingReview = null
+            }
         )
         return
     }
@@ -277,7 +295,14 @@ fun HomeScreen(
                 homeRepository = homeRepository,
                 reviewRepository = reviewRepository,
                 friendRepository = friendRepository,
-                onReview = { reviewingSpotId = spotId },
+                onReview = {
+                    editingReview = null
+                    reviewingSpotId = spotId
+                },
+                onEditReview = { review ->
+                    editingReview = review
+                    reviewingSpotId = spotId
+                },
                 activeCheckInSpotId = activeCheckIn?.spot?.id,
                 onEndSession = {
                     viewModel.checkOut()
@@ -425,19 +450,20 @@ fun HomeScreen(
     }
 
     val filteredMapSpots = remember(
-        state.mapSpots, state.noiseFilter, state.spaceTypeFilter,
+        state.mapSpots, state.noiseFilter, state.lightingFilter, state.wifiFilter, state.spaceTypeFilter,
         state.amenityFilter, state.occupancyFilter
     ) {
-        state.mapSpots.filter { spot ->
-            (state.noiseFilter == null || spot.noiseLevel?.equals(state.noiseFilter, ignoreCase = true) == true) &&
-            (state.spaceTypeFilter == null ||
-                (state.spaceTypeFilter == StudyMode.Solo && spot.soloFriendly) ||
-                (state.spaceTypeFilter == StudyMode.Group && spot.groupFriendly)) &&
-            (state.amenityFilter == null ||
-                spot.amenities.any { it.contains(state.amenityFilter!!, ignoreCase = true) }) &&
-            (state.occupancyFilter == null ||
-                spot.occupancyPercent == null || spot.occupancyPercent <= state.occupancyFilter!!)
-        }
+        filterStudySpots(
+            spots = state.mapSpots,
+            filters = SpotFilters(
+                noise = state.noiseFilter,
+                lighting = state.lightingFilter,
+                wifi = state.wifiFilter,
+                spaceType = state.spaceTypeFilter,
+                amenity = state.amenityFilter,
+                maximumOccupancyPercent = state.occupancyFilter,
+            )
+        )
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -452,6 +478,8 @@ fun HomeScreen(
                     accent = accent,
                     isRefreshing = state.isRefreshing,
                     noiseFilter = state.noiseFilter,
+                    lightingFilter = state.lightingFilter,
+                    wifiFilter = state.wifiFilter,
                     spaceTypeFilter = state.spaceTypeFilter,
                     amenityFilter = state.amenityFilter,
                     occupancyFilter = state.occupancyFilter,
@@ -460,6 +488,8 @@ fun HomeScreen(
                     onSpotSelected = { viewingSpotId = it },
                     onRefresh = viewModel::refresh,
                     onNoiseFilterChange = viewModel::setNoiseFilter,
+                    onLightingFilterChange = viewModel::setLightingFilter,
+                    onWifiFilterChange = viewModel::setWifiFilter,
                     onSpaceTypeFilterChange = viewModel::setSpaceTypeFilter,
                     onAmenityFilterChange = viewModel::setAmenityFilter,
                     onOccupancyFilterChange = viewModel::setOccupancyFilter,
@@ -557,6 +587,8 @@ private fun MapTabContent(
     accent: Color,
     isRefreshing: Boolean,
     noiseFilter: String?,
+    lightingFilter: String?,
+    wifiFilter: String?,
     spaceTypeFilter: StudyMode?,
     amenityFilter: String?,
     occupancyFilter: Int?,
@@ -565,11 +597,13 @@ private fun MapTabContent(
     onSpotSelected: (String) -> Unit,
     onRefresh: () -> Unit,
     onNoiseFilterChange: (String?) -> Unit,
+    onLightingFilterChange: (String?) -> Unit,
+    onWifiFilterChange: (String?) -> Unit,
     onSpaceTypeFilterChange: (StudyMode?) -> Unit,
     onAmenityFilterChange: (String?) -> Unit,
     onOccupancyFilterChange: (Int?) -> Unit,
 ) {
-    var showNoiseFilter by remember { mutableStateOf(false) }
+    var showFilters by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -581,8 +615,15 @@ private fun MapTabContent(
             selectedMode = selectedMode,
             accent = accent,
             onModeSelected = onModeSelected,
-            noiseFilter = noiseFilter,
-            onNoiseFilterClick = { showNoiseFilter = true },
+            activeFilterCount = listOf(
+                noiseFilter,
+                lightingFilter,
+                wifiFilter,
+                spaceTypeFilter,
+                amenityFilter,
+                occupancyFilter,
+            ).count { it != null },
+            onFilterClick = { showFilters = true },
         )
         CampusMap(
             spots = mapSpots,
@@ -607,15 +648,30 @@ private fun MapTabContent(
         Spacer(Modifier.height(12.dp))
     }
 
-    if (showNoiseFilter) {
-        NoiseFilterSheet(
-            selected = noiseFilter,
+    if (showFilters) {
+        SpotFiltersSheet(
+            noise = noiseFilter,
+            lighting = lightingFilter,
+            wifi = wifiFilter,
+            spaceType = spaceTypeFilter,
+            amenity = amenityFilter,
+            occupancy = occupancyFilter,
             accent = accent,
-            onSelect = {
-                onNoiseFilterChange(it)
-                showNoiseFilter = false
+            onNoiseSelect = onNoiseFilterChange,
+            onLightingSelect = onLightingFilterChange,
+            onWifiSelect = onWifiFilterChange,
+            onSpaceTypeSelect = onSpaceTypeFilterChange,
+            onAmenitySelect = onAmenityFilterChange,
+            onOccupancySelect = onOccupancyFilterChange,
+            onClear = {
+                onNoiseFilterChange(null)
+                onLightingFilterChange(null)
+                onWifiFilterChange(null)
+                onSpaceTypeFilterChange(null)
+                onAmenityFilterChange(null)
+                onOccupancyFilterChange(null)
             },
-            onDismiss = { showNoiseFilter = false }
+            onDismiss = { showFilters = false }
         )
     }
 }
@@ -2584,8 +2640,8 @@ private fun HomeHeader(
     selectedMode: StudyMode,
     accent: Color,
     onModeSelected: (StudyMode) -> Unit,
-    noiseFilter: String? = null,
-    onNoiseFilterClick: () -> Unit,
+    activeFilterCount: Int,
+    onFilterClick: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -2599,10 +2655,10 @@ private fun HomeHeader(
         Spacer(Modifier.height(12.dp))
         ModeSwitcher(selectedMode = selectedMode, accent = accent, onModeSelected = onModeSelected)
         Spacer(Modifier.height(10.dp))
-        NoiseFilterControl(
-            selected = noiseFilter,
+        FilterControl(
+            activeFilterCount = activeFilterCount,
             accent = accent,
-            onClick = onNoiseFilterClick
+            onClick = onFilterClick
         )
     }
 }
@@ -2622,11 +2678,13 @@ private fun HomeBrandHeader(
 }
 
 private val NOISE_FILTER_OPTIONS = listOf("Silent", "Low", "Moderate", "Lively")
+private val LIGHTING_FILTER_OPTIONS = listOf("Poor", "Good", "Bright", "Natural")
+private val WIFI_FILTER_OPTIONS = listOf("Poor", "OK", "Good", "Fast")
 private val AMENITY_OPTIONS = listOf("Wi-Fi", "Outlets", "Whiteboard", "Accessible")
 private val OCCUPANCY_OPTIONS = listOf(50 to "< 50% full", 75 to "< 75% full")
 
 @Composable
-private fun NoiseFilterControl(selected: String?, accent: Color, onClick: () -> Unit) {
+private fun FilterControl(activeFilterCount: Int, accent: Color, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -2636,7 +2694,7 @@ private fun NoiseFilterControl(selected: String?, accent: Color, onClick: () -> 
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp)
             .semantics(mergeDescendants = true) {
-                contentDescription = "Noise level, ${selected ?: "Any noise"}"
+                contentDescription = if (activeFilterCount == 0) "Filters, none active" else "Filters, $activeFilterCount active"
             },
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -2648,14 +2706,14 @@ private fun NoiseFilterControl(selected: String?, accent: Color, onClick: () -> 
         )
         Spacer(Modifier.width(10.dp))
         Text(
-            text = "Noise level",
+            text = "Filters",
             color = Ink,
             fontSize = 15.sp,
             fontWeight = FontWeight.SemiBold
         )
         Spacer(Modifier.weight(1f))
         Text(
-            text = selected ?: "Any noise",
+            text = if (activeFilterCount == 0) "All spots" else "$activeFilterCount active",
             color = accent,
             fontSize = 15.sp,
             fontWeight = FontWeight.Bold
@@ -2667,6 +2725,113 @@ private fun NoiseFilterControl(selected: String?, accent: Color, onClick: () -> 
             tint = Ink,
             modifier = Modifier.size(22.dp)
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SpotFiltersSheet(
+    noise: String?,
+    lighting: String?,
+    wifi: String?,
+    spaceType: StudyMode?,
+    amenity: String?,
+    occupancy: Int?,
+    accent: Color,
+    onNoiseSelect: (String?) -> Unit,
+    onLightingSelect: (String?) -> Unit,
+    onWifiSelect: (String?) -> Unit,
+    onSpaceTypeSelect: (StudyMode?) -> Unit,
+    onAmenitySelect: (String?) -> Unit,
+    onOccupancySelect: (Int?) -> Unit,
+    onClear: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = Color.White,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(start = 24.dp, end = 24.dp, bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "Filter study spots",
+                    color = Ink,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = "Clear all",
+                    color = accent,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clickable(onClick = onClear),
+                )
+            }
+            FilterSection("Noise") {
+                NoiseFilterChips(noise, accent, onNoiseSelect)
+            }
+            FilterSection("Lighting") {
+                StringFilterChips("Any lighting", LIGHTING_FILTER_OPTIONS, lighting, accent, onLightingSelect)
+            }
+            FilterSection("Wi-Fi") {
+                StringFilterChips("Any Wi-Fi", WIFI_FILTER_OPTIONS, wifi, accent, onWifiSelect)
+            }
+            FilterSection("Space type") {
+                SpaceTypeFilterChips(spaceType, accent, onSpaceTypeSelect)
+            }
+            FilterSection("Amenity") {
+                AmenityFilterChips(amenity, accent, onAmenitySelect)
+            }
+            FilterSection("Occupancy") {
+                OccupancyFilterChips(occupancy, accent, onOccupancySelect)
+            }
+            Button(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = accent),
+                shape = RoundedCornerShape(14.dp),
+            ) {
+                Text("Show results", fontWeight = FontWeight.ExtraBold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun FilterSection(label: String, content: @Composable () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Text(label, color = Ink, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold)
+        content()
+    }
+}
+
+@Composable
+private fun StringFilterChips(
+    allLabel: String,
+    options: List<String>,
+    selected: String?,
+    accent: Color,
+    onSelect: (String?) -> Unit,
+) {
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(end = 4.dp),
+    ) {
+        item {
+            FilterChip(allLabel, selected == null, accent) { onSelect(null) }
+        }
+        items(options) { option ->
+            FilterChip(option, selected == option, accent) {
+                onSelect(if (selected == option) null else option)
+            }
+        }
     }
 }
 
@@ -2983,7 +3148,7 @@ private fun CampusMap(
                     ViewAnnotation(options = options) {
                         MapPin(
                             label = spot.name,
-                            color = if (spot.id == selectedSpotId) accent else GroupGreen,
+                            color = occupancyPinColor(spot),
                             selected = spot.id == selectedSpotId,
                             contentDescription = "${spot.name}, occupancy ${spot.badge}",
                             modifier = Modifier.clickable(
@@ -3627,7 +3792,7 @@ private fun SocialUser.toSocialPerson(detail: String) = SocialPerson(
 )
 
 private fun occupancyPinColor(spot: StudySpotSummary): Color =
-    occupancyPinColorFromPercent(spot.occupancyPercent ?: 0)
+    spot.occupancyPercent?.let(::occupancyPinColorFromPercent) ?: HeaderMuted
 
 private fun occupancyPinColorFromPercent(percent: Int): Color = when {
     percent >= 75 -> DPAtriumRed
