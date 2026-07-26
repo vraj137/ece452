@@ -31,25 +31,6 @@ data class UserProfile(
     val locationVisibility: String = "hidden",
 )
 
-/** A peer shown in the social directory. Profiles are intentionally limited to
- * name, program, and term; email addresses are never exposed to other users. */
-data class SocialUser(
-    val id: String,
-    val name: String,
-    val program: String,
-    val studyTerm: StudyTerm
-) {
-    val initials: String
-        get() = name.split(" ").filter(String::isNotBlank).take(2)
-            .joinToString("") { it.first().uppercase() }.ifBlank { "?" }
-}
-
-data class SocialSnapshot(
-    val friends: List<SocialUser> = emptyList(),
-    val incomingRequests: List<SocialUser> = emptyList(),
-    val suggestedUsers: List<SocialUser> = emptyList(),
-    val outgoingRequestIds: Set<String> = emptySet()
-)
 enum class BadgeId(val label: String, val description: String) {
     LOGIN_STREAK_2("2-Day Streak", "Opened the app 2 days running"),
     LOGIN_STREAK_5("5-Day Streak", "Opened the app 5 days running"),
