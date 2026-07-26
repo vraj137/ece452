@@ -11,11 +11,8 @@ import com.appetizers.spotra.domain.model.GroupVisibility
 import com.appetizers.spotra.domain.model.HomeSnapshot
 import com.appetizers.spotra.domain.model.Review
 import com.appetizers.spotra.domain.model.ReviewDraft
-import com.appetizers.spotra.domain.model.SocialSnapshot
-import com.appetizers.spotra.domain.model.SocialUser
 import com.appetizers.spotra.domain.model.SpotSubmission
 import com.appetizers.spotra.domain.model.StudyMode
-import com.appetizers.spotra.domain.model.StudyTerm
 import com.appetizers.spotra.domain.model.StudySpotDetail
 import com.appetizers.spotra.domain.model.StudySpotSummary
 import com.appetizers.spotra.domain.model.UserBadge
@@ -28,7 +25,6 @@ import com.appetizers.spotra.domain.repository.BadgeRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.ProfileRepository
 import com.appetizers.spotra.domain.repository.ReviewRepository
-import com.appetizers.spotra.domain.repository.SocialRepository
 import com.appetizers.spotra.domain.repository.SpotSubmissionRepository
 import com.appetizers.spotra.domain.repository.StreakRepository
 import io.github.jan.supabase.SupabaseClient
@@ -96,68 +92,6 @@ class SupabaseProfileRepository(
 
     override suspend fun saveProfile(profile: UserProfile) {
         client.from("profiles").upsert(profile.toDto())
-    }
-}
-
-@Serializable
-private data class FriendRequestDto(
-    val requester_id: String,
-    val recipient_id: String,
-    val status: String
-)
-
-class SupabaseSocialRepository(private val client: SupabaseClient) : SocialRepository {
-    override suspend fun loadSocial(): SocialSnapshot {
-        val userId = requireNotNull(client.auth.currentUserOrNull()?.id) { "Please sign in first." }
-        val me = requireNotNull(client.from("profiles").select { filter { eq("id", userId) } }
-            .decodeSingleOrNull<UserProfileDto>()) { "Complete your profile before using Social." }
-        val studyTerm = me.studyTerm ?: return SocialSnapshot()
-        val peers = client.postgrest.rpc(
-            "safe_profiles",
-            buildJsonObject {
-                put("p_program", me.program)
-                put("p_limit", 50)
-            }
-        ).decodeList<SafeProfileRow>().mapNotNull { profile ->
-            StudyTerm.entries.firstOrNull { it.label == profile.studyTerm }?.let { term ->
-                SocialUser(
-                    profile.id,
-                    "${profile.firstName} ${profile.lastName}",
-                    profile.program,
-                    term,
-                )
-            }
-        }.filter { it.studyTerm == studyTerm }
-        val sent = client.from("friend_requests").select {
-            filter { eq("requester_id", userId) }
-        }.decodeList<FriendRequestDto>()
-        val received = client.from("friend_requests").select {
-            filter { eq("recipient_id", userId) }
-        }.decodeList<FriendRequestDto>()
-        val byId = peers.associateBy { it.id }
-        val acceptedIds = (sent.filter { it.status == "accepted" }.map { it.recipient_id } +
-            received.filter { it.status == "accepted" }.map { it.requester_id }).toSet()
-        val incomingIds = received.filter { it.status == "pending" }.map { it.requester_id }.toSet()
-        val outgoingIds = sent.filter { it.status == "pending" }.map { it.recipient_id }.toSet()
-        return SocialSnapshot(
-            friends = acceptedIds.mapNotNull(byId::get),
-            incomingRequests = incomingIds.mapNotNull(byId::get),
-            suggestedUsers = peers.filter { it.id !in acceptedIds && it.id !in incomingIds && it.id !in outgoingIds },
-            outgoingRequestIds = outgoingIds
-        )
-    }
-
-    override suspend fun sendFriendRequest(recipientId: String) {
-        val userId = requireNotNull(client.auth.currentUserOrNull()?.id) { "Please sign in first." }
-        require(userId != recipientId) { "You cannot add yourself." }
-        client.from("friend_requests").insert(FriendRequestDto(userId, recipientId, "pending"))
-    }
-
-    override suspend fun acceptFriendRequest(requesterId: String) {
-        val userId = requireNotNull(client.auth.currentUserOrNull()?.id) { "Please sign in first." }
-        client.from("friend_requests").update({ set("status", "accepted") }) {
-            filter { eq("requester_id", requesterId); eq("recipient_id", userId); eq("status", "pending") }
-        }
     }
 }
 

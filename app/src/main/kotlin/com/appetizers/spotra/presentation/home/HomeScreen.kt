@@ -62,7 +62,6 @@ import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -107,8 +106,6 @@ import com.appetizers.spotra.domain.model.GroupMember
 import com.appetizers.spotra.domain.model.GroupStudySession
 import com.appetizers.spotra.domain.model.GroupVisibility
 import com.appetizers.spotra.domain.model.Review
-import com.appetizers.spotra.domain.model.SpotFeature
-import com.appetizers.spotra.domain.model.SpotFeatureType
 import com.appetizers.spotra.domain.model.StudyMode
 import com.appetizers.spotra.domain.model.StudySpotDetail
 import com.appetizers.spotra.domain.model.StudySpotSummary
@@ -116,7 +113,6 @@ import com.appetizers.spotra.domain.repository.AuthRepository
 import com.appetizers.spotra.domain.repository.BadgeRepository
 import com.appetizers.spotra.domain.repository.FriendRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
-import com.appetizers.spotra.domain.model.SocialUser
 import com.appetizers.spotra.domain.repository.ProfileRepository
 import com.appetizers.spotra.domain.repository.StreakRepository
 import com.appetizers.spotra.domain.usecase.AwardBadgesUseCase
@@ -1368,44 +1364,6 @@ private fun GroupSpotCard(spot: StudySpotSummary, onClick: () -> Unit) {
                 Text(hoursLabel, color = BodyText, fontSize = 13.sp, fontWeight = FontWeight.Medium)
             }
         }
-    }
-}
-
-@Composable
-private fun GroupFeatureRows(features: List<SpotFeature>) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        features.chunked(2).forEach { rowFeatures ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                rowFeatures.forEach { feature ->
-                    GroupFeatureChip(feature)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun GroupFeatureChip(feature: SpotFeature) {
-    Row(
-        modifier = Modifier
-            .background(GroupFeatureChipBackground, RoundedCornerShape(14.dp))
-            .padding(horizontal = 10.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            imageVector = iconForFeature(feature.type),
-            contentDescription = null,
-            tint = BodyText,
-            modifier = Modifier.size(16.dp)
-        )
-        Spacer(Modifier.width(5.dp))
-        Text(
-            text = feature.label,
-            color = BodyText,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1
-        )
     }
 }
 
@@ -2871,86 +2829,6 @@ private fun StringFilterChips(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun NoiseFilterSheet(
-    selected: String?,
-    accent: Color,
-    onSelect: (String?) -> Unit,
-    onDismiss: () -> Unit
-) {
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = Color.White
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 24.dp, end = 24.dp, bottom = 32.dp)
-        ) {
-            Text(
-                text = "Noise level",
-                color = Ink,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.ExtraBold
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = "Choose the environment that helps you focus.",
-                color = BodyText,
-                fontSize = 15.sp
-            )
-            Spacer(Modifier.height(18.dp))
-            val choices = listOf<String?>(null) + NOISE_FILTER_OPTIONS
-            choices.forEach { option ->
-                val isSelected = selected == option
-                val label = option ?: "Any noise"
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(54.dp)
-                        .background(
-                            if (isSelected) accent.copy(alpha = 0.10f) else Color.Transparent,
-                            RoundedCornerShape(14.dp)
-                        )
-                        .clickable { onSelect(option) }
-                        .padding(horizontal = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = noiseIcon(label),
-                        contentDescription = null,
-                        tint = if (isSelected) accent else BodyText,
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(Modifier.width(14.dp))
-                    Text(
-                        text = label,
-                        modifier = Modifier.weight(1f),
-                        color = Ink,
-                        fontSize = 17.sp,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                    )
-                    if (isSelected) {
-                        Icon(
-                            imageVector = Icons.Rounded.Check,
-                            contentDescription = "Selected",
-                            tint = accent,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                }
-                Spacer(Modifier.height(4.dp))
-            }
-        }
-    }
-}
-
-private fun noiseIcon(label: String): ImageVector = when (label.lowercase()) {
-    "silent", "quiet" -> Icons.AutoMirrored.Rounded.VolumeOff
-    else -> Icons.AutoMirrored.Rounded.VolumeDown
-}
-
 @Composable
 private fun NoiseFilterChips(selected: String?, accent: Color, onSelect: (String?) -> Unit) {
     LazyRow(
@@ -3038,6 +2916,86 @@ private fun FilterChip(label: String, selected: Boolean, accent: Color, onClick:
         fontWeight = FontWeight.ExtraBold,
         maxLines = 1
     )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NoiseFilterSheet(
+    selected: String?,
+    accent: Color,
+    onSelect: (String?) -> Unit,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = Color.White
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 24.dp, end = 24.dp, bottom = 32.dp)
+        ) {
+            Text(
+                text = "Noise level",
+                color = Ink,
+                fontSize = 24.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "Choose the environment that helps you focus.",
+                color = BodyText,
+                fontSize = 15.sp
+            )
+            Spacer(Modifier.height(18.dp))
+            val choices = listOf<String?>(null) + NOISE_FILTER_OPTIONS
+            choices.forEach { option ->
+                val isSelected = selected == option
+                val label = option ?: "Any noise"
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(54.dp)
+                        .background(
+                            if (isSelected) accent.copy(alpha = 0.10f) else Color.Transparent,
+                            RoundedCornerShape(14.dp)
+                        )
+                        .clickable { onSelect(option) }
+                        .padding(horizontal = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = noiseIcon(label),
+                        contentDescription = null,
+                        tint = if (isSelected) accent else BodyText,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(Modifier.width(14.dp))
+                    Text(
+                        text = label,
+                        modifier = Modifier.weight(1f),
+                        color = Ink,
+                        fontSize = 17.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                    )
+                    if (isSelected) {
+                        Icon(
+                            imageVector = Icons.Rounded.Check,
+                            contentDescription = "Selected",
+                            tint = accent,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+            }
+        }
+    }
+}
+
+private fun noiseIcon(label: String): ImageVector = when (label.lowercase()) {
+    "silent", "quiet" -> Icons.AutoMirrored.Rounded.VolumeOff
+    else -> Icons.AutoMirrored.Rounded.VolumeDown
 }
 
 @Composable
@@ -3821,13 +3779,6 @@ private data class SocialPerson(
     val streakDays: Int? = null,
 )
 
-private fun SocialUser.toSocialPerson(detail: String) = SocialPerson(
-    id = id,
-    initials = initials,
-    name = name,
-    detail = detail
-)
-
 private fun occupancyPinColor(spot: StudySpotSummary): Color =
     spot.occupancyPercent?.let(::occupancyPinColorFromPercent) ?: HeaderMuted
 
@@ -3835,23 +3786,6 @@ private fun occupancyPinColorFromPercent(percent: Int): Color = when {
     percent >= 75 -> DPAtriumRed
     percent >= 50 -> SLCOrange
     else -> LibraryGreen
-}
-
-private fun iconForFeature(type: SpotFeatureType): ImageVector = when (type) {
-    SpotFeatureType.Seating -> Icons.Rounded.Group
-    SpotFeatureType.Whiteboard -> Icons.Rounded.Check
-    SpotFeatureType.Wifi -> Icons.Rounded.Explore
-    SpotFeatureType.Accessible -> Icons.Rounded.Person
-    SpotFeatureType.Outlets -> Icons.Rounded.Check
-    SpotFeatureType.Noise -> Icons.Rounded.Person
-    SpotFeatureType.Projector -> Icons.Rounded.Map
-    SpotFeatureType.NearbyCafe -> Icons.Rounded.Star
-}
-
-private fun groupSpotIconFor(spot: StudySpotSummary): ImageVector = when {
-    spot.bestFit -> Icons.Rounded.School
-    spot.features.any { it.type == SpotFeatureType.Projector } -> Icons.Rounded.Group
-    else -> Icons.Rounded.Map
 }
 
 private fun Int.asSessionTime(): String {
