@@ -140,6 +140,9 @@ internal fun SpotDetailScreen(
                 .weight(1f),
             contentPadding = PaddingValues(bottom = 32.dp)
         ) {
+            if (detail.photos.isNotEmpty()) {
+                item { SpotPhotoGallery(photos = detail.photos, spotName = detail.name) }
+            }
             item { SpotStatTiles(spot = detail) }
             item { SpotAmenitiesSection(amenities = detail.amenities) }
             detail.bookingUrl?.let { url ->
