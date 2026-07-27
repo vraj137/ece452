@@ -15,11 +15,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -233,116 +235,153 @@ private fun SpotDetailLoadingOrError(message: String?, onBack: () -> Unit) {
 }
 
 @Composable
-private fun SpotDetailHeader(
+internal fun SpotDetailHeader(
     spot: StudySpotDetail,
     friendsStudying: List<FriendProfile>,
     onBack: () -> Unit
 ) {
-    Column(
+    val photos = spot.photos
+    val hasPhotos = photos.isNotEmpty()
+    val pagerState = rememberPagerState(pageCount = { photos.size })
+
+    Box(
         modifier = Modifier
             .fillMaxWidth()
+            .then(if (hasPhotos) Modifier.heightIn(min = 260.dp) else Modifier)
             .background(CheckInHeader)
-            .statusBarsPadding()
-            .padding(start = 22.dp, top = 16.dp, end = 22.dp, bottom = 24.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
+        if (hasPhotos) {
+            SpotPhotoBackdrop(
+                photos = photos,
+                spotName = spot.name,
+                pagerState = pagerState,
+                modifier = Modifier.matchParentSize()
+            )
+            // Pinned to the top so the arrow never floats in the middle of a tall photo.
+            HeaderBackButton(
+                onBack = onBack,
                 modifier = Modifier
-                    .size(44.dp)
-                    .background(HeaderButton, RoundedCornerShape(12.dp))
-                    .clickable(onClick = onBack),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                    contentDescription = "Back",
-                    tint = Color.White,
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-            Spacer(Modifier.size(44.dp))
+                    .align(Alignment.TopStart)
+                    .statusBarsPadding()
+                    .padding(start = 22.dp, top = 16.dp)
+            )
         }
 
-        Spacer(Modifier.height(18.dp))
-
-        Text(
-            text = spot.name,
-            color = Color.White,
-            fontSize = 28.sp,
-            fontWeight = FontWeight.ExtraBold,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
-        )
-
-        Spacer(Modifier.height(4.dp))
-
-        val locationLabel = listOfNotNull(
-            spot.building,
-            spot.floor,
-            spot.distanceMeters?.let { "${it}m away" }
-        ).filter { it.isNotBlank() }.joinToString(" · ")
-
-        Text(
-            text = locationLabel,
-            color = HeaderSecondary,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Medium,
-            maxLines = 2
-        )
-
-        if (spot.isLive) {
-            Spacer(Modifier.height(10.dp))
-            Row(
-                modifier = Modifier.semantics(mergeDescendants = true) {},
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(Modifier.size(9.dp).background(CheckedInDot, CircleShape))
-                Spacer(Modifier.width(7.dp))
-                Text(
-                    text = "${spot.peopleHere} ${if (spot.peopleHere == 1) "person" else "people"} checked in now",
-                    color = CheckedInText,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.BottomStart)
+                // With a photo the image runs full-bleed behind the status bar and the back
+                // button layer above carries the inset instead.
+                .then(if (hasPhotos) Modifier else Modifier.statusBarsPadding())
+                .padding(start = 22.dp, top = 16.dp, end = 22.dp, bottom = 24.dp)
+        ) {
+            if (!hasPhotos) {
+                HeaderBackButton(onBack = onBack)
+                Spacer(Modifier.height(18.dp))
             }
-        }
 
-        if (friendsStudying.isNotEmpty()) {
-            Spacer(Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Row(horizontalArrangement = Arrangement.spacedBy((-6).dp)) {
-                    friendsStudying.take(3).forEach { friend ->
-                        Box(
-                            modifier = Modifier
-                                .size(30.dp)
-                                .background(avatarColorFor(friend.id), CircleShape)
-                                .border(2.dp, CheckInHeader, CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = friend.initials,
-                                color = Color.White,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.ExtraBold
-                            )
+            Text(
+                text = spot.name,
+                color = Color.White,
+                fontSize = 28.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            Spacer(Modifier.height(4.dp))
+
+            val locationLabel = listOfNotNull(
+                spot.building,
+                spot.floor,
+                spot.distanceMeters?.let { "${it}m away" }
+            ).filter { it.isNotBlank() }.joinToString(" · ")
+
+            Text(
+                text = locationLabel,
+                color = HeaderSecondary,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 2
+            )
+
+            if (spot.isLive) {
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.semantics(mergeDescendants = true) {},
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(Modifier.size(9.dp).background(CheckedInDot, CircleShape))
+                    Spacer(Modifier.width(7.dp))
+                    Text(
+                        text = "${spot.peopleHere} ${if (spot.peopleHere == 1) "person" else "people"} checked in now",
+                        color = CheckedInText,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+
+            if (friendsStudying.isNotEmpty()) {
+                Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(horizontalArrangement = Arrangement.spacedBy((-6).dp)) {
+                        friendsStudying.take(3).forEach { friend ->
+                            Box(
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .background(avatarColorFor(friend.id), CircleShape)
+                                    .border(2.dp, CheckInHeader, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = friend.initials,
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            }
                         }
                     }
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        text = friendsStudying.friendStatusLabel(),
+                        color = HeaderSecondary,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
-                Spacer(Modifier.width(10.dp))
-                Text(
-                    text = friendsStudying.friendStatusLabel(),
-                    color = HeaderSecondary,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+            }
+
+            if (photos.size > 1) {
+                Spacer(Modifier.height(14.dp))
+                SpotPhotoDots(
+                    count = photos.size,
+                    selectedIndex = pagerState.currentPage
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun HeaderBackButton(onBack: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(44.dp)
+            .background(HeaderButton, RoundedCornerShape(12.dp))
+            .clickable(onClick = onBack),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+            contentDescription = "Back",
+            tint = Color.White,
+            modifier = Modifier.size(22.dp)
+        )
     }
 }
 

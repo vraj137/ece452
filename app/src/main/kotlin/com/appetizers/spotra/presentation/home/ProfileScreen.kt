@@ -187,6 +187,20 @@ class ProfileViewModel(
         }
     }
 
+    /**
+     * Friends are otherwise loaded once in [init], so accepting a request or unfriending someone
+     * over in Social would leave this screen's avatar row stale until the app restarted.
+     */
+    fun refreshFriends() {
+        val repository = friendRepository ?: return
+        viewModelScope.launch {
+            val friends = runCatching { repository.fetchFriendProfiles() }
+                .getOrDefault(emptyList())
+                .filter { it.isAccepted }
+            _state.value = _state.value.copy(friends = friends)
+        }
+    }
+
     fun setLocationVisibility(visibility: LocationVisibility) {
         val updatedProfile = _state.value.profile?.copy(
             locationVisibility = visibility.name.lowercase()
@@ -294,7 +308,10 @@ internal fun ProfileTabContent(
         factory = ProfileViewModel.Factory(profileRepository, authRepository, friendRepository, badgeRepository)
     )
     val state by vm.state.collectAsStateWithLifecycle()
-    LaunchedEffect(Unit) { vm.refreshBadges() }
+    LaunchedEffect(Unit) {
+        vm.refreshBadges()
+        vm.refreshFriends()
+    }
     var showSettings by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState()
 

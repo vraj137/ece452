@@ -10,5 +10,13 @@ interface FriendRepository {
     suspend fun sendRequest(toUserId: String)
     suspend fun acceptRequest(friendshipId: String)
     suspend fun declineRequest(friendshipId: String)
+
+    /**
+     * Deletes the friendship row outright, which covers both unfriending an accepted friend and
+     * cancelling a request you sent. Deleting (rather than marking declined) is what allows the
+     * two users to connect again later.
+     */
+    suspend fun removeFriendship(friendshipId: String)
+
     suspend fun fetchFriendsAtSpot(spotSlug: String): List<FriendProfile>
 }

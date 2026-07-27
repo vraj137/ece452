@@ -11,6 +11,7 @@ import com.appetizers.spotra.domain.model.GroupVisibility
 import com.appetizers.spotra.domain.model.HomeSnapshot
 import com.appetizers.spotra.domain.model.Review
 import com.appetizers.spotra.domain.model.ReviewDraft
+import com.appetizers.spotra.domain.model.SpotPhoto
 import com.appetizers.spotra.domain.model.SpotSubmission
 import com.appetizers.spotra.domain.model.StudyMode
 import com.appetizers.spotra.domain.model.StudySpotDetail
@@ -27,6 +28,7 @@ import com.appetizers.spotra.domain.repository.ProfileRepository
 import com.appetizers.spotra.domain.repository.ReviewRepository
 import com.appetizers.spotra.domain.repository.SpotSubmissionRepository
 import com.appetizers.spotra.domain.repository.StreakRepository
+import com.appetizers.spotra.domain.usecase.SpotReviewAggregator
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.OtpType
 import io.github.jan.supabase.auth.auth
@@ -194,6 +196,24 @@ private data class TrendingRow(
 )
 
 @Serializable
+private data class SpotPhotoRow(
+    @SerialName("spot_slug") val spotSlug: String,
+    val url: String,
+    val caption: String? = null,
+    @SerialName("sort_order") val sortOrder: Int = 0,
+)
+
+@Serializable
+private data class SpotReviewStatsRow(
+    @SerialName("spot_slug") val spotSlug: String,
+    @SerialName("average_rating") val averageRating: Double? = null,
+    @SerialName("review_count") val reviewCount: Int = 0,
+    @SerialName("noise_level") val noiseLevel: String? = null,
+    val lighting: String? = null,
+    @SerialName("wifi_quality") val wifiQuality: String? = null,
+)
+
+@Serializable
 private data class AttendeeProfileRow(
     val id: String,
     @SerialName("first_name") val firstName: String,
@@ -233,6 +253,12 @@ class SupabaseHomeRepository(
         val trendingDeferred = async {
             runCatching { trendingCheckInCounts() }.getOrDefault(emptyMap())
         }
+        val reviewStatsDeferred = async {
+            runCatching { spotReviewStats() }.getOrDefault(emptyMap())
+        }
+        val photosDeferred = async {
+            runCatching { spotPhotosBySlug() }.getOrDefault(emptyMap())
+        }
         val dbSpotsDeferred = async {
             client.from("spots").select().decodeList<SpotDto>()
         }
@@ -251,6 +277,8 @@ class SupabaseHomeRepository(
         cachedFirstName = firstNameDeferred.await()
         val activeCounts = activeCountsDeferred.await()
         val trendingCounts = trendingDeferred.await()
+        val reviewStats = reviewStatsDeferred.await()
+        val photosBySlug = photosDeferred.await()
         val dbSpots = dbSpotsDeferred.await()
         val childCounts = dbSpots.childCountsByParentSlug()
         val parentSpots = dbSpots.filter { it.parentSlug == null }
@@ -258,7 +286,9 @@ class SupabaseHomeRepository(
         val baseSummaries = parentSpots.map { spot ->
             spot.toSummary(
                 activeCount = activeCounts[spot.slug] ?: 0,
-                childCount = childCounts[spot.slug] ?: 0
+                childCount = childCounts[spot.slug] ?: 0,
+                stats = reviewStats[spot.slug],
+                coverPhotoUrl = photosBySlug[spot.slug]?.firstOrNull()?.url
             )
         }
 
@@ -294,13 +324,17 @@ class SupabaseHomeRepository(
         }
         val activeCountsDeferred = async { activeCheckInCounts() }
         val reviewsDeferred = async { reviewRowsForSpot(spotId) }
+        val photosDeferred = async {
+            runCatching { spotPhotosBySlug()[spotId].orEmpty() }.getOrDefault(emptyList())
+        }
 
         val activeCount = activeCountsDeferred.await()[spotId] ?: 0
         val reviews = reviewsDeferred.await()
+        val photos = photosDeferred.await()
         val dbSpot = spotDeferred.await()
 
         requireNotNull(dbSpot) { "Study spot not found in Supabase: $spotId" }
-            .toDetail(activeCount, reviews)
+            .toDetail(activeCount, reviews, photos)
     }
 
     override suspend fun childSpots(parentSpotId: String): List<StudySpotDetail> = coroutineScope {
@@ -310,16 +344,21 @@ class SupabaseHomeRepository(
                 .decodeList<SpotDto>()
         }
         val activeCountsDeferred = async { activeCheckInCounts() }
+        val photosDeferred = async {
+            runCatching { spotPhotosBySlug() }.getOrDefault(emptyMap())
+        }
 
         val children = childrenDeferred.await()
         val activeCounts = activeCountsDeferred.await()
+        val photosBySlug = photosDeferred.await()
 
         children
             .sortedWith(compareBy<SpotDto> { it.floor.orEmpty() }.thenBy { it.name })
             .map { spot ->
                 spot.toDetail(
                     activeCount = activeCounts[spot.slug] ?: 0,
-                    reviews = emptyList()
+                    reviews = emptyList(),
+                    photos = photosBySlug[spot.slug].orEmpty()
                 )
             }
     }
@@ -646,6 +685,18 @@ class SupabaseHomeRepository(
         client.from("spot_trending").select().decodeList<TrendingRow>()
             .associate { it.spotSlug to it.checkins7d }
 
+    private suspend fun spotReviewStats(): Map<String, SpotReviewStatsRow> =
+        client.from("spot_review_stats").select().decodeList<SpotReviewStatsRow>()
+            .associateBy { it.spotSlug }
+
+    /** All curated photos, grouped by spot and already in cover-first order. */
+    private suspend fun spotPhotosBySlug(): Map<String, List<SpotPhoto>> =
+        client.from("spot_photos")
+            .select { order("sort_order", Order.ASCENDING) }
+            .decodeList<SpotPhotoRow>()
+            .groupBy { it.spotSlug }
+            .mapValues { (_, rows) -> rows.map { SpotPhoto(url = it.url, caption = it.caption) } }
+
     private suspend fun reviewRowsForSpot(spotSlug: String): List<ReviewRow> =
         client.postgrest.rpc(
             "list_spot_reviews",
@@ -654,10 +705,11 @@ class SupabaseHomeRepository(
 
     private suspend fun dbSpotSummary(spotId: String): StudySpotSummary? {
         val activeCount = activeCheckInCounts()[spotId] ?: 0
+        val stats = runCatching { spotReviewStats()[spotId] }.getOrNull()
         return client.from("spots")
             .select { filter { eq("slug", spotId) } }
             .decodeSingleOrNull<SpotDto>()
-            ?.toSummary(activeCount = activeCount, childCount = 0)
+            ?.toSummary(activeCount = activeCount, childCount = 0, stats = stats)
     }
 
     private fun GroupVisibility.toDatabaseValue(): String = when (this) {
@@ -668,34 +720,51 @@ class SupabaseHomeRepository(
     private fun String.toGroupVisibility(): GroupVisibility =
         if (equals("public", ignoreCase = true)) GroupVisibility.Public else GroupVisibility.Private
 
-    private fun SpotDto.toSummary(activeCount: Int, childCount: Int = 0) = StudySpotSummary(
+    /**
+     * [stats] carries the crowdsourced consensus from `spot_review_stats`. Where students have
+     * reported a value it wins; the seeded column on `spots` stays as the fallback so a spot with
+     * no reviews yet still ranks sensibly on the Explore leaderboards.
+     */
+    private fun SpotDto.toSummary(
+        activeCount: Int,
+        childCount: Int = 0,
+        stats: SpotReviewStatsRow? = null,
+        coverPhotoUrl: String? = null,
+    ) = StudySpotSummary(
         id = slug,
         name = name,
         badge = occupancyBadge(activeCount),
         building = building,
         parentSlug = parentSlug,
         childCount = childCount,
+        rating = stats?.averageRating,
+        reviewCount = stats?.reviewCount ?: 0,
+        photoUrl = coverPhotoUrl,
         latitude = latitude,
         longitude = longitude,
         occupancyPercent = liveOccupancyPercent(activeCount, capacity),
         soloFriendly = soloFriendly,
         groupFriendly = groupFriendly,
         amenities = amenities,
-        noiseLevel = noiseLevel,
-        lighting = lighting,
-        wifiQuality = wifiQuality,
+        noiseLevel = stats?.noiseLevel ?: noiseLevel,
+        lighting = stats?.lighting ?: lighting,
+        wifiQuality = stats?.wifiQuality ?: wifiQuality,
         operatingHours = toOperatingHours(),
     )
 
     private fun SpotDto.toDetail(
         activeCount: Int,
-        reviews: List<ReviewRow>
+        reviews: List<ReviewRow>,
+        photos: List<SpotPhoto> = emptyList()
     ): StudySpotDetail {
-        val averageRating = reviews
-            .takeIf { it.isNotEmpty() }
-            ?.map { it.rating }
-            ?.average()
-            ?.roundToSingleDecimal()
+        // Same aggregation the spot_review_stats view applies for the leaderboards, so a spot's
+        // detail screen and its Explore ranking never disagree.
+        val aggregates = SpotReviewAggregator.aggregate(
+            ratings = reviews.map { it.rating },
+            noiseLevels = reviews.map { it.noiseLevel },
+            lightings = reviews.map { it.lighting },
+            wifiQualities = reviews.map { it.wifiQuality },
+        )
         val reportedOccupancyPercent = reviews.firstNotNullOfOrNull { it.occupancyPercent }
         val liveOccupancyPercent = liveOccupancyPercent(activeCount, capacity)
 
@@ -706,11 +775,13 @@ class SupabaseHomeRepository(
             floor = floor,
             badge = occupancyBadge(activeCount),
             parentSlug = parentSlug,
-            rating = averageRating,
+            rating = aggregates.averageRating,
+            reviewCount = aggregates.reviewCount,
+            photos = photos,
             studyContextLabel = studyContextLabel(),
-            noiseLevel = reviews.firstNotNullOfOrNull { it.noiseLevel },
-            lighting = reviews.firstNotNullOfOrNull { it.lighting },
-            wifiQuality = reviews.firstNotNullOfOrNull { it.wifiQuality },
+            noiseLevel = aggregates.noiseLevel ?: noiseLevel,
+            lighting = aggregates.lighting ?: lighting,
+            wifiQuality = aggregates.wifiQuality ?: wifiQuality,
             capacity = capacity,
             occupancyPercent = liveOccupancyPercent ?: reportedOccupancyPercent,
             occupancyPercentIsLive = liveOccupancyPercent != null,
@@ -764,9 +835,6 @@ private fun List<SpotDto>.childCountsByParentSlug(): Map<String, Int> =
     mapNotNull { it.parentSlug }
         .groupingBy { it }
         .eachCount()
-
-private fun Double.roundToSingleDecimal(): Double =
-    kotlin.math.round(this * 10.0) / 10.0
 
 private fun parseLocalTime(value: String): LocalTime? =
     runCatching { LocalTime.parse(value) }.getOrNull()

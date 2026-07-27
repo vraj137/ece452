@@ -75,6 +75,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -102,6 +103,7 @@ import com.appetizers.spotra.BuildConfig
 import com.appetizers.spotra.data.location.LocationRepository
 import com.appetizers.spotra.domain.model.CheckInSession
 import com.appetizers.spotra.domain.model.CheckedInStudent
+import com.appetizers.spotra.domain.model.FriendProfile
 import com.appetizers.spotra.domain.model.GroupMember
 import com.appetizers.spotra.domain.model.GroupStudySession
 import com.appetizers.spotra.domain.model.GroupVisibility
@@ -1543,10 +1545,22 @@ private fun SocialScreen(
 ) {
     val vm: SocialViewModel = viewModel(factory = SocialViewModel.Factory(friendRepository))
     val state by vm.state.collectAsStateWithLifecycle()
+    var pendingRemoval by remember { mutableStateOf<FriendProfile?>(null) }
     LaunchedEffect(selectedTab) {
         if (selectedTab == SocialTab.Discover) {
             vm.loadAll()
         }
+    }
+
+    pendingRemoval?.let { friend ->
+        RemoveFriendSheet(
+            friendName = friend.fullName,
+            onConfirm = {
+                vm.removeFriend(friend)
+                pendingRemoval = null
+            },
+            onDismiss = { pendingRemoval = null }
+        )
     }
 
     Column(
@@ -1601,7 +1615,8 @@ private fun SocialScreen(
                                     ),
                                     actionLabel = "",
                                     actionEnabled = false,
-                                    onAction = {}
+                                    onAction = {},
+                                    onRemove = { pendingRemoval = friend }
                                 )
                             }
                         }
@@ -1639,9 +1654,9 @@ private fun SocialScreen(
                                             name = request.fullName,
                                             detail = request.displayDetail
                                         ),
-                                        actionLabel = "Pending",
-                                        actionEnabled = false,
-                                        onAction = {}
+                                        actionLabel = "Cancel",
+                                        actionEnabled = true,
+                                        onAction = { vm.cancelRequest(request) }
                                     )
                                 }
                             }
@@ -1867,7 +1882,8 @@ private fun SocialPersonRow(
     person: SocialPerson,
     actionLabel: String,
     actionEnabled: Boolean,
-    onAction: () -> Unit
+    onAction: () -> Unit,
+    onRemove: (() -> Unit)? = null
 ) {
     Row(
         modifier = Modifier
@@ -1923,6 +1939,78 @@ private fun SocialPersonRow(
                 fontWeight = FontWeight.ExtraBold,
                 maxLines = 1
             )
+        }
+        // Sits outside the when-block so a friend showing a streak badge still gets the control.
+        if (onRemove != null) {
+            Spacer(Modifier.width(6.dp))
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onRemove)
+                    .semantics {
+                        role = Role.Button
+                        contentDescription = "Remove ${person.name} from your friends"
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Close,
+                    contentDescription = null,
+                    tint = HeaderMuted,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RemoveFriendSheet(
+    friendName: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = Color.White
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 24.dp, end = 24.dp, bottom = 32.dp)
+        ) {
+            Text(
+                text = "Remove $friendName?",
+                color = Ink,
+                fontSize = 24.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "You’ll stop seeing each other’s check-ins and streaks. " +
+                    "Either of you can send a new request later.",
+                color = BodyText,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Spacer(Modifier.height(22.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f).height(50.dp)
+                ) {
+                    Text("Keep")
+                }
+                Button(
+                    onClick = onConfirm,
+                    modifier = Modifier.weight(1.2f).height(50.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = ModerateFitText)
+                ) {
+                    Text(text = "Remove", fontWeight = FontWeight.Bold)
+                }
+            }
         }
     }
 }
@@ -3584,13 +3672,19 @@ private fun StudySpotCard(
             .padding(16.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(54.dp)
-                    .background(CardBackground, RoundedCornerShape(16.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(imageVector = Icons.Rounded.Map, contentDescription = null, tint = accent, modifier = Modifier.size(27.dp))
+            // Spots without a curated photo keep the original map glyph rather than showing an
+            // empty placeholder tile.
+            if (spot.photoUrl != null) {
+                SpotThumbnail(photoUrl = spot.photoUrl, size = 54.dp)
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(54.dp)
+                        .background(CardBackground, RoundedCornerShape(16.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(imageVector = Icons.Rounded.Map, contentDescription = null, tint = accent, modifier = Modifier.size(27.dp))
+                }
             }
             Spacer(Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {

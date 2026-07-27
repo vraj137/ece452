@@ -21,6 +21,15 @@ data class SpotFeature(
     val type: SpotFeatureType
 )
 
+/**
+ * A curated photo of a study spot. [caption] doubles as the image's content description, so it
+ * should read as a description of the space rather than a marketing line.
+ */
+data class SpotPhoto(
+    val url: String,
+    val caption: String? = null
+)
+
 data class StudySpotSummary(
     val id: String,
     val name: String,
@@ -30,6 +39,8 @@ data class StudySpotSummary(
     val childCount: Int = 0,
     val distanceMeters: Int? = null,
     val rating: Double? = null,
+    val reviewCount: Int = 0,
+    val photoUrl: String? = null,
     val studyContextLabel: String? = null,
     val features: List<SpotFeature> = emptyList(),
     val bestFit: Boolean = false,
@@ -56,6 +67,8 @@ data class StudySpotDetail(
     val childCount: Int = 0,
     val distanceMeters: Int? = null,
     val rating: Double? = null,
+    val reviewCount: Int = 0,
+    val photos: List<SpotPhoto> = emptyList(),
     val studyContextLabel: String? = null,
     val noiseLevel: String? = null,
     val lighting: String? = null,
@@ -82,6 +95,8 @@ data class StudySpotDetail(
         childCount = childCount,
         distanceMeters = distanceMeters,
         rating = rating,
+        reviewCount = reviewCount,
+        photoUrl = photos.firstOrNull()?.url,
         studyContextLabel = studyContextLabel,
         features = features,
         bestFit = bestFit,

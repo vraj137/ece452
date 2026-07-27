@@ -86,6 +86,25 @@ class HomeViewModelTest {
     }
 
     @Test
+    fun `review stats and cover photos reach the map spots`() = runTest(dispatcher) {
+        val viewModel = buildViewModel()
+        advanceUntilIdle()
+
+        val spots = viewModel.uiState.value.mapSpots
+        val rated = spots.single { it.id == "e7-study-hall" }
+        assertEquals(4.8, rated.rating!!, 0.0001)
+        assertEquals(12, rated.reviewCount)
+        assertEquals("https://example.test/e7.jpg", rated.photoUrl)
+
+        // A spot nobody has reviewed or photographed stays null rather than defaulting to zero
+        // stars, which is what lets Explore label it "New" instead of ranking it worst.
+        val unrated = spots.single { it.id == "dc-library" }
+        assertNull(unrated.rating)
+        assertEquals(0, unrated.reviewCount)
+        assertNull(unrated.photoUrl)
+    }
+
+    @Test
     fun `live load failure stops loading and exposes retry state`() = runTest(dispatcher) {
         val viewModel = buildViewModel(FailingHomeRepository())
         advanceUntilIdle()
@@ -327,10 +346,14 @@ private class FakeHomeRepository(
         badge = "Quiet",
         distanceMeters = 120,
         rating = 4.8,
+        reviewCount = 12,
+        photoUrl = "https://example.test/e7.jpg",
         studyContextLabel = "Solo-friendly",
         latitude = 43.4732,
         longitude = -80.5388
     )
+
+    /** Deliberately unrated and photo-less: exercises the "no reviews / no photo yet" path. */
     private val secondaryMapSpot = StudySpotSummary(
         id = "dc-library",
         name = "DC Library",
@@ -472,6 +495,7 @@ private class NoOpFriendRepository : FriendRepository {
     override suspend fun sendRequest(toUserId: String) = Unit
     override suspend fun acceptRequest(friendshipId: String) = Unit
     override suspend fun declineRequest(friendshipId: String) = Unit
+    override suspend fun removeFriendship(friendshipId: String) = Unit
     override suspend fun fetchFriendsAtSpot(spotSlug: String): List<FriendProfile> = emptyList()
 }
 
