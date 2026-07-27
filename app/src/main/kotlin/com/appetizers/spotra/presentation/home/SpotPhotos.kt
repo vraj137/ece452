@@ -3,15 +3,12 @@ package com.appetizers.spotra.presentation.home
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Image
@@ -20,6 +17,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -29,49 +28,73 @@ import coil.compose.SubcomposeAsyncImage
 import com.appetizers.spotra.domain.model.SpotPhoto
 
 /**
- * Curated photos of a study spot.
+ * A spot's photos as a swipeable backdrop for the detail header.
  *
- * Photos are supplementary: everything they convey about a spot (how busy, how bright, how loud)
- * is also stated in text elsewhere on the screen, so a screen-reader user loses nothing by
- * skipping them. Renders nothing at all when a spot has no photos rather than leaving an empty
- * frame behind.
+ * The scrim is not decorative: the spot name renders as 28sp white text on top of whatever the
+ * photo happens to be, and an unscrimmed shot of a bright window would swallow it. The gradient
+ * leaves the top of the image legible and lands on essentially the same navy the header used
+ * before photos existed.
+ *
+ * Each page carries its own content description including position, so a screen-reader user gets
+ * what the dots convey visually.
  */
 @Composable
-internal fun SpotPhotoGallery(
+internal fun SpotPhotoBackdrop(
     photos: List<SpotPhoto>,
     spotName: String,
+    pagerState: PagerState,
     modifier: Modifier = Modifier,
 ) {
-    if (photos.isEmpty()) return
-
-    if (photos.size == 1) {
-        SpotPhotoImage(
-            photo = photos.first(),
-            spotName = spotName,
-            modifier = modifier
-                .fillMaxWidth()
-                .padding(horizontal = 22.dp, vertical = 16.dp)
-                .height(180.dp)
-                .clip(RoundedCornerShape(18.dp))
-        )
-        return
-    }
-
-    LazyRow(
-        modifier = modifier.fillMaxWidth().padding(vertical = 16.dp),
-        contentPadding = PaddingValues(horizontal = 22.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        itemsIndexed(photos) { index, photo ->
+    Box(modifier = modifier.background(CheckInHeader)) {
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize()
+        ) { page ->
             SpotPhotoImage(
-                photo = photo,
+                photo = photos[page],
                 spotName = spotName,
-                position = index + 1,
+                position = page + 1,
                 total = photos.size,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color.Transparent,
+                        0.5f to CheckInHeader.copy(alpha = 0.55f),
+                        1f to CheckInHeader.copy(alpha = 0.92f)
+                    )
+                )
+        )
+    }
+}
+
+/**
+ * Page position for the photo backdrop. Purely visual, and silent to a screen reader by
+ * construction: these are bare unlabelled boxes, and the pager page itself already announces
+ * "(2 of 3)", so repeating it here would just be noise.
+ */
+@Composable
+internal fun SpotPhotoDots(
+    count: Int,
+    selectedIndex: Int,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        repeat(count) { index ->
+            Box(
                 modifier = Modifier
-                    .width(268.dp)
-                    .height(180.dp)
-                    .clip(RoundedCornerShape(18.dp))
+                    .size(7.dp)
+                    .background(
+                        color = if (index == selectedIndex) Color.White else Color.White.copy(alpha = 0.4f),
+                        shape = CircleShape
+                    )
             )
         }
     }

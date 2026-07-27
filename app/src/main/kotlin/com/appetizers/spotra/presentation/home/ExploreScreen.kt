@@ -260,9 +260,7 @@ private fun LeaderboardSpotCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             RankBadge(rank = rank, accent = accent)
-            Spacer(Modifier.width(10.dp))
-            SpotThumbnail(photoUrl = spot.photoUrl, size = 48.dp)
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = spot.name,
