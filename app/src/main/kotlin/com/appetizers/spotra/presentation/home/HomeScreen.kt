@@ -193,7 +193,8 @@ fun HomeScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val accent = if (state.selectedMode == StudyMode.Solo) SoloBlue else GroupGreen
 
-    var viewingSpotId by remember { mutableStateOf<String?>(null) }
+    var viewingSpotPath by remember { mutableStateOf<List<String>>(emptyList()) }
+    val viewingSpotId = viewingSpotPath.lastOrNull()
     var reviewingSpotId by remember { mutableStateOf<String?>(null) }
     var editingReview by remember { mutableStateOf<Review?>(null) }
     var showSubmitSpot by remember { mutableStateOf(false) }
@@ -271,9 +272,9 @@ fun HomeScreen(
                 parentSpot = parentSpot,
                 homeRepository = homeRepository,
                 accent = accent,
-                onBack = { viewingSpotId = null },
+                onBack = { viewingSpotPath = previousSpotPath(viewingSpotPath) },
                 onSpaceSelected = { child ->
-                    viewingSpotId = child.id
+                    viewingSpotPath = childSpotPath(viewingSpotPath, child.id)
                 }
             )
             return
@@ -283,10 +284,10 @@ fun HomeScreen(
             SpotDetailScreen(
                 spotId = spotId,
                 accent = accent,
-                onBack = { viewingSpotId = null },
+                onBack = { viewingSpotPath = previousSpotPath(viewingSpotPath) },
                 onCheckIn = { spot ->
                     viewModel.startCheckIn(spot, state.selectedMode) {
-                        viewingSpotId = null
+                        viewingSpotPath = emptyList()
                     }
                 },
                 checkInLabel = if (state.selectedMode == StudyMode.Group) "Join with group" else "Start Session",
@@ -304,7 +305,7 @@ fun HomeScreen(
                 activeCheckInSpotId = activeCheckIn?.spot?.id,
                 onEndSession = {
                     viewModel.checkOut()
-                    viewingSpotId = null
+                    viewingSpotPath = emptyList()
                 }
             )
             SnackbarHost(
@@ -362,7 +363,7 @@ fun HomeScreen(
                     onBack = viewModel::returnToSoloMap,
                     selectedSection = state.selectedSection,
                     onSectionSelected = viewModel::selectSection,
-                    onSpotSelected = { spot -> viewingSpotId = spot.id }
+                    onSpotSelected = { spot -> viewingSpotPath = rootSpotPath(spot.id) }
                 )
             }
             SnackbarHost(
@@ -379,7 +380,7 @@ fun HomeScreen(
                 accent = accent,
                 spots = state.mapSpots,
                 trendingCounts = state.trendingCounts,
-                onSpotSelected = { viewingSpotId = it },
+                onSpotSelected = { viewingSpotPath = rootSpotPath(it) },
                 onSuggestSpot = { showSubmitSpot = true },
                 modifier = Modifier.weight(1f)
             )
@@ -483,7 +484,7 @@ fun HomeScreen(
                     occupancyFilter = state.occupancyFilter,
                     onModeSelected = viewModel::selectMode,
                     onMapSpotSelected = viewModel::selectMapSpot,
-                    onSpotSelected = { viewingSpotId = it },
+                    onSpotSelected = { viewingSpotPath = rootSpotPath(it) },
                     onRefresh = viewModel::refresh,
                     onNoiseFilterChange = viewModel::setNoiseFilter,
                     onLightingFilterChange = viewModel::setLightingFilter,
@@ -3445,6 +3446,8 @@ private fun BuildingSpacesScreen(
     var isLoading by remember(parentSpot.id) { mutableStateOf(true) }
     var error by remember(parentSpot.id) { mutableStateOf<String?>(null) }
 
+    BackHandler(onBack = onBack)
+
     LaunchedEffect(parentSpot.id) {
         isLoading = true
         error = null
@@ -3468,8 +3471,8 @@ private fun BuildingSpacesScreen(
         ) {
             Box(
                 modifier = Modifier
-                    .size(44.dp)
-                    .background(HomeBackground, RoundedCornerShape(12.dp))
+                    .size(48.dp)
+                    .background(HomeBackground, RoundedCornerShape(14.dp))
                     .clickable(onClick = onBack),
                 contentAlignment = Alignment.Center
             ) {
