@@ -238,7 +238,7 @@ class HomeViewModel(
     ) {
         val spotId = uiState.value.pendingReviewSpotId ?: return
         if (rating !in 1..5 || uiState.value.isReviewSubmitting) return
-        val checkoutBadge = uiState.value.pendingCheckoutBadge
+        val checkoutBadge = pendingCheckoutBadge
         viewModelScope.launch {
             _uiState.update { it.copy(isReviewSubmitting = true, error = null) }
             val qualityScore = ReviewQualityScorer.score(comment)
@@ -273,7 +273,6 @@ class HomeViewModel(
                             showReviewPrompt = false,
                             pendingReviewSpotId = null,
                             pendingReviewSpotName = null,
-                            pendingCheckoutBadge = null,
                             isReviewSubmitting = false,
                             newBadge = reviewBadge ?: checkoutBadge,
                         )
@@ -302,7 +301,6 @@ class HomeViewModel(
                 showReviewPrompt = false,
                 pendingReviewSpotId = null,
                 pendingReviewSpotName = null,
-                pendingCheckoutBadge = null,
                 isReviewSubmitting = false,
                 newBadge = checkoutBadge,
             )

@@ -1625,10 +1625,7 @@ private fun SocialScreen(
                         item { StudyStreakCard(streakCount = loginStreak) }
                     }
                     SocialTab.Requests -> {
-                        val badge = state.
-                      
-                      
-                      gRequests.size
+                        val badge = state.incomingRequests.size
                         if (state.incomingRequests.isEmpty() && state.outgoingRequests.isEmpty()) {
                             item {
                                 Text(

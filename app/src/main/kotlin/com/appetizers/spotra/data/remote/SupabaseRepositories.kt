@@ -54,6 +54,8 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneOffset
 
+private fun Double.roundToSingleDecimal(): Double = (this * 10).roundToInt() / 10.0
+
 class SupabaseAuthRepository(
     private val client: SupabaseClient
 ) : AuthRepository {
