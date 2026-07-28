@@ -3,19 +3,23 @@ package com.appetizers.spotra.presentation.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.appetizers.spotra.data.location.LocationRepository
 import com.appetizers.spotra.domain.model.BadgeId
 import com.appetizers.spotra.domain.model.CheckInSession
 import com.appetizers.spotra.domain.model.CompletedSession
 import com.appetizers.spotra.domain.model.GroupStudySession
+import com.appetizers.spotra.domain.model.GroupVisibility
 import com.appetizers.spotra.domain.model.ReviewDraft
 import com.appetizers.spotra.domain.model.StudyMode
 import com.appetizers.spotra.domain.model.StudySpotSummary
 import com.appetizers.spotra.domain.repository.AuthRepository
+import com.appetizers.spotra.domain.repository.FriendRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.ReviewRepository
 import com.appetizers.spotra.domain.repository.StreakRepository
 import com.appetizers.spotra.domain.usecase.AwardBadgesUseCase
 import com.appetizers.spotra.domain.usecase.ReviewQualityScorer
+import com.appetizers.spotra.presentation.toUserMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -32,6 +36,7 @@ data class HomeUiState(
     val soloSpot: StudySpotSummary? = null,
     val groupSession: GroupStudySession? = null,
     val groupSpots: List<StudySpotSummary> = emptyList(),
+    val publicGroups: List<GroupStudySession> = emptyList(),
     val mapSpots: List<StudySpotSummary> = emptyList(),
     val trendingCounts: Map<String, Int> = emptyMap(),
     val selectedSpotId: String? = null,
@@ -40,13 +45,23 @@ data class HomeUiState(
     val showLiveSession: Boolean = false,
     val completedSessions: List<CompletedSession> = emptyList(),
     val requestedBuddyIds: Set<String> = emptySet(),
+    val groupName: String = "",
+    val groupVisibility: GroupVisibility = GroupVisibility.Private,
     val inviteText: String = "",
+    val isGroupActionInProgress: Boolean = false,
     val error: String? = null,
     val newBadge: BadgeId? = null,
     val showReviewPrompt: Boolean = false,
     val pendingReviewSpotId: String? = null,
     val pendingReviewSpotName: String? = null,
+    val isReviewSubmitting: Boolean = false,
     val noiseFilter: String? = null,
+    val lightingFilter: String? = null,
+    val wifiFilter: String? = null,
+    val spaceTypeFilter: StudyMode? = null,
+    val amenityFilter: String? = null,
+    val occupancyFilter: Int? = null,
+    val loadError: String? = null,
 )
 
 enum class HomeSection {
@@ -62,12 +77,17 @@ enum class SocialTab {
     Discover
 }
 
+private const val MIN_GROUP_NAME_LENGTH = 2
+private const val MAX_GROUP_NAME_LENGTH = 50
+
 class HomeViewModel(
     private val repository: HomeRepository,
     private val authRepository: AuthRepository,
     private val streakRepository: StreakRepository,
     private val reviewRepository: ReviewRepository,
     private val awardBadgesUseCase: AwardBadgesUseCase,
+    private val locationRepository: LocationRepository,
+    private val friendRepository: FriendRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
@@ -104,7 +124,11 @@ class HomeViewModel(
         _uiState.update { it.copy(selectedMode = StudyMode.Solo, selectedSection = HomeSection.Map, error = null) }
     }
 
-    fun startCheckIn(spot: StudySpotSummary, mode: StudyMode = uiState.value.selectedMode) {
+    fun startCheckIn(
+        spot: StudySpotSummary,
+        mode: StudyMode = uiState.value.selectedMode,
+        onSuccess: () -> Unit = {}
+    ) {
         val groupSessionId = if (mode == StudyMode.Group) {
             uiState.value.groupSession?.id ?: run {
                 showError("Could not start a group session. Try again.")
@@ -114,7 +138,20 @@ class HomeViewModel(
             null
         }
         viewModelScope.launch {
-            runCatching { repository.startCheckIn(spot.id, mode, groupSessionId) }
+            val location = runCatching { locationRepository.getLastLocation() }.getOrNull()
+            if (location == null) {
+                showError("Turn on location access and try again so Spotra can verify you are at this study spot.")
+                return@launch
+            }
+            runCatching {
+                repository.startCheckIn(
+                    spotId = spot.id,
+                    mode = mode,
+                    groupSessionId = groupSessionId,
+                    latitude = location.first,
+                    longitude = location.second,
+                )
+            }
                 .onSuccess { session ->
                     _uiState.update {
                         it.copy(
@@ -125,9 +162,10 @@ class HomeViewModel(
                             error = null
                         )
                     }
+                    onSuccess()
                 }
                 .onFailure { error ->
-                    showError(error.message ?: "Could not check in. Try again.")
+                    showError(error.toUserMessage("Could not check in. Try again."))
                 }
         }
     }
@@ -185,17 +223,35 @@ class HomeViewModel(
                     onCheckedOut(session)
                 }
                 .onFailure { error ->
-                    showError(error.message ?: "Could not check out. Try again.")
+                    showError(error.toUserMessage("Could not check out. Try again."))
                 }
         }
     }
 
-    fun submitPostCheckoutReview(rating: Int, comment: String?) {
+    fun submitPostCheckoutReview(
+        rating: Int,
+        noiseLevel: String?,
+        lighting: String?,
+        wifiQuality: String?,
+        occupancyPercent: Int?,
+        comment: String?,
+    ) {
         val spotId = uiState.value.pendingReviewSpotId ?: return
-        val checkoutBadge = pendingCheckoutBadge
+        if (rating !in 1..5 || uiState.value.isReviewSubmitting) return
+        val checkoutBadge = uiState.value.pendingCheckoutBadge
         viewModelScope.launch {
+            _uiState.update { it.copy(isReviewSubmitting = true, error = null) }
             val qualityScore = ReviewQualityScorer.score(comment)
-            val draft = ReviewDraft(spotSlug = spotId, rating = rating, comment = comment)
+            val draft = ReviewDraft(
+                spotSlug = spotId,
+                rating = rating,
+                noiseLevel = noiseLevel,
+                lighting = lighting,
+                wifiQuality = wifiQuality,
+                occupancyPercent = occupancyPercent,
+                comment = comment,
+                qualityScore = qualityScore,
+            )
             runCatching { reviewRepository.submit(draft) }
                 .onSuccess {
                     var reviewBadge: BadgeId? = null
@@ -217,17 +273,21 @@ class HomeViewModel(
                             showReviewPrompt = false,
                             pendingReviewSpotId = null,
                             pendingReviewSpotName = null,
+                            pendingCheckoutBadge = null,
+                            isReviewSubmitting = false,
                             newBadge = reviewBadge ?: checkoutBadge,
                         )
                     }
                 }
-                .onFailure {
+                .onFailure { throwable ->
                     _uiState.update {
                         it.copy(
                             showReviewPrompt = false,
                             pendingReviewSpotId = null,
                             pendingReviewSpotName = null,
                             newBadge = checkoutBadge,
+                            isReviewSubmitting = false,
+                            error = throwable.toUserMessage("Could not post your review. Your draft is still here."),
                         )
                     }
                 }
@@ -242,6 +302,8 @@ class HomeViewModel(
                 showReviewPrompt = false,
                 pendingReviewSpotId = null,
                 pendingReviewSpotName = null,
+                pendingCheckoutBadge = null,
+                isReviewSubmitting = false,
                 newBadge = checkoutBadge,
             )
         }
@@ -254,7 +316,7 @@ class HomeViewModel(
     fun sendBuddyRequest(studentId: String) {
         if (studentId in uiState.value.requestedBuddyIds) return
         viewModelScope.launch {
-            runCatching { repository.sendBuddyRequest(studentId) }
+            runCatching { friendRepository.sendRequest(studentId) }
                 .onSuccess {
                     _uiState.update { state ->
                         state.copy(
@@ -264,7 +326,7 @@ class HomeViewModel(
                     }
                 }
                 .onFailure { error ->
-                    showError(error.message ?: "Could not send buddy request.")
+                    showError(error.toUserMessage("Could not send buddy request."))
                 }
         }
     }
@@ -273,16 +335,148 @@ class HomeViewModel(
         _uiState.update { it.copy(noiseFilter = filter, error = null) }
     }
 
+    fun setLightingFilter(filter: String?) {
+        _uiState.update { it.copy(lightingFilter = filter, error = null) }
+    }
+
+    fun setWifiFilter(filter: String?) {
+        _uiState.update { it.copy(wifiFilter = filter, error = null) }
+    }
+
+    fun setSpaceTypeFilter(mode: StudyMode?) {
+        _uiState.update { it.copy(spaceTypeFilter = mode, error = null) }
+    }
+
+    fun setAmenityFilter(amenity: String?) {
+        _uiState.update { it.copy(amenityFilter = amenity, error = null) }
+    }
+
+    fun setOccupancyFilter(maxPercent: Int?) {
+        _uiState.update { it.copy(occupancyFilter = maxPercent, error = null) }
+    }
+
+    fun updateUserLocation() {
+        viewModelScope.launch {
+            val latLng = runCatching { locationRepository.getLastLocation() }.getOrNull()
+            if (latLng != null) {
+                val updatedSpots = _uiState.value.mapSpots.map { spot ->
+                    if (spot.latitude != null && spot.longitude != null) {
+                        spot.copy(distanceMeters = haversineMeters(latLng.first, latLng.second, spot.latitude, spot.longitude))
+                    } else spot
+                }
+                _uiState.update { it.copy(mapSpots = updatedSpots, error = null) }
+            }
+        }
+    }
+
     fun updateInviteText(value: String) {
         _uiState.update { it.copy(inviteText = value, error = null) }
+    }
+
+    fun updateGroupName(value: String) {
+        if (value.length <= MAX_GROUP_NAME_LENGTH) {
+            _uiState.update { it.copy(groupName = value, error = null) }
+        }
+    }
+
+    fun selectGroupVisibility(visibility: GroupVisibility) {
+        if (!uiState.value.isGroupActionInProgress) {
+            _uiState.update { it.copy(groupVisibility = visibility, error = null) }
+        }
+    }
+
+    fun createGroup() {
+        val title = uiState.value.groupName.trim()
+        val visibility = uiState.value.groupVisibility
+        if (title.length < MIN_GROUP_NAME_LENGTH || uiState.value.isGroupActionInProgress) return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isGroupActionInProgress = true, error = null) }
+            runCatching { repository.createGroup(title, visibility) }
+                .onSuccess { session ->
+                    _uiState.update {
+                        it.copy(
+                            groupSession = session,
+                            publicGroups = it.publicGroups.filterNot { group -> group.id == session.id },
+                            groupName = "",
+                            groupVisibility = GroupVisibility.Private,
+                            isGroupActionInProgress = false,
+                            error = null
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update { it.copy(isGroupActionInProgress = false) }
+                    showError(error.toUserMessage("Could not create your group. Try again."))
+                }
+        }
+    }
+
+    fun joinPublicGroup(groupSessionId: String) {
+        if (uiState.value.groupSession != null || uiState.value.isGroupActionInProgress) return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isGroupActionInProgress = true, error = null) }
+            runCatching { repository.joinPublicGroup(groupSessionId) }
+                .onSuccess { session ->
+                    _uiState.update {
+                        it.copy(
+                            groupSession = session,
+                            publicGroups = it.publicGroups.filterNot { group -> group.id == session.id },
+                            isGroupActionInProgress = false,
+                            error = null
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update { it.copy(isGroupActionInProgress = false) }
+                    showError(error.toUserMessage("Could not join this public group. Try again."))
+                }
+        }
+    }
+
+    fun leaveGroup() {
+        val groupSession = uiState.value.groupSession ?: return
+        if (uiState.value.isGroupActionInProgress) return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isGroupActionInProgress = true, error = null) }
+            runCatching { repository.leaveGroup(groupSession.id) }
+                .onSuccess {
+                    _uiState.update { state ->
+                        val publicGroups = if (
+                            groupSession.visibility == GroupVisibility.Public && !groupSession.isOwner
+                        ) {
+                            (state.publicGroups + groupSession.copy(
+                                members = emptyList(),
+                                isOwner = false
+                            )).distinctBy { it.id }
+                        } else {
+                            state.publicGroups.filterNot { it.id == groupSession.id }
+                        }
+                        state.copy(
+                            groupSession = null,
+                            publicGroups = publicGroups,
+                            inviteText = "",
+                            isGroupActionInProgress = false,
+                            error = null
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update { it.copy(isGroupActionInProgress = false) }
+                    showError(error.toUserMessage("Could not leave the group. Try again."))
+                }
+        }
     }
 
     fun sendGroupInvite() {
         val inviteText = uiState.value.inviteText.trim()
         val groupSession = uiState.value.groupSession ?: return
-        if (inviteText.isEmpty()) return
+        if (inviteText.isEmpty() || uiState.value.isGroupActionInProgress) return
 
         viewModelScope.launch {
+            _uiState.update { it.copy(isGroupActionInProgress = true, error = null) }
             runCatching { repository.inviteToGroup(groupSession.id, inviteText) }
                 .onSuccess { member ->
                     _uiState.update { state ->
@@ -291,12 +485,14 @@ class HomeViewModel(
                                 members = groupSession.members + member
                             ),
                             inviteText = "",
+                            isGroupActionInProgress = false,
                             error = null
                         )
                     }
                 }
                 .onFailure { error ->
-                    showError(error.message ?: "Could not send invite.")
+                    _uiState.update { it.copy(isGroupActionInProgress = false) }
+                    showError(error.toUserMessage("Could not send invite."))
                 }
         }
     }
@@ -309,26 +505,52 @@ class HomeViewModel(
                     _uiState.update {
                         it.copy(
                             isLoading = false,
+                            loadError = null,
                             userFirstName = snapshot.userFirstName,
                             soloSpot = snapshot.soloSpot,
                             groupSession = snapshot.groupSession,
                             groupSpots = snapshot.groupSpots,
+                            publicGroups = snapshot.publicGroups,
                             mapSpots = snapshot.mapSpots,
                             trendingCounts = snapshot.trendingCounts,
                             selectedSpotId = snapshot.soloSpot.id,
                             error = null
                         )
                     }
+                    launch {
+                        val userId = runCatching { authRepository.currentUser()?.id }.getOrNull()
+                        if (userId != null) {
+                            val sessions = runCatching { streakRepository.fetchRecentSessions(userId) }.getOrDefault(emptyList())
+                            if (sessions.isNotEmpty()) {
+                                _uiState.update { state ->
+                                    state.copy(completedSessions = sessions + state.completedSessions)
+                                }
+                            }
+                        }
+                    }
+                    launch { updateUserLocation() }
                 }
                 .onFailure { error ->
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            error = error.message ?: "Could not load study spots."
+                            loadError = error.toUserMessage(
+                                "We couldn't load live places. Check your connection and try again."
+                            )
                         )
                     }
                 }
         }
+    }
+
+    private fun haversineMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Int {
+        val r = 6_371_000.0
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val a = Math.sin(dLat / 2).let { it * it } +
+            Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+            Math.sin(dLon / 2).let { it * it }
+        return (r * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))).toInt()
     }
 
     fun refresh() {
@@ -340,29 +562,51 @@ class HomeViewModel(
                     _uiState.update {
                         it.copy(
                             isRefreshing = false,
+                            loadError = null,
                             userFirstName = snapshot.userFirstName,
                             soloSpot = snapshot.soloSpot,
                             groupSession = snapshot.groupSession,
                             groupSpots = snapshot.groupSpots,
+                            publicGroups = snapshot.publicGroups,
                             mapSpots = snapshot.mapSpots,
                             trendingCounts = snapshot.trendingCounts,
                             error = null
                         )
                     }
+                    launch { updateUserLocation() }
                 }
                 .onFailure { error ->
                     _uiState.update {
                         it.copy(
                             isRefreshing = false,
-                            error = error.message ?: "Could not refresh spots."
+                            loadError = if (it.soloSpot == null) {
+                                error.toUserMessage(
+                                    "We couldn't load live places. Check your connection and try again."
+                                )
+                            } else {
+                                it.loadError
+                            },
+                            error = if (it.soloSpot == null) {
+                                null
+                            } else {
+                                error.toUserMessage("Could not refresh live places. Try again.")
+                            }
                         )
                     }
                 }
         }
     }
 
+    fun retryLoad() {
+        loadHome()
+    }
+
     private fun showError(message: String) {
         _uiState.update { it.copy(error = message) }
+    }
+
+    fun clearError() {
+        _uiState.update { it.copy(error = null) }
     }
 
     class Factory(
@@ -371,6 +615,8 @@ class HomeViewModel(
         private val streakRepository: StreakRepository,
         private val reviewRepository: ReviewRepository,
         private val awardBadgesUseCase: AwardBadgesUseCase,
+        private val locationRepository: LocationRepository,
+        private val friendRepository: FriendRepository,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
@@ -380,6 +626,8 @@ class HomeViewModel(
                 streakRepository,
                 reviewRepository,
                 awardBadgesUseCase,
+                locationRepository,
+                friendRepository,
             ) as T
     }
 }

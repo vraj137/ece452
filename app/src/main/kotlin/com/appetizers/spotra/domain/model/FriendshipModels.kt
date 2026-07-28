@@ -9,7 +9,8 @@ data class FriendProfile(
     val term: String = "",
     val friendshipId: String? = null,
     val friendshipStatus: FriendshipStatus? = null,
-    val isRequester: Boolean? = null
+    val isRequester: Boolean? = null,
+    val streakDays: Int? = null,
 ) {
     val fullName: String get() = "$firstName $lastName".trim()
     val initials: String get() = buildString {

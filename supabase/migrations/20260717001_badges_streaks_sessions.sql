@@ -1,16 +1,8 @@
--- Phase: Badge & Incentive System
--- Adds streak tracking, persisted session records, quality scoring on reviews,
--- and a user_badges table. All existing rows default safely to 0 / null.
-
--- ── Extend profiles ───────────────────────────────────────────────────────────
-
 alter table public.profiles
     add column if not exists login_streak int not null default 0,
     add column if not exists last_login_date date,
     add column if not exists longest_login_streak int not null default 0,
     add column if not exists checkout_count int not null default 0;
-
--- ── Study sessions (persisted checkout records) ───────────────────────────────
 
 create table if not exists public.study_sessions (
     id uuid primary key default gen_random_uuid(),
@@ -31,12 +23,8 @@ with check (auth.uid() = user_id);
 grant select, insert on public.study_sessions to authenticated;
 revoke all on public.study_sessions from anon;
 
--- ── Add quality_score to reviews ──────────────────────────────────────────────
-
 alter table public.reviews
     add column if not exists quality_score int not null default 0;
-
--- ── User badges ───────────────────────────────────────────────────────────────
 
 create table if not exists public.user_badges (
     id uuid primary key default gen_random_uuid(),

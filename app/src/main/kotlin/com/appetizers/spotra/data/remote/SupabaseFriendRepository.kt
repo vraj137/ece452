@@ -11,6 +11,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -40,11 +42,17 @@ class SupabaseFriendRepository(
             if (f.requesterId == userId) f.addresseeId else f.requesterId
         }.distinct()
 
-        val profiles = client.from("profiles")
-            .select {
-                filter { isIn("id", otherIds) }
+        val (profiles, streaks) = coroutineScope {
+            val profilesDeferred = async { safeProfiles(ids = otherIds) }
+            val streaksDeferred = async {
+                runCatching {
+                    client.postgrest.rpc("friend_streaks")
+                        .decodeList<FriendStreakRow>()
+                        .associate { it.userId to it.loginStreak }
+                }.getOrDefault(emptyMap())
             }
-            .decodeList<FriendProfileRow>()
+            profilesDeferred.await() to streaksDeferred.await()
+        }
 
         val profileMap = profiles.associateBy { it.id }
         return friendships.mapNotNull { f ->
@@ -63,7 +71,8 @@ class SupabaseFriendRepository(
                     "declined" -> FriendshipStatus.DECLINED
                     else -> FriendshipStatus.PENDING
                 },
-                isRequester = f.requesterId == userId
+                isRequester = f.requesterId == userId,
+                streakDays = streaks[profile.id]?.takeIf { f.status == "accepted" },
             )
         }
     }
@@ -71,60 +80,21 @@ class SupabaseFriendRepository(
     override suspend fun searchUsers(query: String, excludeIds: Set<String>): List<FriendProfile> {
         if (query.isBlank()) return emptyList()
         val selfId = currentUserId()
-        return client.from("profiles")
-            .select {
-                filter {
-                    or {
-                        ilike("first_name", "%$query%")
-                        ilike("last_name", "%$query%")
-                        ilike("email", "%$query%")
-                    }
-                }
-                limit(20)
-            }
-            .decodeList<FriendProfileRow>()
+        return safeProfiles(query = query)
             .filter { it.id != selfId && it.id !in excludeIds }
             .map { FriendProfile(it.id, it.firstName, it.lastName, it.email, it.program, it.term) }
     }
 
     override suspend fun fetchSuggested(acceptedFriendIds: Set<String>): List<FriendProfile> {
-        if (acceptedFriendIds.isEmpty()) return emptyList()
-        val selfId = currentUserId() ?: return emptyList()
-
-        val mutualIds = mutableSetOf<String>()
-        coroutineScope {
-            acceptedFriendIds.map { friendId ->
-                async {
-                    runCatching {
-                        client.from("friendships")
-                            .select {
-                                filter {
-                                    or {
-                                        eq("requester_id", friendId)
-                                        eq("addressee_id", friendId)
-                                    }
-                                    eq("status", "accepted")
-                                }
-                            }
-                            .decodeList<FriendshipRow>()
-                    }.getOrDefault(emptyList())
-                }
-            }.forEach { deferred ->
-                deferred.await().forEach { f ->
-                    val otherId = if (f.requesterId in acceptedFriendIds) f.addresseeId else f.requesterId
-                    if (otherId != selfId && otherId !in acceptedFriendIds) mutualIds.add(otherId)
-                }
-            }
-        }
-
-        if (mutualIds.isEmpty()) return emptyList()
-        return client.from("profiles")
-            .select {
-                filter { isIn("id", mutualIds.toList()) }
-                limit(10)
-            }
-            .decodeList<FriendProfileRow>()
-            .map { FriendProfile(it.id, it.firstName, it.lastName, it.email, it.program, it.term) }
+        return runCatching {
+            client.postgrest.rpc(
+                "discover_profiles",
+                buildJsonObject { put("p_limit", 20) }
+            )
+                .decodeList<FriendProfileRow>()
+                .filter { it.id !in acceptedFriendIds }
+                .map { FriendProfile(it.id, it.firstName, it.lastName, it.email, it.program, it.term) }
+        }.getOrDefault(emptyList())
     }
 
     override suspend fun sendRequest(toUserId: String) {
@@ -144,6 +114,14 @@ class SupabaseFriendRepository(
         }
     }
 
+    override suspend fun removeFriendship(friendshipId: String) {
+        // Deleting from friendships directly is not granted; the RPC checks the caller is a party.
+        client.postgrest.rpc(
+            "remove_friendship",
+            buildJsonObject { put("p_friendship_id", friendshipId) }
+        )
+    }
+
     override suspend fun fetchFriendsAtSpot(spotSlug: String): List<FriendProfile> =
         runCatching {
             client.postgrest.rpc(
@@ -153,6 +131,24 @@ class SupabaseFriendRepository(
                 .decodeList<FriendAtSpotRow>()
                 .map { FriendProfile(it.id, it.firstName, it.lastName) }
         }.getOrDefault(emptyList())
+
+    private suspend fun safeProfiles(
+        ids: List<String>? = null,
+        query: String? = null,
+        program: String? = null,
+        limit: Int = 20,
+    ): List<FriendProfileRow> =
+        client.postgrest.rpc(
+            "safe_profiles",
+            buildJsonObject {
+                ids?.let {
+                    put("p_ids", JsonArray(it.map(::JsonPrimitive)))
+                }
+                query?.let { put("p_query", it.trim()) }
+                program?.let { put("p_program", it) }
+                put("p_limit", limit)
+            }
+        ).decodeList()
 }
 
 @Serializable
@@ -177,7 +173,7 @@ private data class FriendProfileRow(
     @SerialName("last_name") val lastName: String,
     val email: String = "",
     val program: String = "",
-    val term: String = ""
+    @SerialName("study_term") val term: String = ""
 )
 
 @Serializable
@@ -185,4 +181,10 @@ private data class FriendAtSpotRow(
     val id: String,
     @SerialName("first_name") val firstName: String,
     @SerialName("last_name") val lastName: String
+)
+
+@Serializable
+private data class FriendStreakRow(
+    @SerialName("user_id") val userId: String,
+    @SerialName("login_streak") val loginStreak: Int,
 )

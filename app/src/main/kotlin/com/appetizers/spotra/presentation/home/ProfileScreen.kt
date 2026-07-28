@@ -6,6 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,8 +21,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ExitToApp
 import androidx.compose.material.icons.rounded.Bolt
@@ -28,6 +33,9 @@ import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
@@ -42,7 +50,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -55,16 +65,20 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.appetizers.spotra.domain.model.BadgeId
 import com.appetizers.spotra.domain.model.CompletedSession
 import com.appetizers.spotra.domain.model.FriendProfile
+import com.appetizers.spotra.domain.model.StudyTerm
 import com.appetizers.spotra.domain.model.UserBadge
 import com.appetizers.spotra.domain.model.UserProfile
 import com.appetizers.spotra.domain.repository.AuthRepository
 import com.appetizers.spotra.domain.repository.BadgeRepository
 import com.appetizers.spotra.domain.repository.FriendRepository
 import com.appetizers.spotra.domain.repository.ProfileRepository
+import com.appetizers.spotra.presentation.toUserMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 private data class RecentSession(
     val spotName: String,
@@ -101,14 +115,6 @@ private fun Int.toDurationLabel(): String {
     }
 }
 
-private val mockRecentSessions = listOf(
-    RecentSession("E7 Study Hall", "Yesterday", "2h 15min"),
-    RecentSession("DC Library 3F", "2 days ago", "1h 30min"),
-    RecentSession("SLC Boardroom 2A", "3 days ago", "45min"),
-    RecentSession("MC Atrium", "5 days ago", "2h 00min"),
-    RecentSession("DP Library", "Last week", "1h 10min")
-)
-
 enum class LocationVisibility {
     Visible, Approximate, Hidden;
     val label get() = when (this) {
@@ -136,10 +142,13 @@ class ProfileViewModel(
         val friends: List<FriendProfile> = emptyList(),
         val badges: List<UserBadge> = emptyList(),
         val locationVisibility: LocationVisibility = LocationVisibility.Hidden,
+        val isAcademicProfileSaving: Boolean = false,
+        val academicProfileError: String? = null,
     )
 
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
+    private val profileSaveMutex = Mutex()
 
     init {
         viewModelScope.launch {
@@ -155,7 +164,18 @@ class ProfileViewModel(
             val badges = user?.let {
                 runCatching { badgeRepository.getBadges(it.id) }.getOrDefault(emptyList())
             } ?: emptyList()
-            _state.value = State(isLoading = false, profile = profile, friends = friends, badges = badges)
+            val restoredVisibility = when (profile?.locationVisibility) {
+                "visible" -> LocationVisibility.Visible
+                "approximate" -> LocationVisibility.Approximate
+                else -> LocationVisibility.Hidden
+            }
+            _state.value = State(
+                isLoading = false,
+                profile = profile,
+                friends = friends,
+                badges = badges,
+                locationVisibility = restoredVisibility,
+            )
         }
     }
 
@@ -167,8 +187,91 @@ class ProfileViewModel(
         }
     }
 
+    /**
+     * Friends are otherwise loaded once in [init], so accepting a request or unfriending someone
+     * over in Social would leave this screen's avatar row stale until the app restarted.
+     */
+    fun refreshFriends() {
+        val repository = friendRepository ?: return
+        viewModelScope.launch {
+            val friends = runCatching { repository.fetchFriendProfiles() }
+                .getOrDefault(emptyList())
+                .filter { it.isAccepted }
+            _state.value = _state.value.copy(friends = friends)
+        }
+    }
+
     fun setLocationVisibility(visibility: LocationVisibility) {
-        _state.value = _state.value.copy(locationVisibility = visibility)
+        val updatedProfile = _state.value.profile?.copy(
+            locationVisibility = visibility.name.lowercase()
+        )
+        _state.value = _state.value.copy(
+            profile = updatedProfile,
+            locationVisibility = visibility,
+        )
+        viewModelScope.launch {
+            runCatching {
+                profileSaveMutex.withLock {
+                    val latestProfile = _state.value.profile ?: return@withLock
+                    profileRepository.saveProfile(
+                        latestProfile.copy(
+                            locationVisibility = _state.value.locationVisibility.name.lowercase()
+                        )
+                    )
+                }
+            }.onFailure { error ->
+                _state.value = _state.value.copy(
+                    academicProfileError = error.toUserMessage("Could not update location visibility.")
+                )
+            }
+        }
+    }
+
+    fun saveAcademicProfile(
+        program: String,
+        studyTerm: StudyTerm?,
+        onSuccess: () -> Unit = {},
+    ) {
+        val cleanProgram = program.trim()
+        if (cleanProgram.isNotEmpty() && cleanProgram.length < 2) {
+            _state.value = _state.value.copy(
+                academicProfileError = "Enter at least 2 characters for your major, or leave it blank."
+            )
+            return
+        }
+        if (_state.value.isAcademicProfileSaving) return
+
+        viewModelScope.launch {
+            _state.value = _state.value.copy(
+                isAcademicProfileSaving = true,
+                academicProfileError = null,
+            )
+            runCatching {
+                profileSaveMutex.withLock {
+                    val currentProfile = requireNotNull(_state.value.profile) {
+                        "Your profile is still loading."
+                    }
+                    val updatedProfile = currentProfile.copy(
+                        program = cleanProgram,
+                        studyTerm = studyTerm,
+                    )
+                    profileRepository.saveProfile(updatedProfile)
+                    updatedProfile
+                }
+            }.onSuccess { updatedProfile ->
+                _state.value = _state.value.copy(
+                    profile = updatedProfile,
+                    isAcademicProfileSaving = false,
+                    academicProfileError = null,
+                )
+                onSuccess()
+            }.onFailure { error ->
+                _state.value = _state.value.copy(
+                    isAcademicProfileSaving = false,
+                    academicProfileError = error.toUserMessage("Could not save your academic profile."),
+                )
+            }
+        }
     }
 
     fun signOut(onDone: () -> Unit) {
@@ -190,7 +293,7 @@ class ProfileViewModel(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 internal fun ProfileTabContent(
     profileRepository: ProfileRepository,
@@ -205,7 +308,10 @@ internal fun ProfileTabContent(
         factory = ProfileViewModel.Factory(profileRepository, authRepository, friendRepository, badgeRepository)
     )
     val state by vm.state.collectAsStateWithLifecycle()
-    LaunchedEffect(Unit) { vm.refreshBadges() }
+    LaunchedEffect(Unit) {
+        vm.refreshBadges()
+        vm.refreshFriends()
+    }
     var showSettings by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState()
 
@@ -216,7 +322,7 @@ internal fun ProfileTabContent(
             .statusBarsPadding()
     ) {
         ProfileHeader(profile = state.profile, onSettingsClick = { showSettings = true })
-        val displaySessions = recentSessions.map { it.toRecentSession() } + mockRecentSessions
+        val displaySessions = recentSessions.map { it.toRecentSession() }
         LazyColumn(
             modifier = Modifier.fillMaxWidth().weight(1f),
             contentPadding = PaddingValues(bottom = 24.dp)
@@ -239,7 +345,22 @@ internal fun ProfileTabContent(
             sheetState = sheetState,
             containerColor = Color.White
         ) {
-            Column(modifier = Modifier.padding(bottom = 40.dp)) {
+            var program by remember(state.profile?.userId) {
+                mutableStateOf(state.profile?.program.orEmpty())
+            }
+            var studyTerm by remember(state.profile?.userId) {
+                mutableStateOf(state.profile?.studyTerm)
+            }
+            val programIsValid = program.isBlank() || program.trim().length >= 2
+            val academicProfileChanged =
+                program.trim() != state.profile?.program.orEmpty() ||
+                    studyTerm != state.profile?.studyTerm
+
+            Column(
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .padding(bottom = 40.dp)
+            ) {
                 Text(
                     text = "Settings",
                     modifier = Modifier.padding(start = 24.dp, top = 4.dp, bottom = 16.dp),
@@ -247,6 +368,102 @@ internal fun ProfileTabContent(
                     fontSize = 20.sp,
                     fontWeight = FontWeight.ExtraBold
                 )
+                HorizontalDivider(color = DividerLine)
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = "ACADEMIC PROFILE",
+                    modifier = Modifier.padding(start = 24.dp, bottom = 10.dp),
+                    color = SectionLabel,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                AcademicProgramField(
+                    value = program,
+                    onValueChange = {
+                        if (it.length <= 80) program = it
+                    },
+                )
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    text = "Year of study",
+                    modifier = Modifier.padding(horizontal = 24.dp),
+                    color = Ink,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(Modifier.height(8.dp))
+                FlowRow(
+                    modifier = Modifier.padding(horizontal = 24.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    AcademicTermChip(
+                        label = "Not specified",
+                        selected = studyTerm == null,
+                        onClick = { studyTerm = null },
+                    )
+                    StudyTerm.entries.forEach { term ->
+                        AcademicTermChip(
+                            label = term.label,
+                            selected = studyTerm == term,
+                            onClick = { studyTerm = term },
+                        )
+                    }
+                }
+                if (!programIsValid) {
+                    Text(
+                        text = "Enter at least 2 characters, or leave the major blank.",
+                        modifier = Modifier.padding(start = 24.dp, top = 8.dp, end = 24.dp),
+                        color = Color(0xFFD83D3C),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+                state.academicProfileError?.let { message ->
+                    Text(
+                        text = message,
+                        modifier = Modifier.padding(start = 24.dp, top = 8.dp, end = 24.dp),
+                        color = Color(0xFFD83D3C),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+                Spacer(Modifier.height(14.dp))
+                Button(
+                    onClick = {
+                        vm.saveAcademicProfile(program, studyTerm) {
+                            showSettings = false
+                        }
+                    },
+                    enabled = programIsValid &&
+                        academicProfileChanged &&
+                        !state.isAcademicProfileSaving &&
+                        state.profile != null,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp)
+                        .height(50.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = SoloBlue,
+                        disabledContainerColor = SwitcherTrack,
+                        disabledContentColor = HeaderMuted,
+                    ),
+                    shape = RoundedCornerShape(14.dp),
+                ) {
+                    if (state.isAcademicProfileSaving) {
+                        CircularProgressIndicator(
+                            color = Color.White,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(Modifier.width(10.dp))
+                    }
+                    Text(
+                        text = if (state.isAcademicProfileSaving) "Saving..." else "Save academic profile",
+                        fontWeight = FontWeight.ExtraBold,
+                    )
+                }
+                Spacer(Modifier.height(20.dp))
                 HorizontalDivider(color = DividerLine)
                 Spacer(Modifier.height(16.dp))
                 Text(
@@ -277,6 +494,77 @@ internal fun ProfileTabContent(
             }
         }
     }
+}
+
+@Composable
+private fun AcademicProgramField(
+    value: String,
+    onValueChange: (String) -> Unit,
+) {
+    Column(modifier = Modifier.padding(horizontal = 24.dp)) {
+        Text(
+            text = "Major / program",
+            color = Ink,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        Spacer(Modifier.height(8.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(50.dp)
+                .background(HomeBackground, RoundedCornerShape(12.dp))
+                .border(1.dp, DividerLine, RoundedCornerShape(12.dp))
+                .padding(horizontal = 14.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            if (value.isEmpty()) {
+                Text(
+                    text = "e.g. Computer Engineering",
+                    color = HeaderMuted,
+                    fontSize = 15.sp,
+                )
+            }
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                singleLine = true,
+                textStyle = TextStyle(
+                    color = Ink,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                ),
+                cursorBrush = SolidColor(SoloBlue),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun AcademicTermChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Text(
+        text = label,
+        modifier = Modifier
+            .background(
+                if (selected) SoloBlue.copy(alpha = 0.12f) else HomeBackground,
+                RoundedCornerShape(10.dp),
+            )
+            .border(
+                1.dp,
+                if (selected) SoloBlue else DividerLine,
+                RoundedCornerShape(10.dp),
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 13.dp, vertical = 9.dp),
+        color = if (selected) SoloBlue else BodyText,
+        fontSize = 13.sp,
+        fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.SemiBold,
+    )
 }
 
 @Composable

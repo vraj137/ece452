@@ -1,10 +1,14 @@
 package com.appetizers.spotra.presentation.home
 
+import com.appetizers.spotra.data.location.LocationRepository
 import com.appetizers.spotra.domain.model.BadgeId
 import com.appetizers.spotra.domain.model.CheckInSession
 import com.appetizers.spotra.domain.model.CheckedInStudent
+import com.appetizers.spotra.domain.model.CompletedSession
+import com.appetizers.spotra.domain.model.FriendProfile
 import com.appetizers.spotra.domain.model.GroupMember
 import com.appetizers.spotra.domain.model.GroupStudySession
+import com.appetizers.spotra.domain.model.GroupVisibility
 import com.appetizers.spotra.domain.model.HomeSnapshot
 import com.appetizers.spotra.domain.model.Review
 import com.appetizers.spotra.domain.model.ReviewDraft
@@ -15,6 +19,7 @@ import com.appetizers.spotra.domain.model.UserBadge
 import com.appetizers.spotra.domain.repository.AuthRepository
 import com.appetizers.spotra.domain.repository.AuthUser
 import com.appetizers.spotra.domain.repository.BadgeRepository
+import com.appetizers.spotra.domain.repository.FriendRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.ReviewRepository
 import com.appetizers.spotra.domain.repository.StreakRepository
@@ -54,6 +59,8 @@ class HomeViewModelTest {
         streakRepository = NoOpStreakRepository(),
         reviewRepository = NoOpReviewRepository(),
         awardBadgesUseCase = AwardBadgesUseCase(NoOpBadgeRepository(), NoOpReviewRepository()),
+        locationRepository = NoOpLocationRepository(),
+        friendRepository = NoOpFriendRepository(),
     )
 
     @Test
@@ -76,6 +83,39 @@ class HomeViewModelTest {
         val state = viewModel.uiState.value
         assertEquals(2, state.mapSpots.size)
         assertEquals("e7-study-hall", state.selectedSpotId)
+    }
+
+    @Test
+    fun `review stats and cover photos reach the map spots`() = runTest(dispatcher) {
+        val viewModel = buildViewModel()
+        advanceUntilIdle()
+
+        val spots = viewModel.uiState.value.mapSpots
+        val rated = spots.single { it.id == "e7-study-hall" }
+        assertEquals(4.8, rated.rating!!, 0.0001)
+        assertEquals(12, rated.reviewCount)
+        assertEquals("https://example.test/e7.jpg", rated.photoUrl)
+
+        // A spot nobody has reviewed or photographed stays null rather than defaulting to zero
+        // stars, which is what lets Explore label it "New" instead of ranking it worst.
+        val unrated = spots.single { it.id == "dc-library" }
+        assertNull(unrated.rating)
+        assertEquals(0, unrated.reviewCount)
+        assertNull(unrated.photoUrl)
+    }
+
+    @Test
+    fun `live load failure stops loading and exposes retry state`() = runTest(dispatcher) {
+        val viewModel = buildViewModel(FailingHomeRepository())
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertFalse(state.isLoading)
+        assertNull(state.soloSpot)
+        assertEquals(
+            "We couldn't load live places. Check your connection and try again.",
+            state.loadError
+        )
     }
 
     @Test
@@ -128,6 +168,81 @@ class HomeViewModelTest {
     }
 
     @Test
+    fun `creates a named group only after the user submits a valid name`() = runTest(dispatcher) {
+        val repository = FakeHomeRepository(initialGroupSession = null)
+        val viewModel = buildViewModel(repository)
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.groupSession)
+
+        viewModel.updateGroupName("  CS 341 Finals Crew  ")
+        viewModel.createGroup()
+        advanceUntilIdle()
+
+        assertEquals("CS 341 Finals Crew", repository.lastCreatedGroupName)
+        assertEquals(GroupVisibility.Private, repository.lastCreatedVisibility)
+        assertEquals("CS 341 Finals Crew", viewModel.uiState.value.groupSession?.title)
+        assertEquals("", viewModel.uiState.value.groupName)
+        assertTrue(viewModel.uiState.value.groupSession?.isOwner == true)
+    }
+
+    @Test
+    fun `creates a discoverable public group when public is selected`() = runTest(dispatcher) {
+        val repository = FakeHomeRepository(initialGroupSession = null)
+        val viewModel = buildViewModel(repository)
+        advanceUntilIdle()
+
+        viewModel.updateGroupName("Open Algorithms Study")
+        viewModel.selectGroupVisibility(GroupVisibility.Public)
+        viewModel.createGroup()
+        advanceUntilIdle()
+
+        assertEquals(GroupVisibility.Public, repository.lastCreatedVisibility)
+        assertEquals(GroupVisibility.Public, viewModel.uiState.value.groupSession?.visibility)
+    }
+
+    @Test
+    fun `joins a selected public group instead of treating discovery as membership`() = runTest(dispatcher) {
+        val openGroup = GroupStudySession(
+            id = "public-1",
+            title = "Meet new study buddies",
+            subtitle = "Open study group",
+            proximityLabel = "",
+            members = emptyList(),
+            visibility = GroupVisibility.Public,
+        )
+        val repository = FakeHomeRepository(
+            initialGroupSession = null,
+            initialPublicGroups = listOf(openGroup)
+        )
+        val viewModel = buildViewModel(repository)
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.groupSession)
+        assertEquals(listOf("public-1"), viewModel.uiState.value.publicGroups.map { it.id })
+
+        viewModel.joinPublicGroup("public-1")
+        advanceUntilIdle()
+
+        assertEquals("public-1", repository.lastJoinedGroupId)
+        assertEquals("public-1", viewModel.uiState.value.groupSession?.id)
+        assertTrue(viewModel.uiState.value.publicGroups.isEmpty())
+    }
+
+    @Test
+    fun `leaving clears the active group`() = runTest(dispatcher) {
+        val repository = FakeHomeRepository()
+        val viewModel = buildViewModel(repository)
+        advanceUntilIdle()
+
+        viewModel.leaveGroup()
+        advanceUntilIdle()
+
+        assertEquals("group-1", repository.lastLeftGroupId)
+        assertNull(viewModel.uiState.value.groupSession)
+    }
+
+    @Test
     fun `check in and check out update active session`() = runTest(dispatcher) {
         val repository = FakeHomeRepository()
         val viewModel = buildViewModel(repository)
@@ -156,6 +271,25 @@ class HomeViewModelTest {
     }
 
     @Test
+    fun `successful group check in uses group session and invokes success callback`() = runTest(dispatcher) {
+        val repository = FakeHomeRepository()
+        val viewModel = buildViewModel(repository)
+        advanceUntilIdle()
+        var succeeded = false
+
+        viewModel.startCheckIn(
+            requireNotNull(viewModel.uiState.value.soloSpot),
+            StudyMode.Group,
+            onSuccess = { succeeded = true }
+        )
+        advanceUntilIdle()
+
+        assertTrue(succeeded)
+        assertEquals("group-1", repository.lastStartGroupSessionId)
+        assertEquals(StudyMode.Group, viewModel.uiState.value.activeCheckIn?.mode)
+    }
+
+    @Test
     fun `buddy request records requested student`() = runTest(dispatcher) {
         val viewModel = buildViewModel()
         advanceUntilIdle()
@@ -167,9 +301,44 @@ class HomeViewModelTest {
     }
 }
 
-private class FakeHomeRepository : HomeRepository {
+private class FailingHomeRepository : HomeRepository {
+    private fun failed(): Nothing = error("Supabase query failed")
+    override suspend fun loadHome(): HomeSnapshot = failed()
+    override suspend fun spotDetail(spotId: String): StudySpotDetail = failed()
+    override suspend fun childSpots(parentSpotId: String): List<StudySpotDetail> = failed()
+    override suspend fun createGroup(
+        title: String,
+        visibility: GroupVisibility
+    ): GroupStudySession = failed()
+    override suspend fun joinPublicGroup(groupSessionId: String): GroupStudySession = failed()
+    override suspend fun leaveGroup(groupSessionId: String) = failed()
+    override suspend fun startCheckIn(
+        spotId: String,
+        mode: StudyMode,
+        groupSessionId: String?,
+        latitude: Double,
+        longitude: Double,
+    ): CheckInSession = failed()
+    override suspend fun checkOut(sessionId: String) = failed()
+    override suspend fun inviteToGroup(groupSessionId: String, inviteText: String): GroupMember = failed()
+}
+
+private class FakeHomeRepository(
+    initialGroupSession: GroupStudySession? = defaultGroupSession(),
+    initialPublicGroups: List<GroupStudySession> = emptyList(),
+) : HomeRepository {
     var lastStartGroupSessionId: String? = null
         private set
+    var lastCreatedGroupName: String? = null
+        private set
+    var lastCreatedVisibility: GroupVisibility? = null
+        private set
+    var lastJoinedGroupId: String? = null
+        private set
+    var lastLeftGroupId: String? = null
+        private set
+    private var activeGroupSession: GroupStudySession? = initialGroupSession
+    private var publicGroups: List<GroupStudySession> = initialPublicGroups
 
     private val soloSpot = StudySpotSummary(
         id = "e7-study-hall",
@@ -177,21 +346,14 @@ private class FakeHomeRepository : HomeRepository {
         badge = "Quiet",
         distanceMeters = 120,
         rating = 4.8,
+        reviewCount = 12,
+        photoUrl = "https://example.test/e7.jpg",
         studyContextLabel = "Solo-friendly",
         latitude = 43.4732,
         longitude = -80.5388
     )
-    private val groupSession = GroupStudySession(
-        id = "group-1",
-        title = "app-etizers study sesh",
-        subtitle = "CS 341 finals prep",
-        proximityLabel = "all within 10 min",
-        members = listOf(
-            GroupMember("you", "Vraj Patel", "VB"),
-            GroupMember("akshat", "Akshat J.", "AJ")
-        )
-    )
 
+    /** Deliberately unrated and photo-less: exercises the "no reviews / no photo yet" path. */
     private val secondaryMapSpot = StudySpotSummary(
         id = "dc-library",
         name = "DC Library",
@@ -204,8 +366,9 @@ private class FakeHomeRepository : HomeRepository {
         HomeSnapshot(
             userFirstName = "Vraj",
             soloSpot = soloSpot,
-            groupSession = groupSession,
+            groupSession = activeGroupSession,
             groupSpots = emptyList(),
+            publicGroups = publicGroups,
             mapSpots = listOf(soloSpot, secondaryMapSpot)
         )
 
@@ -232,10 +395,45 @@ private class FakeHomeRepository : HomeRepository {
 
     override suspend fun childSpots(parentSpotId: String): List<StudySpotDetail> = emptyList()
 
+    override suspend fun createGroup(
+        title: String,
+        visibility: GroupVisibility
+    ): GroupStudySession {
+        lastCreatedGroupName = title
+        lastCreatedVisibility = visibility
+        return GroupStudySession(
+            id = "created-group",
+            title = title,
+            subtitle = "Pick a spot and invite your friends",
+            proximityLabel = "",
+            members = listOf(GroupMember("you", "You", "VB")),
+            isOwner = true,
+            visibility = visibility,
+        ).also { activeGroupSession = it }
+    }
+
+    override suspend fun joinPublicGroup(groupSessionId: String): GroupStudySession {
+        lastJoinedGroupId = groupSessionId
+        val group = publicGroups.first { it.id == groupSessionId }.copy(
+            members = listOf(GroupMember("you", "You", "VB")),
+            isOwner = false,
+        )
+        activeGroupSession = group
+        publicGroups = publicGroups.filterNot { it.id == groupSessionId }
+        return group
+    }
+
+    override suspend fun leaveGroup(groupSessionId: String) {
+        lastLeftGroupId = groupSessionId
+        activeGroupSession = null
+    }
+
     override suspend fun startCheckIn(
         spotId: String,
         mode: StudyMode,
-        groupSessionId: String?
+        groupSessionId: String?,
+        latitude: Double,
+        longitude: Double,
     ): CheckInSession {
         lastStartGroupSessionId = groupSessionId
         return CheckInSession(
@@ -250,13 +448,25 @@ private class FakeHomeRepository : HomeRepository {
 
     override suspend fun checkOut(sessionId: String) = Unit
 
-    override suspend fun sendBuddyRequest(studentId: String) = Unit
-
     override suspend fun inviteToGroup(
         groupSessionId: String,
         inviteText: String
     ): GroupMember =
         GroupMember("invite-2", inviteText, "MR")
+
+    companion object {
+        private fun defaultGroupSession() = GroupStudySession(
+            id = "group-1",
+            title = "app-etizers study sesh",
+            subtitle = "CS 341 finals prep",
+            proximityLabel = "all within 10 min",
+            members = listOf(
+                GroupMember("you", "Vraj Patel", "VB"),
+                GroupMember("akshat", "Akshat J.", "AJ")
+            ),
+            isOwner = true,
+        )
+    }
 }
 
 private class NullAuthRepository : AuthRepository {
@@ -269,6 +479,24 @@ private class NullAuthRepository : AuthRepository {
 private class NoOpStreakRepository : StreakRepository {
     override suspend fun recordLogin(userId: String) = 0
     override suspend fun recordCheckout(userId: String, spotId: String, spotName: String, durationSeconds: Int) = 0
+    override suspend fun fetchRecentSessions(userId: String): List<CompletedSession> = emptyList()
+}
+
+private class NoOpLocationRepository : LocationRepository {
+    override suspend fun getLastLocation(): Pair<Double, Double> =
+        MapConfig.CAMPUS_LAT to MapConfig.CAMPUS_LNG
+}
+
+private class NoOpFriendRepository : FriendRepository {
+    override suspend fun currentUserId(): String? = null
+    override suspend fun fetchFriendProfiles(): List<FriendProfile> = emptyList()
+    override suspend fun searchUsers(query: String, excludeIds: Set<String>): List<FriendProfile> = emptyList()
+    override suspend fun fetchSuggested(acceptedFriendIds: Set<String>): List<FriendProfile> = emptyList()
+    override suspend fun sendRequest(toUserId: String) = Unit
+    override suspend fun acceptRequest(friendshipId: String) = Unit
+    override suspend fun declineRequest(friendshipId: String) = Unit
+    override suspend fun removeFriendship(friendshipId: String) = Unit
+    override suspend fun fetchFriendsAtSpot(spotSlug: String): List<FriendProfile> = emptyList()
 }
 
 private class NoOpBadgeRepository : BadgeRepository {
@@ -279,6 +507,8 @@ private class NoOpBadgeRepository : BadgeRepository {
 private class NoOpReviewRepository : ReviewRepository {
     override suspend fun reviewsFor(spotSlug: String): List<Review> = emptyList()
     override suspend fun submit(draft: ReviewDraft) = Unit
+    override suspend fun update(reviewId: String, draft: ReviewDraft) = Unit
+    override suspend fun delete(reviewId: String) = Unit
     override suspend fun getReviewCount(userId: String) = 0
     override suspend fun getQualityReviewCount(userId: String) = 0
 }

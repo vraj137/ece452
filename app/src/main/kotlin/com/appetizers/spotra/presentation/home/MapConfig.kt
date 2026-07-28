@@ -11,7 +11,26 @@ object MapConfig {
     const val MIN_ZOOM: Double = 13.0
     const val MAX_ZOOM: Double = 18.5
 
+    private val supportedUwZones = listOf(
+        CampusZone(43.460, 43.485, -80.565, -80.515), // Waterloo main campus
+        CampusZone(43.445, 43.458, -80.510, -80.488), // School of Pharmacy
+        CampusZone(43.350, 43.367, -80.330, -80.300), // School of Architecture
+    )
+
     fun coerceZoom(z: Double): Double = z.coerceIn(MIN_ZOOM, MAX_ZOOM)
+
+    fun isWithinSupportedUwCampus(latitude: Double, longitude: Double): Boolean =
+        supportedUwZones.any { it.contains(latitude, longitude) }
+}
+
+private data class CampusZone(
+    val minLatitude: Double,
+    val maxLatitude: Double,
+    val minLongitude: Double,
+    val maxLongitude: Double,
+) {
+    fun contains(latitude: Double, longitude: Double): Boolean =
+        latitude in minLatitude..maxLatitude && longitude in minLongitude..maxLongitude
 }
 
 /** What the campus map should render given the token and available located spots. */

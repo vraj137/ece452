@@ -10,6 +10,7 @@ import com.appetizers.spotra.domain.repository.AuthRepository
 import com.appetizers.spotra.domain.repository.OnboardingDraftRepository
 import com.appetizers.spotra.domain.repository.ProfileRepository
 import com.appetizers.spotra.presentation.navigation.Routes
+import com.appetizers.spotra.presentation.toUserMessage
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -67,11 +68,21 @@ class OnboardingViewModel(
     }
 
     fun beginRegistration() {
-        _uiState.update { it.copy(isRegistration = true, otp = "", error = null) }
+        resetAuthFlow(isRegistration = true)
     }
 
     fun beginSignIn() {
-        _uiState.update { it.copy(isRegistration = false, otp = "", error = null) }
+        resetAuthFlow(isRegistration = false)
+    }
+
+    private fun resetAuthFlow(isRegistration: Boolean) {
+        draftSaveJob?.cancel()
+        hasLocalDraftChanges = true
+        _uiState.value = OnboardingUiState(isRegistration = isRegistration)
+        viewModelScope.launch {
+            draftRepository.clear()
+            hasLocalDraftChanges = false
+        }
     }
 
     fun updateName(firstName: String? = null, lastName: String? = null) {
@@ -185,7 +196,7 @@ class OnboardingViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
             runCatching { block() }
-                .onFailure { showError(it.message ?: "Something went wrong. Try again.") }
+                .onFailure { showError(it.toUserMessage("Something went wrong. Try again.")) }
             _uiState.update { it.copy(isLoading = false) }
         }
     }

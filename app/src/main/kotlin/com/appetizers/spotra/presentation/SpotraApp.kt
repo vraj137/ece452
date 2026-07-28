@@ -128,6 +128,7 @@ fun SpotraApp(container: AppContainer) {
                 badgeRepository = container.badgeRepository,
                 streakRepository = container.streakRepository,
                 awardBadgesUseCase = container.awardBadgesUseCase,
+                locationRepository = container.locationRepository,
                 loginStreak = loginStreak,
                 onSignOut = {
                     navController.navigate(Routes.Welcome) {

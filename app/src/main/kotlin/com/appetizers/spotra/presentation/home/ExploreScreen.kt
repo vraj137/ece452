@@ -36,12 +36,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.appetizers.spotra.data.mock.MockData
-import com.appetizers.spotra.data.mock.MockSpot
+import com.appetizers.spotra.domain.model.StudySpotSummary
 import java.util.Locale
 
 private enum class LeaderboardCategory(val label: String, val subtitle: String) {
@@ -54,6 +55,7 @@ private enum class LeaderboardCategory(val label: String, val subtitle: String) 
 @Composable
 internal fun ExploreTabContent(
     accent: Color,
+    spots: List<StudySpotSummary> = emptyList(),
     trendingCounts: Map<String, Int>,
     onSpotSelected: (String) -> Unit,
     onSuggestSpot: () -> Unit = {},
@@ -66,16 +68,27 @@ internal fun ExploreTabContent(
         listState.scrollToItem(0)
     }
 
-    val rankedSpots = remember(trendingCounts, selectedCategory) {
+    // Every ranking breaks ties by name so the same data always renders in the same order.
+    // Spots nobody has rated sort last rather than tying at the bottom of the scale.
+    val rankedSpots = remember(spots, trendingCounts, selectedCategory) {
         when (selectedCategory) {
             LeaderboardCategory.Trending ->
-                MockData.spots.sortedByDescending { trendingCounts[it.id] ?: 0 }
+                spots.sortedWith(
+                    compareByDescending<StudySpotSummary> { trendingCounts[it.id] ?: 0 }
+                        .thenBy { it.name }
+                )
             LeaderboardCategory.Quietest ->
-                MockData.spots.sortedBy { noiseSortKey(it.noiseLevel) }
+                spots.sortedWith(
+                    compareBy<StudySpotSummary> { noiseSortKey(it.noiseLevel) }.thenBy { it.name }
+                )
             LeaderboardCategory.BestLighting ->
-                MockData.spots.sortedBy { lightingSortKey(it.lighting) }
+                spots.sortedWith(
+                    compareBy<StudySpotSummary> { lightingSortKey(it.lighting) }.thenBy { it.name }
+                )
             LeaderboardCategory.TopRated ->
-                MockData.spots.sortedByDescending { it.rating }
+                spots.sortedWith(
+                    compareByDescending<StudySpotSummary> { it.rating ?: -1.0 }.thenBy { it.name }
+                )
         }
     }
 
@@ -223,7 +236,7 @@ private fun CategoryChip(
 
 @Composable
 private fun LeaderboardSpotCard(
-    spot: MockSpot,
+    spot: StudySpotSummary,
     rank: Int,
     category: LeaderboardCategory,
     checkIns: Int,
@@ -259,7 +272,7 @@ private fun LeaderboardSpotCard(
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    text = spot.building,
+                    text = spot.building ?: "",
                     color = HeaderMuted,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
@@ -288,7 +301,7 @@ private fun LeaderboardSpotCard(
                 LeaderboardCategory.Quietest -> {
                     Column(horizontalAlignment = Alignment.End) {
                         Text(
-                            text = spot.noiseLevel,
+                            text = spot.noiseLevel ?: "—",
                             color = accent,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.ExtraBold
@@ -304,7 +317,7 @@ private fun LeaderboardSpotCard(
                 LeaderboardCategory.BestLighting -> {
                     Column(horizontalAlignment = Alignment.End) {
                         Text(
-                            text = spot.lighting,
+                            text = spot.lighting ?: "—",
                             color = accent,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.ExtraBold
@@ -318,20 +331,43 @@ private fun LeaderboardSpotCard(
                     }
                 }
                 LeaderboardCategory.TopRated -> {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Rounded.Star,
-                            contentDescription = null,
-                            tint = StarGold,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(
-                            text = String.format(Locale.US, "%.1f", spot.rating),
-                            color = accent,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.ExtraBold
-                        )
+                    Column(horizontalAlignment = Alignment.End) {
+                        if (spot.rating == null) {
+                            Text(
+                                text = "New",
+                                color = accent,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                            Text(
+                                text = "no reviews yet",
+                                color = HeaderMuted,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        } else {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Star,
+                                    contentDescription = null,
+                                    tint = StarGold,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    text = String.format(Locale.US, "%.1f", spot.rating),
+                                    color = accent,
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            }
+                            Text(
+                                text = reviewCountLabel(spot.reviewCount),
+                                color = HeaderMuted,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
                     }
                 }
             }
@@ -347,10 +383,10 @@ private fun LeaderboardSpotCard(
         Spacer(Modifier.height(12.dp))
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SpotAttributePill(label = spot.noiseLevel, category = "Noise")
-            SpotAttributePill(label = spot.lighting, category = "Light")
-            RatingPill(rating = spot.rating)
-            FullnessPill(percent = spot.fullPercent)
+            if (spot.noiseLevel != null) SpotAttributePill(label = spot.noiseLevel, category = "Noise")
+            if (spot.lighting != null) SpotAttributePill(label = spot.lighting, category = "Light")
+            if (spot.rating != null) RatingPill(rating = spot.rating, reviewCount = spot.reviewCount)
+            if (spot.occupancyPercent != null) FullnessPill(percent = spot.occupancyPercent)
         }
     }
 }
@@ -387,11 +423,14 @@ private fun SpotAttributePill(label: String, category: String) {
         "good", "bright", "natural" -> Color(0xFFE8F5E9) to Color(0xFF2E7D32)
         else -> SwitcherTrack to BodyText
     }
+    // The pill's color encodes quality, so the category has to reach a screen reader as words —
+    // "Silent" on its own does not say whether it describes noise or lighting.
     Text(
         text = label,
         modifier = Modifier
             .background(bg, RoundedCornerShape(22.dp))
-            .padding(horizontal = 10.dp, vertical = 5.dp),
+            .padding(horizontal = 10.dp, vertical = 5.dp)
+            .semantics { contentDescription = "$category: $label" },
         color = fg,
         fontSize = 12.sp,
         fontWeight = FontWeight.ExtraBold,
@@ -400,11 +439,15 @@ private fun SpotAttributePill(label: String, category: String) {
 }
 
 @Composable
-private fun RatingPill(rating: Double) {
+private fun RatingPill(rating: Double, reviewCount: Int) {
+    val formatted = String.format(Locale.US, "%.1f", rating)
     Row(
         modifier = Modifier
             .background(SwitcherTrack, RoundedCornerShape(22.dp))
-            .padding(horizontal = 8.dp, vertical = 5.dp),
+            .padding(horizontal = 8.dp, vertical = 5.dp)
+            .semantics {
+                contentDescription = "Rated $formatted out of 5 from ${reviewCountLabel(reviewCount)}"
+            },
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
@@ -415,7 +458,7 @@ private fun RatingPill(rating: Double) {
         )
         Spacer(Modifier.width(3.dp))
         Text(
-            text = String.format(Locale.US, "%.1f", rating),
+            text = formatted,
             color = BodyText,
             fontSize = 12.sp,
             fontWeight = FontWeight.ExtraBold
@@ -442,18 +485,21 @@ private fun FullnessPill(percent: Int) {
     )
 }
 
-private fun noiseSortKey(noiseLevel: String): Int = when (noiseLevel.lowercase()) {
+private fun reviewCountLabel(reviewCount: Int): String =
+    if (reviewCount == 1) "1 review" else "$reviewCount reviews"
+
+private fun noiseSortKey(noiseLevel: String?): Int = when (noiseLevel?.lowercase()) {
     "silent" -> 0
     "low" -> 1
     "moderate" -> 2
     "lively" -> 3
-    else -> 4
+    else -> 5
 }
 
-private fun lightingSortKey(lighting: String): Int = when (lighting.lowercase()) {
+private fun lightingSortKey(lighting: String?): Int = when (lighting?.lowercase()) {
     "bright" -> 0
     "natural" -> 1
     "good" -> 2
     "poor" -> 3
-    else -> 4
+    else -> 5
 }

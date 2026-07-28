@@ -116,6 +116,7 @@ private class FakeProfileRepository(
 private class NoOpStreakRepository : StreakRepository {
     override suspend fun recordLogin(userId: String) = 0
     override suspend fun recordCheckout(userId: String, spotId: String, spotName: String, durationSeconds: Int) = 0
+    override suspend fun fetchRecentSessions(userId: String) = emptyList<com.appetizers.spotra.domain.model.CompletedSession>()
 }
 
 private class NoOpBadgeRepository : BadgeRepository {
@@ -126,6 +127,11 @@ private class NoOpBadgeRepository : BadgeRepository {
 private class NoOpReviewRepository : com.appetizers.spotra.domain.repository.ReviewRepository {
     override suspend fun reviewsFor(spotSlug: String) = emptyList<com.appetizers.spotra.domain.model.Review>()
     override suspend fun submit(draft: com.appetizers.spotra.domain.model.ReviewDraft) = Unit
+    override suspend fun update(
+        reviewId: String,
+        draft: com.appetizers.spotra.domain.model.ReviewDraft,
+    ) = Unit
+    override suspend fun delete(reviewId: String) = Unit
     override suspend fun getReviewCount(userId: String) = 0
     override suspend fun getQualityReviewCount(userId: String) = 0
 }

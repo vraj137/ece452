@@ -46,6 +46,7 @@ import com.appetizers.spotra.BuildConfig
 import com.appetizers.spotra.domain.model.SpotSubmission
 import com.appetizers.spotra.domain.repository.AuthRepository
 import com.appetizers.spotra.domain.repository.SpotSubmissionRepository
+import com.appetizers.spotra.presentation.toUserMessage
 import com.mapbox.geojson.Point
 import com.mapbox.maps.Style
 import com.mapbox.maps.extension.compose.MapboxMap
@@ -58,8 +59,8 @@ import com.mapbox.maps.viewannotation.viewAnnotationOptions
 import com.mapbox.maps.ViewAnnotationAnchor
 import kotlinx.coroutines.launch
 
-private const val UW_LAT = 43.4720
-private const val UW_LNG = -80.5430
+private const val UW_LAT = MapConfig.CAMPUS_LAT
+private const val UW_LNG = MapConfig.CAMPUS_LNG
 
 @Composable
 internal fun SubmitSpotScreen(
@@ -71,6 +72,7 @@ internal fun SubmitSpotScreen(
     var description by remember { mutableStateOf("") }
     var building by remember { mutableStateOf("") }
     var floor by remember { mutableStateOf("") }
+    var bookingUrl by remember { mutableStateOf("") }
     var pinLat by remember { mutableDoubleStateOf(UW_LAT) }
     var pinLng by remember { mutableDoubleStateOf(UW_LNG) }
     var pinPlaced by remember { mutableStateOf(false) }
@@ -79,6 +81,8 @@ internal fun SubmitSpotScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var showFullMap by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val pinIsSupported = pinPlaced && MapConfig.isWithinSupportedUwCampus(pinLat, pinLng)
+    val canSubmit = name.isNotBlank() && pinIsSupported && !isLoading
 
     BackHandler {
         if (showFullMap) {
@@ -157,6 +161,13 @@ internal fun SubmitSpotScreen(
                 }
             }
 
+            SubmitField(
+                label = "Booking URL (optional)",
+                value = bookingUrl,
+                onValueChange = { bookingUrl = it },
+                placeholder = "e.g. https://uwaterloo.ca/rooms/book/..."
+            )
+
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -194,6 +205,15 @@ internal fun SubmitSpotScreen(
                     },
                     onExpand = { showFullMap = true }
                 )
+                if (pinPlaced && !pinIsSupported) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "Choose a location on UW main campus, Pharmacy, or Architecture.",
+                        color = Color(0xFFD83D3C),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
             }
 
             if (error != null) {
@@ -210,10 +230,10 @@ internal fun SubmitSpotScreen(
                     .fillMaxWidth()
                     .height(56.dp)
                     .background(
-                        if (name.isNotBlank()) SoloBlue else SoloBlue.copy(alpha = 0.4f),
+                        if (canSubmit) SoloBlue else SoloBlue.copy(alpha = 0.4f),
                         RoundedCornerShape(16.dp)
                     )
-                    .clickable(enabled = name.isNotBlank() && !isLoading) {
+                    .clickable(enabled = canSubmit) {
                         scope.launch {
                             isLoading = true
                             error = null
@@ -228,12 +248,13 @@ internal fun SubmitSpotScreen(
                                         building = building.trim(),
                                         floor = floor.trim(),
                                         submittedByEmail = user?.email ?: "",
-                                        submittedByUserId = user?.id
+                                        submittedByUserId = user?.id,
+                                        bookingUrl = bookingUrl.trim().ifBlank { null },
                                     )
                                 )
                                 submitted = true
                             }.onFailure {
-                                error = it.message ?: "Something went wrong. Try again."
+                                error = it.toUserMessage("Could not submit this place. Try again.")
                             }
                             isLoading = false
                         }
