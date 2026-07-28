@@ -315,7 +315,7 @@ private fun ReviewCommentField(value: String, onValueChange: (String) -> Unit) {
             }
             BasicTextField(
                 value = value,
-                onValueChange = onValueChange,
+                onValueChange = { if (it.length <= 500) onValueChange(it) },
                 minLines = 3,
                 textStyle = TextStyle(color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Normal),
                 cursorBrush = SolidColor(SoloBlue),

@@ -17,12 +17,14 @@ class SocialViewModel(
 
     data class State(
         val isLoading: Boolean = true,
+        val selfId: String? = null,
         val friends: List<FriendProfile> = emptyList(),
         val incomingRequests: List<FriendProfile> = emptyList(),
         val outgoingRequests: List<FriendProfile> = emptyList(),
         val suggestions: List<FriendProfile> = emptyList(),
         val searchQuery: String = "",
         val searchResults: List<FriendProfile> = emptyList(),
+        val pendingRequestIds: Set<String> = emptySet(),
         val error: String? = null
     )
 
@@ -37,6 +39,7 @@ class SocialViewModel(
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true, error = null) }
             runCatching {
+                val selfId = friendRepository.currentUserId()
                 val all = friendRepository.fetchFriendProfiles()
                 val accepted = all.filter { it.isAccepted }
                 val incoming = all.filter { it.isPendingIncoming }
@@ -46,6 +49,7 @@ class SocialViewModel(
                 _state.update {
                     it.copy(
                         isLoading = false,
+                        selfId = selfId,
                         friends = accepted,
                         incomingRequests = incoming,
                         outgoingRequests = outgoing,
@@ -70,8 +74,7 @@ class SocialViewModel(
                 val current = _state.value
                 val excludeIds = (current.friends + current.incomingRequests + current.outgoingRequests)
                     .map { it.id }.toSet()
-                val selfId = friendRepository.currentUserId()
-                friendRepository.searchUsers(query, excludeIds + setOfNotNull(selfId))
+                friendRepository.searchUsers(query, excludeIds + setOfNotNull(current.selfId))
             }.onSuccess { results ->
                 _state.update { it.copy(searchResults = results) }
             }.onFailure { e ->
@@ -81,6 +84,8 @@ class SocialViewModel(
     }
 
     fun sendRequest(profile: FriendProfile) {
+        if (profile.id in _state.value.pendingRequestIds) return
+        _state.update { it.copy(pendingRequestIds = it.pendingRequestIds + profile.id) }
         viewModelScope.launch {
             runCatching { friendRepository.sendRequest(profile.id) }
                 .onSuccess {
@@ -90,16 +95,27 @@ class SocialViewModel(
                             searchResults = state.searchResults.filter { it.id != profile.id },
                             suggestions = state.suggestions.filter { it.id != profile.id },
                             outgoingRequests = state.outgoingRequests + pending,
+                            pendingRequestIds = state.pendingRequestIds - profile.id,
                             error = null
                         )
                     }
                 }
-                .onFailure { e -> _state.update { it.copy(error = e.message) } }
+                .onFailure { e ->
+                    _state.update {
+                        it.copy(
+                            pendingRequestIds = it.pendingRequestIds - profile.id,
+                            error = e.message ?: "Could not send friend request."
+                        )
+                    }
+                }
         }
     }
 
     fun acceptRequest(profile: FriendProfile) {
-        val friendshipId = profile.friendshipId ?: return
+        val friendshipId = profile.friendshipId ?: run {
+            _state.update { it.copy(error = "Could not accept friend request.") }
+            return
+        }
         viewModelScope.launch {
             runCatching { friendRepository.acceptRequest(friendshipId) }
                 .onSuccess {
@@ -117,7 +133,10 @@ class SocialViewModel(
     }
 
     fun declineRequest(profile: FriendProfile) {
-        val friendshipId = profile.friendshipId ?: return
+        val friendshipId = profile.friendshipId ?: run {
+            _state.update { it.copy(error = "Could not decline friend request.") }
+            return
+        }
         viewModelScope.launch {
             runCatching { friendRepository.declineRequest(friendshipId) }
                 .onSuccess {

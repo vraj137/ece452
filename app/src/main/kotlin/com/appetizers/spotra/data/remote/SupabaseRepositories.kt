@@ -33,6 +33,7 @@ import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.OTP
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Order
+import kotlin.math.roundToInt
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.SerialName
@@ -584,7 +585,9 @@ class SupabaseHomeRepository(
             ?.map { it.rating }
             ?.average()
             ?.roundToSingleDecimal()
-        val reportedOccupancyPercent = reviews.firstNotNullOfOrNull { it.occupancyPercent }
+        val occupancyValues = reviews.mapNotNull { it.occupancyPercent }
+        val reportedOccupancyPercent = if (occupancyValues.isEmpty()) null
+            else occupancyValues.average().roundToInt().coerceIn(0, 100)
         val liveOccupancyPercent = liveOccupancyPercent(activeCount, capacity)
 
         return StudySpotDetail(

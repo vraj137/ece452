@@ -43,7 +43,6 @@ data class HomeUiState(
     val inviteText: String = "",
     val error: String? = null,
     val newBadge: BadgeId? = null,
-    val pendingCheckoutBadge: BadgeId? = null,
     val showReviewPrompt: Boolean = false,
     val pendingReviewSpotId: String? = null,
     val pendingReviewSpotName: String? = null,
@@ -72,6 +71,8 @@ class HomeViewModel(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
+
+    private var pendingCheckoutBadge: BadgeId? = null
 
     init {
         loadHome()
@@ -169,12 +170,12 @@ class HomeViewModel(
                             }
                         }
                     }
+                    pendingCheckoutBadge = earnedBadge
                     _uiState.update { state ->
                         state.copy(
                             activeCheckIn = null,
                             showLiveSession = false,
                             completedSessions = listOf(finished) + state.completedSessions,
-                            pendingCheckoutBadge = earnedBadge,
                             showReviewPrompt = true,
                             pendingReviewSpotId = spotId,
                             pendingReviewSpotName = spotName,
@@ -191,7 +192,7 @@ class HomeViewModel(
 
     fun submitPostCheckoutReview(rating: Int, comment: String?) {
         val spotId = uiState.value.pendingReviewSpotId ?: return
-        val checkoutBadge = uiState.value.pendingCheckoutBadge
+        val checkoutBadge = pendingCheckoutBadge
         viewModelScope.launch {
             val qualityScore = ReviewQualityScorer.score(comment)
             val draft = ReviewDraft(spotSlug = spotId, rating = rating, comment = comment)
@@ -210,12 +211,12 @@ class HomeViewModel(
                             }
                         }
                     }
+                    pendingCheckoutBadge = null
                     _uiState.update {
                         it.copy(
                             showReviewPrompt = false,
                             pendingReviewSpotId = null,
                             pendingReviewSpotName = null,
-                            pendingCheckoutBadge = null,
                             newBadge = reviewBadge ?: checkoutBadge,
                         )
                     }
@@ -226,7 +227,6 @@ class HomeViewModel(
                             showReviewPrompt = false,
                             pendingReviewSpotId = null,
                             pendingReviewSpotName = null,
-                            pendingCheckoutBadge = null,
                             newBadge = checkoutBadge,
                         )
                     }
@@ -235,13 +235,13 @@ class HomeViewModel(
     }
 
     fun dismissReviewPrompt() {
-        val checkoutBadge = uiState.value.pendingCheckoutBadge
+        val checkoutBadge = pendingCheckoutBadge
+        pendingCheckoutBadge = null
         _uiState.update {
             it.copy(
                 showReviewPrompt = false,
                 pendingReviewSpotId = null,
                 pendingReviewSpotName = null,
-                pendingCheckoutBadge = null,
                 newBadge = checkoutBadge,
             )
         }

@@ -156,7 +156,7 @@ private fun ExploreHeader(
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.Top
         ) {
             if (selectedCategory == LeaderboardCategory.Trending) {
                 Row(

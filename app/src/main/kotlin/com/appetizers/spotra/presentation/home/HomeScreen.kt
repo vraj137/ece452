@@ -64,6 +64,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -156,9 +157,9 @@ fun HomeScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val accent = if (state.selectedMode == StudyMode.Solo) SoloBlue else GroupGreen
 
-    var viewingSpotId by remember { mutableStateOf<String?>(null) }
-    var reviewingSpotId by remember { mutableStateOf<String?>(null) }
-    var showSubmitSpot by remember { mutableStateOf(false) }
+    var viewingSpotId by rememberSaveable { mutableStateOf<String?>(null) }
+    var reviewingSpotId by rememberSaveable { mutableStateOf<String?>(null) }
+    var showSubmitSpot by rememberSaveable { mutableStateOf(false) }
 
     val snackbarHostState = remember { SnackbarHostState() }
     val reviewSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -1376,7 +1377,7 @@ private fun PostCheckoutReviewSheet(
                     modifier = androidx.compose.ui.Modifier.weight(1f)
                 ) { Text("Skip") }
                 Button(
-                    onClick = { if (rating > 0) onSubmit(rating, comment.ifBlank { null }) },
+                    onClick = { onSubmit(rating, comment.ifBlank { null }) },
                     enabled = rating > 0,
                     modifier = androidx.compose.ui.Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColors(containerColor = SoloBlue)
@@ -1398,7 +1399,7 @@ private fun LiveCheckInScreen(
     selectedSection: HomeSection,
     onSectionSelected: (HomeSection) -> Unit
 ) {
-    var selectedBuddy by remember(session.id) { mutableStateOf<CheckedInStudent?>(null) }
+    var selectedBuddy by remember { mutableStateOf<CheckedInStudent?>(null) }
 
     Box(
         modifier = Modifier
