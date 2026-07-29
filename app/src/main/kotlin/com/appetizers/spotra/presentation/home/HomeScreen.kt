@@ -72,6 +72,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -193,11 +194,11 @@ fun HomeScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val accent = if (state.selectedMode == StudyMode.Solo) SoloBlue else GroupGreen
 
-    var viewingSpotPath by remember { mutableStateOf<List<String>>(emptyList()) }
-    val viewingSpotId = viewingSpotPath.lastOrNull()
-    var reviewingSpotId by remember { mutableStateOf<String?>(null) }
+    var viewingSpotPath by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
+    var reviewingSpotId by rememberSaveable { mutableStateOf<String?>(null) }
+    var showSubmitSpot by rememberSaveable { mutableStateOf(false) }
     var editingReview by remember { mutableStateOf<Review?>(null) }
-    var showSubmitSpot by remember { mutableStateOf(false) }
+    val viewingSpotId = viewingSpotPath.lastOrNull()
 
     val snackbarHostState = remember { SnackbarHostState() }
     val reviewSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -2210,7 +2211,7 @@ private fun LiveCheckInScreen(
     selectedSection: HomeSection,
     onSectionSelected: (HomeSection) -> Unit
 ) {
-    var selectedBuddy by remember(session.id) { mutableStateOf<CheckedInStudent?>(null) }
+    var selectedBuddy by remember { mutableStateOf<CheckedInStudent?>(null) }
 
     Box(
         modifier = Modifier

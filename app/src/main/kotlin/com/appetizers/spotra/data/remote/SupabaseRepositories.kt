@@ -36,6 +36,7 @@ import io.github.jan.supabase.auth.providers.builtin.OTP
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Order
+import kotlin.math.roundToInt
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.SerialName
@@ -52,6 +53,8 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneOffset
+
+private fun Double.roundToSingleDecimal(): Double = (this * 10).roundToInt() / 10.0
 
 class SupabaseAuthRepository(
     private val client: SupabaseClient
@@ -757,6 +760,14 @@ class SupabaseHomeRepository(
         reviews: List<ReviewRow>,
         photos: List<SpotPhoto> = emptyList()
     ): StudySpotDetail {
+        val averageRating = reviews
+            .takeIf { it.isNotEmpty() }
+            ?.map { it.rating }
+            ?.average()
+            ?.roundToSingleDecimal()
+        val occupancyValues = reviews.mapNotNull { it.occupancyPercent }
+        val reportedOccupancyPercent = if (occupancyValues.isEmpty()) null
+            else occupancyValues.average().roundToInt().coerceIn(0, 100)
         // Same aggregation the spot_review_stats view applies for the leaderboards, so a spot's
         // detail screen and its Explore ranking never disagree.
         val aggregates = SpotReviewAggregator.aggregate(
@@ -765,7 +776,6 @@ class SupabaseHomeRepository(
             lightings = reviews.map { it.lighting },
             wifiQualities = reviews.map { it.wifiQuality },
         )
-        val reportedOccupancyPercent = reviews.firstNotNullOfOrNull { it.occupancyPercent }
         val liveOccupancyPercent = liveOccupancyPercent(activeCount, capacity)
 
         return StudySpotDetail(
