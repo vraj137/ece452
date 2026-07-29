@@ -194,11 +194,11 @@ fun HomeScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val accent = if (state.selectedMode == StudyMode.Solo) SoloBlue else GroupGreen
 
-    var viewingSpotId by rememberSaveable { mutableStateOf<String?>(null) }
+    var viewingSpotPath by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
     var reviewingSpotId by rememberSaveable { mutableStateOf<String?>(null) }
     var showSubmitSpot by rememberSaveable { mutableStateOf(false) }
-    var viewingSpotPath by remember { mutableStateOf<List<String>>(emptyList()) }
     var editingReview by remember { mutableStateOf<Review?>(null) }
+    val viewingSpotId = viewingSpotPath.lastOrNull()
 
     val snackbarHostState = remember { SnackbarHostState() }
     val reviewSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
