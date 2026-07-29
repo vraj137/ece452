@@ -12,6 +12,7 @@ import com.appetizers.spotra.domain.model.GroupVisibility
 import com.appetizers.spotra.domain.model.HomeSnapshot
 import com.appetizers.spotra.domain.model.Review
 import com.appetizers.spotra.domain.model.ReviewDraft
+import com.appetizers.spotra.domain.model.SpotOccupancy
 import com.appetizers.spotra.domain.model.StudyMode
 import com.appetizers.spotra.domain.model.StudySpotDetail
 import com.appetizers.spotra.domain.model.StudySpotSummary
@@ -26,6 +27,7 @@ import com.appetizers.spotra.domain.repository.StreakRepository
 import com.appetizers.spotra.domain.usecase.AwardBadgesUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -83,6 +85,28 @@ class HomeViewModelTest {
         val state = viewModel.uiState.value
         assertEquals(2, state.mapSpots.size)
         assertEquals("e7-study-hall", state.selectedSpotId)
+    }
+
+    @Test
+    fun `occupancy broadcasts update loaded spot state`() = runTest(dispatcher) {
+        val repository = FakeHomeRepository()
+        val viewModel = buildViewModel(repository)
+        advanceUntilIdle()
+
+        repository.occupancyUpdates.emit(
+            SpotOccupancy(
+                spotId = "e7-study-hall",
+                activeCount = 18,
+                capacity = 20,
+            )
+        )
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(90, state.soloSpot?.occupancyPercent)
+        assertEquals("Busy", state.soloSpot?.badge)
+        assertEquals(90, state.mapSpots.first { it.id == "e7-study-hall" }.occupancyPercent)
+        assertEquals(18, state.occupancyBySpot["e7-study-hall"]?.activeCount)
     }
 
     @Test
@@ -327,6 +351,7 @@ private class FakeHomeRepository(
     initialGroupSession: GroupStudySession? = defaultGroupSession(),
     initialPublicGroups: List<GroupStudySession> = emptyList(),
 ) : HomeRepository {
+    val occupancyUpdates = MutableSharedFlow<SpotOccupancy>(extraBufferCapacity = 1)
     var lastStartGroupSessionId: String? = null
         private set
     var lastCreatedGroupName: String? = null
@@ -339,6 +364,8 @@ private class FakeHomeRepository(
         private set
     private var activeGroupSession: GroupStudySession? = initialGroupSession
     private var publicGroups: List<GroupStudySession> = initialPublicGroups
+
+    override fun observeOccupancy() = occupancyUpdates
 
     private val soloSpot = StudySpotSummary(
         id = "e7-study-hall",

@@ -273,6 +273,7 @@ fun HomeScreen(
                 parentSpot = parentSpot,
                 homeRepository = homeRepository,
                 accent = accent,
+                liveOccupancyBySpot = state.occupancyBySpot,
                 onBack = { viewingSpotPath = previousSpotPath(viewingSpotPath) },
                 onSpaceSelected = { child ->
                     viewingSpotPath = childSpotPath(viewingSpotPath, child.id)
@@ -295,6 +296,7 @@ fun HomeScreen(
                 homeRepository = homeRepository,
                 reviewRepository = reviewRepository,
                 friendRepository = friendRepository,
+                liveOccupancy = state.occupancyBySpot[spotId],
                 onReview = {
                     editingReview = null
                     reviewingSpotId = spotId

@@ -61,6 +61,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,8 +84,10 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import com.appetizers.spotra.domain.model.FriendProfile
 import com.appetizers.spotra.domain.model.Review
+import com.appetizers.spotra.domain.model.SpotOccupancy
 import com.appetizers.spotra.domain.model.StudySpotDetail
 import com.appetizers.spotra.domain.model.StudySpotSummary
+import com.appetizers.spotra.domain.model.withOccupancy
 import com.appetizers.spotra.domain.repository.FriendRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.ReviewRepository
@@ -115,6 +118,7 @@ internal fun SpotDetailScreen(
     homeRepository: HomeRepository,
     reviewRepository: ReviewRepository,
     friendRepository: FriendRepository? = null,
+    liveOccupancy: SpotOccupancy? = null,
     onReview: () -> Unit,
     onEditReview: (Review) -> Unit = {},
     activeCheckInSpotId: String? = null,
@@ -132,12 +136,15 @@ internal fun SpotDetailScreen(
     var error by remember(spotId) { mutableStateOf<String?>(null) }
     var pendingDeleteReview by remember { mutableStateOf<Review?>(null) }
     val scope = rememberCoroutineScope()
+    val currentLiveOccupancy by rememberUpdatedState(liveOccupancy)
 
     LaunchedEffect(spotId) {
         error = null
         reviewLoadError = null
         runCatching { homeRepository.spotDetail(spotId) }
-            .onSuccess { spot = it }
+            .onSuccess { loaded ->
+                spot = currentLiveOccupancy?.let(loaded::withOccupancy) ?: loaded
+            }
             .onFailure { error = it.toUserMessage("Could not load this place.") }
 
         runCatching { reviewRepository.reviewsFor(spotId) }
@@ -148,6 +155,12 @@ internal fun SpotDetailScreen(
             val profiles = runCatching { friendRepository.fetchFriendProfiles() }.getOrNull()
             selfId = runCatching { friendRepository.currentUserId() }.getOrNull()
             acceptedFriendIds = profiles?.filter { it.isAccepted }?.map { it.id }?.toSet() ?: emptySet()
+        }
+    }
+
+    LaunchedEffect(liveOccupancy) {
+        liveOccupancy?.let { occupancy ->
+            spot = spot?.withOccupancy(occupancy)
         }
     }
 

@@ -1,5 +1,7 @@
 package com.appetizers.spotra.domain.model
 
+import kotlin.math.roundToInt
+
 enum class StudyMode {
     Solo,
     Group
@@ -110,6 +112,47 @@ data class StudySpotDetail(
         operatingHours = operatingHours,
     )
 }
+
+data class SpotOccupancy(
+    val spotId: String,
+    val activeCount: Int,
+    val capacity: Int?,
+) {
+    val percent: Int?
+        get() = capacity
+            ?.takeIf { it > 0 }
+            ?.let { ((activeCount.toDouble() / it) * 100).roundToInt().coerceIn(0, 100) }
+
+    val badge: String
+        get() = when {
+            activeCount <= 0 -> "Quiet"
+            activeCount < 8 -> "Moderate"
+            else -> "Busy"
+        }
+}
+
+fun StudySpotSummary.withOccupancy(occupancy: SpotOccupancy): StudySpotSummary =
+    if (id == occupancy.spotId) {
+        copy(
+            badge = occupancy.badge,
+            occupancyPercent = occupancy.percent,
+        )
+    } else {
+        this
+    }
+
+fun StudySpotDetail.withOccupancy(occupancy: SpotOccupancy): StudySpotDetail =
+    if (id == occupancy.spotId) {
+        copy(
+            badge = occupancy.badge,
+            capacity = occupancy.capacity,
+            occupancyPercent = occupancy.percent ?: reportedOccupancyPercent,
+            occupancyPercentIsLive = occupancy.percent != null,
+            peopleHere = occupancy.activeCount,
+        )
+    } else {
+        this
+    }
 
 data class GroupMember(
     val id: String,

@@ -246,6 +246,10 @@ private fun LeaderboardSpotCard(
     val isTopThree = rank <= 3
     val borderColor = if (isTopThree) accent.copy(alpha = 0.35f) else DividerLine
     val cardBg = if (isTopThree) CardBackground else Color.White
+    val hasStatusPills = spot.noiseLevel != null ||
+        spot.lighting != null ||
+        spot.rating != null ||
+        spot.occupancyPercent != null
 
     Column(
         modifier = Modifier
@@ -380,13 +384,14 @@ private fun LeaderboardSpotCard(
             )
         }
 
-        Spacer(Modifier.height(12.dp))
-
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (spot.noiseLevel != null) SpotAttributePill(label = spot.noiseLevel, category = "Noise")
-            if (spot.lighting != null) SpotAttributePill(label = spot.lighting, category = "Light")
-            if (spot.rating != null) RatingPill(rating = spot.rating, reviewCount = spot.reviewCount)
-            if (spot.occupancyPercent != null) FullnessPill(percent = spot.occupancyPercent)
+        if (hasStatusPills) {
+            Spacer(Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (spot.noiseLevel != null) SpotAttributePill(label = spot.noiseLevel, category = "Noise")
+                if (spot.lighting != null) SpotAttributePill(label = spot.lighting, category = "Light")
+                if (spot.rating != null) RatingPill(rating = spot.rating, reviewCount = spot.reviewCount)
+                if (spot.occupancyPercent != null) FullnessPill(percent = spot.occupancyPercent)
+            }
         }
     }
 }
