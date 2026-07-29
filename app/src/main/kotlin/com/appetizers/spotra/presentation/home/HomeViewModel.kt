@@ -10,8 +10,10 @@ import com.appetizers.spotra.domain.model.CompletedSession
 import com.appetizers.spotra.domain.model.GroupStudySession
 import com.appetizers.spotra.domain.model.GroupVisibility
 import com.appetizers.spotra.domain.model.ReviewDraft
+import com.appetizers.spotra.domain.model.SpotOccupancy
 import com.appetizers.spotra.domain.model.StudyMode
 import com.appetizers.spotra.domain.model.StudySpotSummary
+import com.appetizers.spotra.domain.model.withOccupancy
 import com.appetizers.spotra.domain.repository.AuthRepository
 import com.appetizers.spotra.domain.repository.FriendRepository
 import com.appetizers.spotra.domain.repository.HomeRepository
@@ -20,9 +22,11 @@ import com.appetizers.spotra.domain.repository.StreakRepository
 import com.appetizers.spotra.domain.usecase.AwardBadgesUseCase
 import com.appetizers.spotra.domain.usecase.ReviewQualityScorer
 import com.appetizers.spotra.presentation.toUserMessage
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -38,6 +42,7 @@ data class HomeUiState(
     val groupSpots: List<StudySpotSummary> = emptyList(),
     val publicGroups: List<GroupStudySession> = emptyList(),
     val mapSpots: List<StudySpotSummary> = emptyList(),
+    val occupancyBySpot: Map<String, SpotOccupancy> = emptyMap(),
     val trendingCounts: Map<String, Int> = emptyMap(),
     val selectedSpotId: String? = null,
     val activeCheckIn: CheckInSession? = null,
@@ -95,6 +100,7 @@ class HomeViewModel(
     private var pendingCheckoutBadge: BadgeId? = null
 
     init {
+        observeOccupancy()
         loadHome()
     }
 
@@ -500,16 +506,16 @@ class HomeViewModel(
             _uiState.update { it.copy(isLoading = true, error = null) }
             runCatching { repository.loadHome() }
                 .onSuccess { snapshot ->
-                    _uiState.update {
-                        it.copy(
+                    _uiState.update { state ->
+                        state.copy(
                             isLoading = false,
                             loadError = null,
                             userFirstName = snapshot.userFirstName,
-                            soloSpot = snapshot.soloSpot,
+                            soloSpot = snapshot.soloSpot.withKnownOccupancy(state.occupancyBySpot),
                             groupSession = snapshot.groupSession,
-                            groupSpots = snapshot.groupSpots,
+                            groupSpots = snapshot.groupSpots.withKnownOccupancy(state.occupancyBySpot),
                             publicGroups = snapshot.publicGroups,
-                            mapSpots = snapshot.mapSpots,
+                            mapSpots = snapshot.mapSpots.withKnownOccupancy(state.occupancyBySpot),
                             trendingCounts = snapshot.trendingCounts,
                             selectedSpotId = snapshot.soloSpot.id,
                             error = null
@@ -557,16 +563,16 @@ class HomeViewModel(
             _uiState.update { it.copy(isRefreshing = true, error = null) }
             runCatching { repository.loadHome() }
                 .onSuccess { snapshot ->
-                    _uiState.update {
-                        it.copy(
+                    _uiState.update { state ->
+                        state.copy(
                             isRefreshing = false,
                             loadError = null,
                             userFirstName = snapshot.userFirstName,
-                            soloSpot = snapshot.soloSpot,
+                            soloSpot = snapshot.soloSpot.withKnownOccupancy(state.occupancyBySpot),
                             groupSession = snapshot.groupSession,
-                            groupSpots = snapshot.groupSpots,
+                            groupSpots = snapshot.groupSpots.withKnownOccupancy(state.occupancyBySpot),
                             publicGroups = snapshot.publicGroups,
-                            mapSpots = snapshot.mapSpots,
+                            mapSpots = snapshot.mapSpots.withKnownOccupancy(state.occupancyBySpot),
                             trendingCounts = snapshot.trendingCounts,
                             error = null
                         )
@@ -599,6 +605,29 @@ class HomeViewModel(
         loadHome()
     }
 
+    private fun observeOccupancy() {
+        viewModelScope.launch {
+            repository.observeOccupancy()
+                .retryWhen { _, _ ->
+                    delay(OCCUPANCY_RECONNECT_DELAY_MILLIS)
+                    true
+                }
+                .collect { occupancy ->
+                    _uiState.update { state ->
+                        state.copy(
+                            soloSpot = state.soloSpot?.withOccupancy(occupancy),
+                            groupSpots = state.groupSpots.map { it.withOccupancy(occupancy) },
+                            mapSpots = state.mapSpots.map { it.withOccupancy(occupancy) },
+                            occupancyBySpot = state.occupancyBySpot + (occupancy.spotId to occupancy),
+                            activeCheckIn = state.activeCheckIn?.let { session ->
+                                session.copy(spot = session.spot.withOccupancy(occupancy))
+                            },
+                        )
+                    }
+                }
+        }
+    }
+
     private fun showError(message: String) {
         _uiState.update { it.copy(error = message) }
     }
@@ -629,3 +658,15 @@ class HomeViewModel(
             ) as T
     }
 }
+
+private fun StudySpotSummary.withKnownOccupancy(
+    occupancies: Map<String, SpotOccupancy>
+): StudySpotSummary =
+    occupancies[id]?.let(::withOccupancy) ?: this
+
+private fun List<StudySpotSummary>.withKnownOccupancy(
+    occupancies: Map<String, SpotOccupancy>
+): List<StudySpotSummary> =
+    map { it.withKnownOccupancy(occupancies) }
+
+private const val OCCUPANCY_RECONNECT_DELAY_MILLIS = 5_000L

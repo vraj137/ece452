@@ -11,6 +11,7 @@ import com.appetizers.spotra.domain.model.GroupVisibility
 import com.appetizers.spotra.domain.model.HomeSnapshot
 import com.appetizers.spotra.domain.model.Review
 import com.appetizers.spotra.domain.model.ReviewDraft
+import com.appetizers.spotra.domain.model.SpotOccupancy
 import com.appetizers.spotra.domain.model.SpotPhoto
 import com.appetizers.spotra.domain.model.SpotSubmission
 import com.appetizers.spotra.domain.model.StudyMode
@@ -36,9 +37,21 @@ import io.github.jan.supabase.auth.providers.builtin.OTP
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Order
+import io.github.jan.supabase.realtime.broadcastFlow
+import io.github.jan.supabase.realtime.channel
+import io.github.jan.supabase.realtime.realtime
 import kotlin.math.roundToInt
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
@@ -193,6 +206,13 @@ private data class OccupancyRow(
 )
 
 @Serializable
+private data class OccupancyBroadcast(
+    @SerialName("spot_slug") val spotSlug: String,
+    @SerialName("active_count") val activeCount: Int,
+    val capacity: Int? = null,
+)
+
+@Serializable
 private data class TrendingRow(
     @SerialName("spot_slug") val spotSlug: String,
     @SerialName("checkins_7d") val checkins7d: Int
@@ -249,6 +269,35 @@ class SupabaseHomeRepository(
     private var activeGroupSessionId: String? = null
     private var cachedFirstName: String = "there"
     private var spotCache: Map<String, StudySpotSummary> = emptyMap()
+
+    override fun observeOccupancy(): Flow<SpotOccupancy> = channelFlow {
+        val realtimeChannel = client.channel(OCCUPANCY_CHANNEL) {
+            isPrivate = true
+        }
+        val collector = launch(start = CoroutineStart.UNDISPATCHED) {
+            realtimeChannel
+                .broadcastFlow<OccupancyBroadcast>(OCCUPANCY_EVENT)
+                .collect { update ->
+                    send(
+                        SpotOccupancy(
+                            spotId = update.spotSlug,
+                            activeCount = update.activeCount,
+                            capacity = update.capacity,
+                        )
+                    )
+                }
+        }
+
+        try {
+            withTimeout(OCCUPANCY_SUBSCRIBE_TIMEOUT_MILLIS) {
+                realtimeChannel.subscribe(blockUntilSubscribed = true)
+            }
+            awaitCancellation()
+        } finally {
+            collector.cancelAndJoin()
+            client.realtime.removeChannel(realtimeChannel)
+        }
+    }.buffer(Channel.CONFLATED)
 
     override suspend fun loadHome(): HomeSnapshot = coroutineScope {
         val firstNameDeferred = async { currentFirstName() }
@@ -736,7 +785,7 @@ class SupabaseHomeRepository(
     ) = StudySpotSummary(
         id = slug,
         name = name,
-        badge = occupancyBadge(activeCount),
+        badge = SpotOccupancy(slug, activeCount, capacity).badge,
         building = building,
         parentSlug = parentSlug,
         childCount = childCount,
@@ -745,7 +794,7 @@ class SupabaseHomeRepository(
         photoUrl = coverPhotoUrl,
         latitude = latitude,
         longitude = longitude,
-        occupancyPercent = liveOccupancyPercent(activeCount, capacity),
+        occupancyPercent = SpotOccupancy(slug, activeCount, capacity).percent,
         soloFriendly = soloFriendly,
         groupFriendly = groupFriendly,
         amenities = amenities,
@@ -776,14 +825,15 @@ class SupabaseHomeRepository(
             lightings = reviews.map { it.lighting },
             wifiQualities = reviews.map { it.wifiQuality },
         )
-        val liveOccupancyPercent = liveOccupancyPercent(activeCount, capacity)
+        val occupancy = SpotOccupancy(slug, activeCount, capacity)
+        val liveOccupancyPercent = occupancy.percent
 
         return StudySpotDetail(
             id = slug,
             name = name,
             building = building,
             floor = floor,
-            badge = occupancyBadge(activeCount),
+            badge = occupancy.badge,
             parentSlug = parentSlug,
             rating = aggregates.averageRating,
             reviewCount = aggregates.reviewCount,
@@ -849,17 +899,6 @@ private fun List<SpotDto>.childCountsByParentSlug(): Map<String, Int> =
 private fun parseLocalTime(value: String): LocalTime? =
     runCatching { LocalTime.parse(value) }.getOrNull()
 
-private fun liveOccupancyPercent(activeCount: Int, capacity: Int?): Int? =
-    capacity
-        ?.takeIf { it > 0 }
-        ?.let { kotlin.math.round((activeCount.toDouble() / it) * 100).toInt().coerceIn(0, 100) }
-
-private fun occupancyBadge(activeCount: Int): String = when {
-    activeCount <= 0 -> "Quiet"
-    activeCount < 8 -> "Moderate"
-    else -> "Busy"
-}
-
 private fun initialsOf(name: String): String =
     name.split(" ")
         .filter { it.isNotBlank() }
@@ -867,6 +906,10 @@ private fun initialsOf(name: String): String =
         .joinToString("") { it.first().uppercase() }
         .ifBlank { "?" }
         .take(2)
+
+private const val OCCUPANCY_CHANNEL = "spot-occupancy"
+private const val OCCUPANCY_EVENT = "occupancy_changed"
+private const val OCCUPANCY_SUBSCRIBE_TIMEOUT_MILLIS = 15_000L
 
 @Serializable
 private data class ReviewRow(

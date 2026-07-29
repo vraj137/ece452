@@ -9,6 +9,7 @@ import com.appetizers.spotra.domain.model.HomeSnapshot
 import com.appetizers.spotra.domain.model.OnboardingDraft
 import com.appetizers.spotra.domain.model.Review
 import com.appetizers.spotra.domain.model.ReviewDraft
+import com.appetizers.spotra.domain.model.SpotOccupancy
 import com.appetizers.spotra.domain.model.CompletedSession
 import com.appetizers.spotra.domain.model.SpotSubmission
 import com.appetizers.spotra.domain.model.StudyMode
@@ -16,6 +17,7 @@ import com.appetizers.spotra.domain.model.StudySpotDetail
 import com.appetizers.spotra.domain.model.UserBadge
 import com.appetizers.spotra.domain.model.UserProfile
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 data class AuthUser(val id: String, val email: String)
 
@@ -62,6 +64,7 @@ interface BadgeRepository {
 }
 
 interface HomeRepository {
+    fun observeOccupancy(): Flow<SpotOccupancy> = emptyFlow()
     suspend fun loadHome(): HomeSnapshot
     suspend fun spotDetail(spotId: String): StudySpotDetail
     suspend fun childSpots(parentSpotId: String): List<StudySpotDetail>
