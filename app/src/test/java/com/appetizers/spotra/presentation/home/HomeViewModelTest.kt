@@ -340,8 +340,6 @@ private class FailingHomeRepository : HomeRepository {
         spotId: String,
         mode: StudyMode,
         groupSessionId: String?,
-        latitude: Double,
-        longitude: Double,
     ): CheckInSession = failed()
     override suspend fun checkOut(sessionId: String) = failed()
     override suspend fun inviteToGroup(groupSessionId: String, inviteText: String): GroupMember = failed()
@@ -459,8 +457,6 @@ private class FakeHomeRepository(
         spotId: String,
         mode: StudyMode,
         groupSessionId: String?,
-        latitude: Double,
-        longitude: Double,
     ): CheckInSession {
         lastStartGroupSessionId = groupSessionId
         return CheckInSession(

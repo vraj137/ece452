@@ -32,6 +32,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -593,6 +594,8 @@ internal fun BottomNavigationShell(
     selectedSection: HomeSection,
     onSectionSelected: (HomeSection) -> Unit
 ) {
+    val glassShape = RoundedCornerShape(30.dp)
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -603,9 +606,32 @@ internal fun BottomNavigationShell(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .shadow(12.dp, RoundedCornerShape(28.dp), clip = false)
-                .background(Color.White, RoundedCornerShape(28.dp))
-                .padding(start = 14.dp, top = 8.dp, end = 14.dp, bottom = 8.dp),
+                .shadow(
+                    elevation = 14.dp,
+                    shape = glassShape,
+                    ambientColor = accent.copy(alpha = 0.10f),
+                    spotColor = accent.copy(alpha = 0.16f)
+                )
+                .clip(glassShape)
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.96f),
+                            Color(0xFFE9EEFB).copy(alpha = 0.78f)
+                        )
+                    )
+                )
+                .border(
+                    width = 1.dp,
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.White,
+                            accent.copy(alpha = 0.16f)
+                        )
+                    ),
+                    shape = glassShape
+                )
+                .padding(5.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             BottomNavItem(
@@ -653,22 +679,69 @@ private fun BottomNavItem(
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    val color = if (selected) accent else NavMuted
+    val color by animateColorAsState(
+        targetValue = if (selected) accent else NavMuted,
+        animationSpec = tween(durationMillis = 180),
+        label = "bottomNavigationItemColor"
+    )
+    val itemShape = RoundedCornerShape(24.dp)
+
     Column(
         modifier = modifier
-            .height(58.dp)
-            .clickable(onClick = onClick),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .height(64.dp)
+            .then(
+                if (selected) {
+                    Modifier.shadow(
+                        elevation = 7.dp,
+                        shape = itemShape,
+                        ambientColor = Color.White.copy(alpha = 0.85f),
+                        spotColor = accent.copy(alpha = 0.16f)
+                    )
+                } else {
+                    Modifier
+                }
+            )
+            .clip(itemShape)
+            .background(
+                brush = if (selected) {
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.98f),
+                            Color.White.copy(alpha = 0.76f)
+                        )
+                    )
+                } else {
+                    Brush.verticalGradient(
+                        colors = listOf(Color.Transparent, Color.Transparent)
+                    )
+                }
+            )
+            .then(
+                if (selected) {
+                    Modifier.border(
+                        width = 1.dp,
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.White,
+                                accent.copy(alpha = 0.10f)
+                            )
+                        ),
+                        shape = itemShape
+                    )
+                } else {
+                    Modifier
+                }
+            )
+            .selectable(
+                selected = selected,
+                role = Role.Tab,
+                onClick = onClick
+            ),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
-        Box(
-            modifier = Modifier
-                .width(32.dp)
-                .height(3.dp)
-                .background(if (selected) accent else Color.Transparent, RoundedCornerShape(2.dp))
-        )
-        Spacer(Modifier.height(6.dp))
         Icon(imageVector = icon, contentDescription = label, tint = color, modifier = Modifier.size(25.dp))
-        Spacer(Modifier.height(3.dp))
+        Spacer(Modifier.height(4.dp))
         Text(text = label, color = color, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
     }
 }
