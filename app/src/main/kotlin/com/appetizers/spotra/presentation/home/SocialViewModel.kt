@@ -6,9 +6,12 @@ import androidx.lifecycle.viewModelScope
 import com.appetizers.spotra.domain.model.FriendProfile
 import com.appetizers.spotra.domain.repository.FriendRepository
 import com.appetizers.spotra.presentation.toUserMessage
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -34,6 +37,20 @@ class SocialViewModel(
 
     init {
         loadAll()
+        observeFriendRequests()
+    }
+
+    private fun observeFriendRequests() {
+        viewModelScope.launch {
+            val userId = runCatching { friendRepository.currentUserId() }.getOrNull() ?: return@launch
+            friendRepository.observeFriendRequests(userId)
+                .retryWhen { _, _ ->
+                    delay(FRIEND_REQUEST_RECONNECT_DELAY_MILLIS)
+                    true
+                }
+                .catch { /* friend request updates are best-effort */ }
+                .collect { loadAll() }
+        }
     }
 
     fun loadAll() {
@@ -200,10 +217,12 @@ class SocialViewModel(
     }
 
     class Factory(
-        private val friendRepository: FriendRepository
+        private val friendRepository: FriendRepository,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
             SocialViewModel(friendRepository) as T
     }
 }
+
+private const val FRIEND_REQUEST_RECONNECT_DELAY_MILLIS = 5_000L

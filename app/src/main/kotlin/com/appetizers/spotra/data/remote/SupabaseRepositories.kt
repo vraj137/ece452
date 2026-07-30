@@ -4,10 +4,13 @@ import com.appetizers.spotra.domain.model.BadgeId
 import com.appetizers.spotra.domain.model.CheckInSession
 import com.appetizers.spotra.domain.model.CheckedInStudent
 import com.appetizers.spotra.domain.model.CompletedSession
+import com.appetizers.spotra.domain.model.EmailInviteResult
+import com.appetizers.spotra.domain.model.GroupInvite
 import com.appetizers.spotra.domain.model.initialsOf as pairInitialsOf
 import com.appetizers.spotra.domain.model.shortDisplayName
 import com.appetizers.spotra.domain.model.DailyOperatingHours
 import com.appetizers.spotra.domain.model.GroupMember
+import com.appetizers.spotra.domain.model.GroupSessionEvent
 import com.appetizers.spotra.domain.model.GroupStudySession
 import com.appetizers.spotra.domain.model.GroupVisibility
 import com.appetizers.spotra.domain.model.HomeSnapshot
@@ -214,6 +217,44 @@ private data class OccupancyBroadcast(
     @SerialName("spot_slug") val spotSlug: String,
     @SerialName("active_count") val activeCount: Int,
     val capacity: Int? = null,
+)
+
+@Serializable
+private data class GroupMembersChangedBroadcast(
+    @SerialName("session_id") val sessionId: String
+)
+
+@Serializable
+private data class GroupSessionEndedBroadcast(
+    @SerialName("session_id") val sessionId: String
+)
+
+@Serializable
+private data class PublicGroupsChangedBroadcast(
+    val event: String,
+    @SerialName("session_id") val sessionId: String
+)
+
+@Serializable
+private data class EmailInviteResultDto(
+    val type: String,
+    val id: String,
+    @SerialName("first_name") val firstName: String,
+    @SerialName("last_name") val lastName: String,
+)
+
+@Serializable
+private data class GroupInviteRow(
+    val id: String,
+    @SerialName("group_session_id") val groupSessionId: String,
+    @SerialName("group_title") val groupTitle: String,
+    @SerialName("inviter_name") val inviterName: String,
+)
+
+@Serializable
+private data class GroupInviteBroadcast(
+    @SerialName("invite_id") val inviteId: String,
+    @SerialName("group_session_id") val groupSessionId: String,
 )
 
 @Serializable
@@ -488,7 +529,8 @@ class SupabaseHomeRepository(
             detail = "Studying now",
             isSelf = true
         )
-        return CheckInSession(id = row.id, spot = spot, mode = mode, attendees = listOf(self)) to createdAtMillis
+        val coAttendees = runCatching { loadCoAttendees(userId, row.spotSlug) }.getOrDefault(emptyList())
+        return CheckInSession(id = row.id, spot = spot, mode = mode, attendees = listOf(self) + coAttendees) to createdAtMillis
     }
 
     override suspend fun createGroup(
@@ -576,28 +618,65 @@ class SupabaseHomeRepository(
         }
     }
 
-    override suspend fun inviteToGroup(groupSessionId: String, inviteText: String): GroupMember {
+    override suspend fun inviteToGroup(groupSessionId: String, inviteText: String): EmailInviteResult {
         require(groupSessionId.isNotBlank()) { "A live group session is required before inviting members." }
-        require(activeGroupSessionId == null || activeGroupSessionId == groupSessionId) {
-            "This group session is no longer active. Refresh and try again."
-        }
-
         if (!inviteText.contains("@")) {
             error("Enter the email address associated with their Spotra account to invite them.")
         }
-        val profile = client.postgrest.rpc(
-            "invite_group_member_by_email",
+        val result = client.postgrest.rpc(
+            "send_group_invite_by_email",
             buildJsonObject {
                 put("p_group_id", groupSessionId)
                 put("p_email", inviteText.trim())
             }
-        ).decodeSingle<ProfileRow>()
-        return GroupMember(
-            id = profile.id,
-            name = shortDisplayName(profile.firstName, profile.lastName),
-            initials = pairInitialsOf(profile.firstName, profile.lastName),
+        ).decodeAs<EmailInviteResultDto>()
+
+        val member = GroupMember(
+            id = result.id,
+            name = shortDisplayName(result.firstName, result.lastName),
+            initials = pairInitialsOf(result.firstName, result.lastName),
+        )
+        return if (result.type == "added") {
+            EmailInviteResult.Added(member)
+        } else {
+            EmailInviteResult.InviteSent(shortDisplayName(result.firstName, result.lastName))
+        }
+    }
+
+    override suspend fun fetchPendingGroupInvites(): List<GroupInvite> =
+        runCatching {
+            client.postgrest.rpc("fetch_pending_group_invites")
+                .decodeList<GroupInviteRow>()
+                .map { GroupInvite(it.id, it.groupSessionId, it.groupTitle, it.inviterName) }
+        }.getOrDefault(emptyList())
+
+    override suspend fun respondToGroupInvite(inviteId: String, accept: Boolean) {
+        client.postgrest.rpc(
+            "respond_to_group_invite",
+            buildJsonObject {
+                put("p_invite_id", inviteId)
+                put("p_accept", accept)
+            }
         )
     }
+
+    override fun observeGroupInvites(currentUserId: String): Flow<Unit> = channelFlow {
+        val realtimeChannel = client.channel("group-invites-$currentUserId") { isPrivate = true }
+        val collector = launch(start = CoroutineStart.UNDISPATCHED) {
+            realtimeChannel
+                .broadcastFlow<GroupInviteBroadcast>("group_invite_received")
+                .collect { send(Unit) }
+        }
+        try {
+            withTimeout(GROUP_INVITE_SUBSCRIBE_TIMEOUT_MILLIS) {
+                realtimeChannel.subscribe(blockUntilSubscribed = true)
+            }
+            awaitCancellation()
+        } finally {
+            collector.cancelAndJoin()
+            client.realtime.removeChannel(realtimeChannel)
+        }
+    }.buffer(Channel.CONFLATED)
 
     private data class GroupData(
         val activeGroup: GroupStudySession? = null,
@@ -669,31 +748,104 @@ class SupabaseHomeRepository(
                 )
             }
 
-    private suspend fun loadGroupSession(
-        session: GroupSessionDto,
-        userId: String
-    ): GroupStudySession = coroutineScope {
+    override fun observePublicGroups(): Flow<Unit> = channelFlow {
+        val realtimeChannel = client.channel("public-groups")
+        val collector = launch(start = CoroutineStart.UNDISPATCHED) {
+            realtimeChannel
+                .broadcastFlow<PublicGroupsChangedBroadcast>("public_groups_changed")
+                .collect { send(Unit) }
+        }
+        try {
+            withTimeout(PUBLIC_GROUPS_SUBSCRIBE_TIMEOUT_MILLIS) {
+                realtimeChannel.subscribe(blockUntilSubscribed = true)
+            }
+            awaitCancellation()
+        } finally {
+            collector.cancelAndJoin()
+            client.realtime.removeChannel(realtimeChannel)
+        }
+    }.buffer(Channel.CONFLATED)
+
+    override suspend fun loadPublicGroupsSnapshot(excludingId: String?): List<GroupStudySession> =
+        loadPublicGroups(excludingId)
+
+    override suspend fun loadCheckInAttendees(spotSlug: String): List<CheckedInStudent> {
+        val userId = client.auth.currentUserOrNull()?.id ?: return emptyList()
+        return runCatching { loadCoAttendees(userId, spotSlug) }.getOrDefault(emptyList())
+    }
+
+    override fun observeGroupSession(groupSessionId: String): Flow<GroupSessionEvent> = channelFlow {
+        val userId = client.auth.currentUserOrNull()?.id ?: return@channelFlow
+        val channelName = "group-session-$groupSessionId"
+        val realtimeChannel = client.channel(channelName) { isPrivate = true }
+
+        val membersChangedJob = launch(start = CoroutineStart.UNDISPATCHED) {
+            realtimeChannel
+                .broadcastFlow<GroupMembersChangedBroadcast>("members_changed")
+                .collect {
+                    val members = runCatching { fetchGroupMembersList(groupSessionId, userId) }.getOrNull()
+                    if (members != null) send(GroupSessionEvent.MembersChanged(members))
+                }
+        }
+
+        val sessionEndedJob = launch(start = CoroutineStart.UNDISPATCHED) {
+            realtimeChannel
+                .broadcastFlow<GroupSessionEndedBroadcast>("session_ended")
+                .collect { send(GroupSessionEvent.Ended) }
+        }
+
+        try {
+            withTimeout(GROUP_SESSION_SUBSCRIBE_TIMEOUT_MILLIS) {
+                realtimeChannel.subscribe(blockUntilSubscribed = true)
+            }
+            awaitCancellation()
+        } finally {
+            membersChangedJob.cancelAndJoin()
+            sessionEndedJob.cancelAndJoin()
+            client.realtime.removeChannel(realtimeChannel)
+        }
+    }.buffer(Channel.CONFLATED)
+
+    override suspend fun inviteToGroupByUserId(groupSessionId: String, userId: String): GroupMember {
+        require(groupSessionId.isNotBlank())
+        val profile = client.postgrest.rpc(
+            "invite_group_member_by_id",
+            buildJsonObject {
+                put("p_group_id", groupSessionId)
+                put("p_user_id", userId)
+            }
+        ).decodeList<ProfileRow>().firstOrNull()
+            ?: error("Could not find that user's profile.")
+        return GroupMember(
+            id = profile.id,
+            name = shortDisplayName(profile.firstName, profile.lastName),
+            initials = pairInitialsOf(profile.firstName, profile.lastName),
+        )
+    }
+
+    private suspend fun fetchGroupMembersList(sessionId: String, currentUserId: String): List<GroupMember> {
         val memberUserIds = client.from("group_session_members")
-            .select { filter { eq("session_id", session.id) } }
+            .select { filter { eq("session_id", sessionId) } }
             .decodeList<GroupSessionMemberRow>()
             .map { it.userId }
 
         val profiles = if (memberUserIds.isEmpty()) {
             emptyList()
         } else {
-            client.postgrest.rpc(
-                "safe_profiles",
-                buildJsonObject {
-                    put("p_ids", kotlinx.serialization.json.JsonArray(
-                        memberUserIds.map(::JsonPrimitive)
-                    ))
-                    put("p_limit", 50)
-                }
-            ).decodeList<ProfileRow>()
+            runCatching {
+                client.postgrest.rpc(
+                    "safe_profiles",
+                    buildJsonObject {
+                        put("p_ids", kotlinx.serialization.json.JsonArray(memberUserIds.map(::JsonPrimitive)))
+                        put("p_limit", 50)
+                    }
+                ).decodeList<ProfileRow>()
+            }.getOrDefault(emptyList())
         }
-        val ownProfile = if (userId in memberUserIds) {
+
+        val ownProfile = if (currentUserId in memberUserIds) {
             client.from("profiles")
-                .select { filter { eq("id", userId) } }
+                .select { filter { eq("id", currentUserId) } }
                 .decodeSingleOrNull<UserProfileDto>()
                 ?.let {
                     ProfileRow(
@@ -704,23 +856,28 @@ class SupabaseHomeRepository(
                         term = it.studyTerm?.label.orEmpty(),
                     )
                 }
-        } else {
-            null
-        }
+        } else null
+
         val allProfiles = (profiles + listOfNotNull(ownProfile)).distinctBy { it.id }
 
-        val members = allProfiles.map { profile ->
-            val isSelf = profile.id == userId
+        return allProfiles.map { profile ->
+            val isSelf = profile.id == currentUserId
             GroupMember(
                 id = profile.id,
                 name = if (isSelf) "You" else shortDisplayName(profile.firstName, profile.lastName),
                 initials = pairInitialsOf(profile.firstName, profile.lastName),
             )
         }.ifEmpty {
-            listOf(GroupMember(userId, cachedFirstName, initialsOf(cachedFirstName)))
+            listOf(GroupMember(currentUserId, cachedFirstName, initialsOf(cachedFirstName)))
         }
+    }
 
-        GroupStudySession(
+    private suspend fun loadGroupSession(
+        session: GroupSessionDto,
+        userId: String
+    ): GroupStudySession {
+        val members = fetchGroupMembersList(session.id, userId)
+        return GroupStudySession(
             id = session.id,
             title = session.title,
             subtitle = session.subtitle ?: "Study session",
@@ -910,6 +1067,9 @@ private fun initialsOf(name: String): String =
 private const val OCCUPANCY_CHANNEL = "spot-occupancy"
 private const val OCCUPANCY_EVENT = "occupancy_changed"
 private const val OCCUPANCY_SUBSCRIBE_TIMEOUT_MILLIS = 15_000L
+private const val GROUP_SESSION_SUBSCRIBE_TIMEOUT_MILLIS = 15_000L
+private const val PUBLIC_GROUPS_SUBSCRIBE_TIMEOUT_MILLIS = 15_000L
+private const val GROUP_INVITE_SUBSCRIBE_TIMEOUT_MILLIS = 15_000L
 
 @Serializable
 private data class ReviewRow(

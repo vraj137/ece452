@@ -166,6 +166,11 @@ internal fun SpotDetailScreen(
     LaunchedEffect(liveOccupancy) {
         liveOccupancy?.let { occupancy ->
             spot = spot?.withOccupancy(occupancy)
+            if (friendRepository != null) {
+                friendsAtSpot = runCatching {
+                    friendRepository.fetchFriendsAtSpot(spotId)
+                }.getOrDefault(friendsAtSpot)
+            }
         }
     }
 

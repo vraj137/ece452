@@ -3,6 +3,7 @@ package com.appetizers.spotra.data.remote
 import com.appetizers.spotra.domain.model.BadgeId
 import com.appetizers.spotra.domain.model.CheckInSession
 import com.appetizers.spotra.domain.model.CompletedSession
+import com.appetizers.spotra.domain.model.EmailInviteResult
 import com.appetizers.spotra.domain.model.FriendProfile
 import com.appetizers.spotra.domain.model.GroupMember
 import com.appetizers.spotra.domain.model.GroupStudySession
@@ -43,7 +44,11 @@ class MissingConfigurationHomeRepository : HomeRepository {
         groupSessionId: String?,
     ): CheckInSession = missingSupabaseConfiguration()
     override suspend fun checkOut(sessionId: String) = missingSupabaseConfiguration()
-    override suspend fun inviteToGroup(groupSessionId: String, inviteText: String): GroupMember =
+    override suspend fun inviteToGroup(groupSessionId: String, inviteText: String): EmailInviteResult =
+        missingSupabaseConfiguration()
+    override suspend fun inviteToGroupByUserId(groupSessionId: String, userId: String): GroupMember =
+        missingSupabaseConfiguration()
+    override suspend fun respondToGroupInvite(inviteId: String, accept: Boolean) =
         missingSupabaseConfiguration()
 }
 

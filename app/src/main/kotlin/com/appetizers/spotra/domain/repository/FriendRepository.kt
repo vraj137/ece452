@@ -1,6 +1,8 @@
 package com.appetizers.spotra.domain.repository
 
 import com.appetizers.spotra.domain.model.FriendProfile
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 interface FriendRepository {
     suspend fun currentUserId(): String?
@@ -19,4 +21,6 @@ interface FriendRepository {
     suspend fun removeFriendship(friendshipId: String)
 
     suspend fun fetchFriendsAtSpot(spotSlug: String): List<FriendProfile>
+
+    fun observeFriendRequests(currentUserId: String): Flow<Unit> = emptyFlow()
 }
