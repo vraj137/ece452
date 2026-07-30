@@ -41,8 +41,6 @@ class MissingConfigurationHomeRepository : HomeRepository {
         spotId: String,
         mode: StudyMode,
         groupSessionId: String?,
-        latitude: Double,
-        longitude: Double,
     ): CheckInSession = missingSupabaseConfiguration()
     override suspend fun checkOut(sessionId: String) = missingSupabaseConfiguration()
     override suspend fun inviteToGroup(groupSessionId: String, inviteText: String): GroupMember =

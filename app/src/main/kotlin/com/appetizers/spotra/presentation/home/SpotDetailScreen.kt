@@ -1,10 +1,12 @@
 package com.appetizers.spotra.presentation.home
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -79,6 +81,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
@@ -122,9 +125,11 @@ internal fun SpotDetailScreen(
     onReview: () -> Unit,
     onEditReview: (Review) -> Unit = {},
     activeCheckInSpotId: String? = null,
+    activeCheckInSpotName: String? = null,
     onEndSession: () -> Unit = {}
 ) {
     val sessionActiveHere = activeCheckInSpotId == spotId
+    val sessionActiveElsewhere = activeCheckInSpotId != null && !sessionActiveHere
 
     var spot by remember(spotId) { mutableStateOf<StudySpotDetail?>(null) }
     var reviews by remember(spotId) { mutableStateOf<List<Review>>(emptyList()) }
@@ -233,6 +238,8 @@ internal fun SpotDetailScreen(
         SpotActionButtons(
             accent = accent,
             sessionActiveHere = sessionActiveHere,
+            sessionActiveElsewhere = sessionActiveElsewhere,
+            activeCheckInSpotName = activeCheckInSpotName,
             checkInLabel = checkInLabel,
             onCheckIn = { onCheckIn(detail.toSummary()) },
             onEndSession = onEndSession,
@@ -702,7 +709,7 @@ private fun SpotAmenitiesSection(amenities: List<String>) {
 }
 
 @Composable
-private fun AmenityChip(amenity: String, modifier: Modifier = Modifier) {
+private fun AmenityChip(amenity: String) {
     val icon = when {
         amenity.contains("double", ignoreCase = true) ||
             amenity.contains("group", ignoreCase = true) -> Icons.Rounded.Groups
@@ -711,7 +718,7 @@ private fun AmenityChip(amenity: String, modifier: Modifier = Modifier) {
         else -> Icons.Rounded.CheckCircle
     }
     Row(
-        modifier = modifier
+        modifier = Modifier
             .heightIn(min = 48.dp)
             .background(Color.White, RoundedCornerShape(18.dp))
             .border(1.dp, DetailCardBorder, RoundedCornerShape(18.dp))
@@ -922,7 +929,7 @@ private fun ReviewRow(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    ReviewStars(rating = review.rating)
+                    StarRow(rating = review.rating)
                 }
                 review.comment
                     ?.takeIf { it.isNotBlank() }
@@ -955,22 +962,82 @@ private fun ReviewRow(
     }
 }
 
+/**
+ * Shared 5-star row. Read-only when [onRatingChange] is null (used inline in a review card), or
+ * interactive when a callback is provided (used in the review form).
+ */
 @Composable
-private fun ReviewStars(rating: Int) {
+internal fun StarRow(
+    rating: Int,
+    modifier: Modifier = Modifier,
+    starSize: Dp = 18.dp,
+    filledTint: Color = DetailAmber,
+    emptyTint: Color = HeaderMuted,
+    spacing: Dp = 1.dp,
+    onRatingChange: ((Int) -> Unit)? = null,
+) {
+    val base = if (onRatingChange == null) {
+        modifier.clearAndSetSemantics { contentDescription = "$rating out of 5 stars" }
+    } else {
+        modifier
+    }
     Row(
-        modifier = Modifier.clearAndSetSemantics {
-            contentDescription = "$rating out of 5 stars"
-        },
-        horizontalArrangement = Arrangement.spacedBy(1.dp)
+        modifier = base,
+        horizontalArrangement = Arrangement.spacedBy(spacing)
     ) {
         repeat(5) { index ->
+            val filled = index < rating
+            val iconModifier = if (onRatingChange != null) {
+                Modifier
+                    .size(starSize)
+                    .clickable(role = Role.Button) { onRatingChange(index + 1) }
+            } else {
+                Modifier.size(starSize)
+            }
             Icon(
-                imageVector = if (index < rating) Icons.Rounded.Star else Icons.Rounded.StarOutline,
-                contentDescription = null,
-                tint = if (index < rating) DetailAmber else HeaderMuted,
-                modifier = Modifier.size(18.dp)
+                imageVector = if (filled) Icons.Rounded.Star else Icons.Rounded.StarOutline,
+                contentDescription = if (onRatingChange != null) "Rate ${index + 1}" else null,
+                tint = if (filled) filledTint else emptyTint,
+                modifier = iconModifier
             )
         }
+    }
+}
+
+/**
+ * Small top-of-screen header used by the review and submit-spot forms. Balances a back button on
+ * the left with an equal-sized spacer on the right so the centred title stays optically centred.
+ */
+@Composable
+internal fun ScreenHeader(title: String, subtitle: String, onBack: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.White)
+            .padding(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 18.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .background(HomeBackground, RoundedCornerShape(12.dp))
+                .clickable(role = Role.Button, onClick = onBack),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                contentDescription = "Back",
+                tint = Ink,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        Spacer(Modifier.weight(1f))
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(text = title, color = Ink, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
+            Text(text = subtitle, color = HeaderMuted, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+        }
+        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.size(40.dp))
     }
 }
 
@@ -999,6 +1066,8 @@ private fun CompactReviewAction(
 private fun SpotActionButtons(
     accent: Color,
     sessionActiveHere: Boolean,
+    sessionActiveElsewhere: Boolean = false,
+    activeCheckInSpotName: String? = null,
     checkInLabel: String = "Start Session",
     onCheckIn: () -> Unit,
     onEndSession: () -> Unit,
@@ -1013,55 +1082,52 @@ private fun SpotActionButtons(
             .padding(horizontal = 20.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        if (sessionActiveHere) {
-            Button(
+        when {
+            sessionActiveHere -> Button(
                 onClick = onEndSession,
-                modifier = Modifier
-                    .weight(1.15f)
-                    .height(56.dp),
+                modifier = Modifier.weight(1.15f).height(56.dp),
                 shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = DPAtriumRed)
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.CheckCircle,
-                    contentDescription = null,
-                    modifier = Modifier.size(19.dp)
-                )
+                Icon(Icons.Rounded.CheckCircle, contentDescription = null, modifier = Modifier.size(19.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("End Session", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
             }
-        } else {
-            Button(
+            sessionActiveElsewhere -> Button(
+                onClick = onEndSession,
+                modifier = Modifier.weight(1.15f).height(56.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = DPAtriumRed.copy(alpha = 0.85f))
+            ) {
+                Icon(Icons.Rounded.CheckCircle, contentDescription = null, modifier = Modifier.size(19.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = if (activeCheckInSpotName != null) "End session at $activeCheckInSpotName" else "End current session",
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            else -> Button(
                 onClick = onCheckIn,
-                modifier = Modifier
-                    .weight(1.15f)
-                    .height(56.dp),
+                modifier = Modifier.weight(1.15f).height(56.dp),
                 shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = accent)
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.LocationOn,
-                    contentDescription = null,
-                    modifier = Modifier.size(19.dp)
-                )
+                Icon(Icons.Rounded.LocationOn, contentDescription = null, modifier = Modifier.size(19.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(checkInLabel, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
             }
         }
         OutlinedButton(
             onClick = onReview,
-            modifier = Modifier
-                .weight(0.85f)
-                .height(56.dp),
+            modifier = Modifier.weight(0.85f).height(56.dp),
             shape = RoundedCornerShape(16.dp),
             border = BorderStroke(1.5.dp, SoloBlue)
         ) {
-            Icon(
-                imageVector = Icons.Rounded.Star,
-                contentDescription = null,
-                tint = DetailAmber,
-                modifier = Modifier.size(19.dp)
-            )
+            Icon(Icons.Rounded.Star, contentDescription = null, tint = DetailAmber, modifier = Modifier.size(19.dp))
             Spacer(Modifier.width(8.dp))
             Text("Review", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
         }
@@ -1078,8 +1144,18 @@ private fun BookRoomBanner(url: String) {
             .background(DetailBlueSoft, RoundedCornerShape(18.dp))
             .border(1.dp, DetailBlueBorder, RoundedCornerShape(18.dp))
             .clickable(role = Role.Button) {
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                context.startActivity(intent)
+                val parsed = runCatching { Uri.parse(url) }.getOrNull()
+                    ?.takeIf { it.scheme?.startsWith("http") == true }
+                if (parsed == null) {
+                    Toast.makeText(context, "This booking link isn't valid.", Toast.LENGTH_SHORT).show()
+                } else {
+                    val intent = Intent(Intent.ACTION_VIEW, parsed)
+                    try {
+                        context.startActivity(intent)
+                    } catch (_: ActivityNotFoundException) {
+                        Toast.makeText(context, "No browser available to open the booking page.", Toast.LENGTH_SHORT).show()
+                    }
+                }
             }
             .padding(horizontal = 18.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically

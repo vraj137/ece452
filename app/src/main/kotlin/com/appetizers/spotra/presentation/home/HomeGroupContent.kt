@@ -31,10 +31,8 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.MailOutline
-import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.PersonAdd
 import androidx.compose.material.icons.rounded.Public
-import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -51,10 +49,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -465,8 +459,10 @@ internal fun GroupModeContent(
                 items = spots,
                 key = { _, spot -> spot.id }
             ) { _, spot ->
-                GroupSpotCard(
+                SpotCard(
                     spot = spot,
+                    accent = GroupGreen,
+                    mode = SpotCardMode.Group,
                     onClick = { onSpotSelected(spot) }
                 )
                 Spacer(Modifier.height(14.dp))
@@ -653,7 +649,7 @@ private fun GroupAvatarStrip(members: List<GroupMember>) {
                 modifier = Modifier
                     .size(40.dp)
                     .border(2.dp, Color.White, CircleShape)
-                    .background(avatarColorFor(member.id, index), CircleShape),
+                    .background(avatarColorFor(member.id), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -678,83 +674,6 @@ private fun GroupAvatarStrip(members: List<GroupMember>) {
                     fontSize = 15.sp,
                     fontWeight = FontWeight.ExtraBold
                 )
-            }
-        }
-    }
-}
-
-@Composable
-private fun GroupSpotCard(spot: StudySpotSummary, onClick: () -> Unit) {
-    val walkingLabel = studySpotDistanceLabel(spot.distanceMeters, spot.studyContextLabel)
-    val (statusBackground, statusColor) = badgePillColors(spot.badge)
-    val hoursLabel = remember(spot.operatingHours) {
-        spot.operatingHours?.statusLabelAt()
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.White, RoundedCornerShape(18.dp))
-            .border(1.dp, GroupCardBorder, RoundedCornerShape(18.dp))
-            .clickable(onClick = onClick)
-            .semantics {
-                role = Role.Button
-                contentDescription = "${spot.name}. Open group study options"
-            }
-            .padding(16.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(52.dp)
-                    .background(GroupSpotIconGreen, RoundedCornerShape(14.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Map,
-                    contentDescription = null,
-                    tint = GroupGreen,
-                    modifier = Modifier.size(26.dp)
-                )
-            }
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = spot.name,
-                    color = Ink,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-                if (walkingLabel.isNotBlank()) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(walkingLabel, color = BodyText, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                }
-            }
-            Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = Ink, modifier = Modifier.size(26.dp))
-        }
-        Spacer(Modifier.height(14.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Row(
-                modifier = Modifier.background(statusBackground, RoundedCornerShape(14.dp)).padding(horizontal = 10.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(noiseIcon(spot.badge), contentDescription = null, tint = statusColor, modifier = Modifier.size(17.dp))
-                Spacer(Modifier.width(6.dp))
-                Text(spot.badge, color = statusColor, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            }
-            Spacer(Modifier.width(12.dp))
-            Icon(Icons.Rounded.Group, contentDescription = null, tint = GroupGreen, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("Good for groups", color = BodyText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-        }
-        if (hoursLabel != null) {
-            Spacer(Modifier.height(10.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Schedule, contentDescription = null, tint = BodyText, modifier = Modifier.size(17.dp))
-                Spacer(Modifier.width(6.dp))
-                Text(hoursLabel, color = BodyText, fontSize = 13.sp, fontWeight = FontWeight.Medium)
             }
         }
     }

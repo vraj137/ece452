@@ -48,24 +48,19 @@ internal fun StudyMode.accentColor(): Color = when (this) {
     StudyMode.Group -> GroupGreen
 }
 
-internal fun avatarColorFor(id: String, index: Int = 0): Color = when (id) {
-    "you" -> SoloBlue
-    "akshat" -> PurpleAvatar
-    "eric" -> LibraryGreen
-    "raghav" -> SLCOrange
-    "pavan" -> Color(0xFF0EA5E9)
-    "edmond" -> Color(0xFF14B8A6)
-    "maya" -> Color(0xFF8B5CF6)
-    "leah" -> DPAtriumRed
-    "kai" -> Color(0xFF64748B)
-    "priya" -> Color(0xFFEF4444)
-    "ben" -> Color(0xFFF97316)
-    "lina" -> Color(0xFF22C55E)
-    else -> listOf(
-        Color(0xFF14B8A6),
-        Color(0xFF8B5CF6),
-        Color(0xFFEF4444),
-        Color(0xFFF97316),
-        Color(0xFF22C55E)
-    )[index.coerceAtLeast(0) % 5]
-}
+private val AvatarPalette = listOf(
+    PurpleAvatar,
+    LibraryGreen,
+    SLCOrange,
+    Color(0xFF0EA5E9),
+    Color(0xFF14B8A6),
+    Color(0xFF8B5CF6),
+    DPAtriumRed,
+    Color(0xFF64748B),
+    Color(0xFFEF4444),
+    Color(0xFFF97316),
+    Color(0xFF22C55E),
+)
+
+internal fun avatarColorFor(id: String): Color =
+    if (id == "you") SoloBlue else AvatarPalette[kotlin.math.abs(id.hashCode()) % AvatarPalette.size]

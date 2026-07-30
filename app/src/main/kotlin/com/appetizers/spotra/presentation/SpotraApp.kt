@@ -131,6 +131,7 @@ fun SpotraApp(container: AppContainer) {
                 locationRepository = container.locationRepository,
                 loginStreak = loginStreak,
                 onSignOut = {
+                    appViewModel.resolveStartRoute()
                     navController.navigate(Routes.Welcome) {
                         popUpTo(navController.graph.findStartDestination().id) { inclusive = true }
                         launchSingleTop = true

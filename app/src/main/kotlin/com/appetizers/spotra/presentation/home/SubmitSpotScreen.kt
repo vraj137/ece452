@@ -21,7 +21,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.OpenInFull
@@ -33,6 +32,7 @@ import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -68,18 +68,18 @@ internal fun SubmitSpotScreen(
     spotSubmissionRepository: SpotSubmissionRepository,
     onBack: () -> Unit
 ) {
-    var name by remember { mutableStateOf("") }
-    var description by remember { mutableStateOf("") }
-    var building by remember { mutableStateOf("") }
-    var floor by remember { mutableStateOf("") }
-    var bookingUrl by remember { mutableStateOf("") }
-    var pinLat by remember { mutableDoubleStateOf(UW_LAT) }
-    var pinLng by remember { mutableDoubleStateOf(UW_LNG) }
-    var pinPlaced by remember { mutableStateOf(false) }
+    var name by rememberSaveable { mutableStateOf("") }
+    var description by rememberSaveable { mutableStateOf("") }
+    var building by rememberSaveable { mutableStateOf("") }
+    var floor by rememberSaveable { mutableStateOf("") }
+    var bookingUrl by rememberSaveable { mutableStateOf("") }
+    var pinLat by rememberSaveable { mutableDoubleStateOf(UW_LAT) }
+    var pinLng by rememberSaveable { mutableDoubleStateOf(UW_LNG) }
+    var pinPlaced by rememberSaveable { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
-    var submitted by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var showFullMap by remember { mutableStateOf(false) }
+    var submitted by rememberSaveable { mutableStateOf(false) }
+    var error by rememberSaveable { mutableStateOf<String?>(null) }
+    var showFullMap by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val pinIsSupported = pinPlaced && MapConfig.isWithinSupportedUwCampus(pinLat, pinLng)
     val canSubmit = name.isNotBlank() && pinIsSupported && !isLoading
@@ -118,7 +118,11 @@ internal fun SubmitSpotScreen(
             .background(HomeBackground)
             .statusBarsPadding()
     ) {
-        SubmitSpotHeader(onBack = onBack)
+        ScreenHeader(
+            title = "Suggest a spot",
+            subtitle = "Our team will review your submission",
+            onBack = onBack,
+        )
 
         Column(
             modifier = Modifier
@@ -276,39 +280,6 @@ internal fun SubmitSpotScreen(
 }
 
 @Composable
-private fun SubmitSpotHeader(onBack: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.White)
-            .padding(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 18.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .background(HomeBackground, RoundedCornerShape(12.dp))
-                .clickable(onClick = onBack),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                contentDescription = "Back",
-                tint = Ink,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-        Spacer(Modifier.weight(1f))
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(text = "Suggest a spot", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
-            Text(text = "Our team will review your submission", color = HeaderMuted, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-        }
-        Spacer(Modifier.weight(1f))
-        Spacer(Modifier.size(40.dp))
-    }
-}
-
-@Composable
 private fun SubmitField(
     label: String,
     value: String,
@@ -342,6 +313,74 @@ private fun SubmitField(
 }
 
 @Composable
+private fun SpotPinMap(
+    pinLat: Double,
+    pinLng: Double,
+    pinPlaced: Boolean,
+    onPinPlaced: (Double, Double) -> Unit,
+    modifier: Modifier = Modifier,
+    pinIconSize: androidx.compose.ui.unit.Dp = 36.dp,
+    initialZoom: Double = 15.0,
+) {
+    val mapViewportState = rememberMapViewportState {
+        setCameraOptions {
+            center(Point.fromLngLat(if (pinPlaced) pinLng else UW_LNG, if (pinPlaced) pinLat else UW_LAT))
+            zoom(initialZoom)
+        }
+    }
+    MapboxMap(
+        modifier = modifier,
+        mapViewportState = mapViewportState,
+        style = { MapStyle(style = Style.LIGHT) },
+        scaleBar = {},
+        logo = {},
+        attribution = {},
+        onMapClickListener = { point ->
+            onPinPlaced(point.latitude(), point.longitude())
+            true
+        }
+    ) {
+        if (pinPlaced) {
+            val options = remember(pinLat, pinLng) {
+                viewAnnotationOptions {
+                    geometry(Point.fromLngLat(pinLng, pinLat))
+                    annotationAnchor { anchor(ViewAnnotationAnchor.BOTTOM) }
+                    allowOverlap(true)
+                }
+            }
+            ViewAnnotation(options = options) {
+                Icon(
+                    imageVector = Icons.Rounded.LocationOn,
+                    contentDescription = null,
+                    tint = SoloBlue,
+                    modifier = Modifier.size(pinIconSize)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MapUnavailableOverlay(
+    pinPlaced: Boolean,
+    hintWhenPlaced: String,
+    iconSize: androidx.compose.ui.unit.Dp,
+    labelSize: androidx.compose.ui.unit.TextUnit,
+) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(Icons.Rounded.LocationOn, contentDescription = null, tint = SoloBlue, modifier = Modifier.size(iconSize))
+            Spacer(Modifier.height(8.dp))
+            Text("Map unavailable in debug mode", color = HeaderMuted, fontSize = labelSize, fontWeight = FontWeight.Medium)
+            if (pinPlaced) {
+                Spacer(Modifier.height(4.dp))
+                Text(hintWhenPlaced, color = SoloBlue, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
+}
+
+@Composable
 private fun SpotLocationPicker(
     pinLat: Double,
     pinLng: Double,
@@ -349,13 +388,7 @@ private fun SpotLocationPicker(
     onPinPlaced: (Double, Double) -> Unit,
     onExpand: () -> Unit
 ) {
-    val mapViewportState = rememberMapViewportState {
-        setCameraOptions {
-            center(Point.fromLngLat(UW_LNG, UW_LAT))
-            zoom(15.0)
-        }
-    }
-
+    val mapUnavailable = BuildConfig.MAPBOX_PUBLIC_TOKEN.isBlank()
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -363,49 +396,23 @@ private fun SpotLocationPicker(
             .background(MapLoadingBackground, RoundedCornerShape(16.dp))
             .border(1.5.dp, DividerLine, RoundedCornerShape(16.dp))
     ) {
-        if (BuildConfig.MAPBOX_PUBLIC_TOKEN.isBlank()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Rounded.LocationOn, contentDescription = null, tint = SoloBlue, modifier = Modifier.size(32.dp))
-                    Spacer(Modifier.height(8.dp))
-                    Text("Map unavailable in debug mode", color = HeaderMuted, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    if (pinPlaced) {
-                        Spacer(Modifier.height(4.dp))
-                        Text("Using UW campus center", color = SoloBlue, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                }
-            }
+        if (mapUnavailable) {
+            MapUnavailableOverlay(
+                pinPlaced = pinPlaced,
+                hintWhenPlaced = "Using UW campus center",
+                iconSize = 32.dp,
+                labelSize = 14.sp,
+            )
         } else {
-            MapboxMap(
+            SpotPinMap(
+                pinLat = pinLat,
+                pinLng = pinLng,
+                pinPlaced = pinPlaced,
+                onPinPlaced = onPinPlaced,
                 modifier = Modifier.fillMaxSize(),
-                mapViewportState = mapViewportState,
-                style = { MapStyle(style = Style.LIGHT) },
-                scaleBar = {},
-                logo = {},
-                attribution = {},
-                onMapClickListener = { point ->
-                    onPinPlaced(point.latitude(), point.longitude())
-                    true
-                }
-            ) {
-                if (pinPlaced) {
-                    val options = remember(pinLat, pinLng) {
-                        viewAnnotationOptions {
-                            geometry(Point.fromLngLat(pinLng, pinLat))
-                            annotationAnchor { anchor(ViewAnnotationAnchor.BOTTOM) }
-                            allowOverlap(true)
-                        }
-                    }
-                    ViewAnnotation(options = options) {
-                        Icon(
-                            imageVector = Icons.Rounded.LocationOn,
-                            contentDescription = null,
-                            tint = SoloBlue,
-                            modifier = Modifier.size(36.dp)
-                        )
-                    }
-                }
-            }
+                pinIconSize = 36.dp,
+                initialZoom = 15.0,
+            )
         }
 
         if (!pinPlaced) {
@@ -448,72 +455,24 @@ private fun FullScreenMapPicker(
     onConfirm: () -> Unit
 ) {
     val mapUnavailable = BuildConfig.MAPBOX_PUBLIC_TOKEN.isBlank()
-    val mapViewportState = rememberMapViewportState {
-        setCameraOptions {
-            center(Point.fromLngLat(if (pinPlaced) pinLng else UW_LNG, if (pinPlaced) pinLat else UW_LAT))
-            zoom(16.0)
-        }
-    }
-
     Box(modifier = Modifier.fillMaxSize().background(MapLoadingBackground)) {
         if (mapUnavailable) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(
-                        Icons.Rounded.LocationOn,
-                        contentDescription = null,
-                        tint = SoloBlue,
-                        modifier = Modifier.size(40.dp)
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        "Map unavailable in debug mode",
-                        color = HeaderMuted,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                    if (pinPlaced) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            "Using selected location",
-                            color = SoloBlue,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-            }
+            MapUnavailableOverlay(
+                pinPlaced = pinPlaced,
+                hintWhenPlaced = "Using selected location",
+                iconSize = 40.dp,
+                labelSize = 15.sp,
+            )
         } else {
-            MapboxMap(
+            SpotPinMap(
+                pinLat = pinLat,
+                pinLng = pinLng,
+                pinPlaced = pinPlaced,
+                onPinPlaced = onPinPlaced,
                 modifier = Modifier.fillMaxSize(),
-                mapViewportState = mapViewportState,
-                style = { MapStyle(style = Style.LIGHT) },
-                scaleBar = {},
-                logo = {},
-                attribution = {},
-                onMapClickListener = { point ->
-                    onPinPlaced(point.latitude(), point.longitude())
-                    true
-                }
-            ) {
-                if (pinPlaced) {
-                    val options = remember(pinLat, pinLng) {
-                        viewAnnotationOptions {
-                            geometry(Point.fromLngLat(pinLng, pinLat))
-                            annotationAnchor { anchor(ViewAnnotationAnchor.BOTTOM) }
-                            allowOverlap(true)
-                        }
-                    }
-                    ViewAnnotation(options = options) {
-                        Icon(
-                            imageVector = Icons.Rounded.LocationOn,
-                            contentDescription = null,
-                            tint = SoloBlue,
-                            modifier = Modifier.size(40.dp)
-                        )
-                    }
-                }
-            }
+                pinIconSize = 40.dp,
+                initialZoom = 16.0,
+            )
         }
 
         if (!pinPlaced && !mapUnavailable) {

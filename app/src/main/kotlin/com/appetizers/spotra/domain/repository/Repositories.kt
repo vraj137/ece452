@@ -66,6 +66,7 @@ interface BadgeRepository {
 interface HomeRepository {
     fun observeOccupancy(): Flow<SpotOccupancy> = emptyFlow()
     suspend fun loadHome(): HomeSnapshot
+    suspend fun fetchActiveCheckIn(): Pair<CheckInSession, Long>? = null
     suspend fun spotDetail(spotId: String): StudySpotDetail
     suspend fun childSpots(parentSpotId: String): List<StudySpotDetail>
     suspend fun createGroup(title: String, visibility: GroupVisibility): GroupStudySession
@@ -75,8 +76,6 @@ interface HomeRepository {
         spotId: String,
         mode: StudyMode,
         groupSessionId: String?,
-        latitude: Double,
-        longitude: Double,
     ): CheckInSession
     suspend fun checkOut(sessionId: String)
     suspend fun inviteToGroup(groupSessionId: String, inviteText: String): GroupMember

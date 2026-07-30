@@ -21,11 +21,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.Star
-import androidx.compose.material.icons.rounded.StarOutline
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -54,12 +51,7 @@ import com.appetizers.spotra.presentation.toUserMessage
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-private val NOISE_OPTIONS = listOf("Silent", "Low", "Moderate", "Lively")
-private val LIGHTING_OPTIONS = listOf("Poor", "Good", "Bright", "Natural")
-internal val WIFI_OPTIONS = listOf("Poor", "OK", "Good", "Fast")
-private val OCCUPANCY_OPTIONS = listOf("Empty", "Some", "Busy", "Packed")
-
-internal fun wifiLabel(index: Int?): String? = index?.let { WIFI_OPTIONS.getOrNull(it) }
+internal fun wifiLabel(index: Int?): String? = index?.let { SpotAttributeOptions.WIFI.getOrNull(it) }
 internal fun occupancyToPercent(index: Int?): Int? = when (index) {
     0 -> 10
     1 -> 40
@@ -68,8 +60,8 @@ internal fun occupancyToPercent(index: Int?): Int? = when (index) {
     else -> null
 }
 
-internal fun noiseLabel(index: Int?): String? = index?.let { NOISE_OPTIONS.getOrNull(it) }
-internal fun lightingLabel(index: Int?): String? = index?.let { LIGHTING_OPTIONS.getOrNull(it) }
+internal fun noiseLabel(index: Int?): String? = index?.let { SpotAttributeOptions.NOISE.getOrNull(it) }
+internal fun lightingLabel(index: Int?): String? = index?.let { SpotAttributeOptions.LIGHTING.getOrNull(it) }
 
 @Composable
 internal fun ReviewScreen(
@@ -81,13 +73,13 @@ internal fun ReviewScreen(
 ) {
     var rating by remember(existingReview?.id) { mutableIntStateOf(existingReview?.rating ?: 0) }
     var noiseIndex by remember(existingReview?.id) {
-        mutableStateOf(existingReview?.noiseLevel.optionIndex(NOISE_OPTIONS))
+        mutableStateOf(existingReview?.noiseLevel.optionIndex(SpotAttributeOptions.NOISE))
     }
     var lightingIndex by remember(existingReview?.id) {
-        mutableStateOf(existingReview?.lighting.optionIndex(LIGHTING_OPTIONS))
+        mutableStateOf(existingReview?.lighting.optionIndex(SpotAttributeOptions.LIGHTING))
     }
     var wifiIndex by remember(existingReview?.id) {
-        mutableStateOf(existingReview?.wifiQuality.optionIndex(WIFI_OPTIONS))
+        mutableStateOf(existingReview?.wifiQuality.optionIndex(SpotAttributeOptions.WIFI))
     }
     var occupancyIndex by remember(existingReview?.id) {
         mutableStateOf(existingReview?.occupancyPercent.toOccupancyIndex())
@@ -112,7 +104,7 @@ internal fun ReviewScreen(
             .background(HomeBackground)
             .statusBarsPadding()
     ) {
-        ReviewHeader(spotName = spotName, onBack = onBack)
+        ScreenHeader(title = "Write a review", subtitle = spotName, onBack = onBack)
 
         Column(
             modifier = Modifier
@@ -123,10 +115,10 @@ internal fun ReviewScreen(
         ) {
             StarRatingRow(rating = rating, onRatingChange = { rating = it })
 
-            LabelSlider(label = "Noise level", options = NOISE_OPTIONS, selectedIndex = noiseIndex, onSelect = { noiseIndex = it })
-            LabelSlider(label = "Lighting", options = LIGHTING_OPTIONS, selectedIndex = lightingIndex, onSelect = { lightingIndex = it })
-            LabelSlider(label = "WiFi quality", options = WIFI_OPTIONS, selectedIndex = wifiIndex, onSelect = { wifiIndex = it })
-            LabelSlider(label = "How busy was it?", options = OCCUPANCY_OPTIONS, selectedIndex = occupancyIndex, onSelect = { occupancyIndex = it })
+            LabelSlider(label = "Noise level", options = SpotAttributeOptions.NOISE, selectedIndex = noiseIndex, onSelect = { noiseIndex = it })
+            LabelSlider(label = "Lighting", options = SpotAttributeOptions.LIGHTING, selectedIndex = lightingIndex, onSelect = { lightingIndex = it })
+            LabelSlider(label = "WiFi quality", options = SpotAttributeOptions.WIFI, selectedIndex = wifiIndex, onSelect = { wifiIndex = it })
+            LabelSlider(label = "How busy was it?", options = SpotAttributeOptions.OCCUPANCY, selectedIndex = occupancyIndex, onSelect = { occupancyIndex = it })
 
             ReviewCommentField(value = comment, onValueChange = { comment = it })
 
@@ -222,39 +214,6 @@ private fun friendlyError(error: Throwable): String {
 }
 
 @Composable
-private fun ReviewHeader(spotName: String, onBack: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.White)
-            .padding(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 18.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .background(HomeBackground, RoundedCornerShape(12.dp))
-                .clickable(onClick = onBack),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                contentDescription = "Back",
-                tint = Ink,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-        Spacer(Modifier.weight(1f))
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(text = "Write a review", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
-            Text(text = spotName, color = HeaderMuted, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1)
-        }
-        Spacer(Modifier.weight(1f))
-        Spacer(Modifier.size(40.dp))
-    }
-}
-
-@Composable
 private fun StarRatingRow(rating: Int, onRatingChange: (Int) -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
         Text(
@@ -264,19 +223,14 @@ private fun StarRatingRow(rating: Int, onRatingChange: (Int) -> Unit) {
             fontWeight = FontWeight.ExtraBold
         )
         Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            repeat(5) { index ->
-                val filled = index < rating
-                Icon(
-                    imageVector = if (filled) Icons.Rounded.Star else Icons.Rounded.StarOutline,
-                    contentDescription = "Rate ${index + 1}",
-                    tint = if (filled) StarGold else DividerLine,
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clickable { onRatingChange(index + 1) }
-                )
-            }
-        }
+        StarRow(
+            rating = rating,
+            starSize = 40.dp,
+            filledTint = StarGold,
+            emptyTint = DividerLine,
+            spacing = 8.dp,
+            onRatingChange = onRatingChange,
+        )
     }
 }
 

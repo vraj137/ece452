@@ -9,6 +9,7 @@ import com.appetizers.spotra.domain.model.CheckInSession
 import com.appetizers.spotra.domain.model.CompletedSession
 import com.appetizers.spotra.domain.model.GroupStudySession
 import com.appetizers.spotra.domain.model.GroupVisibility
+import com.appetizers.spotra.domain.model.HomeSnapshot
 import com.appetizers.spotra.domain.model.ReviewDraft
 import com.appetizers.spotra.domain.model.SpotOccupancy
 import com.appetizers.spotra.domain.model.StudyMode
@@ -26,6 +27,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -135,6 +137,11 @@ class HomeViewModel(
         mode: StudyMode = uiState.value.selectedMode,
         onSuccess: () -> Unit = {}
     ) {
+        val existing = uiState.value.activeCheckIn
+        if (existing != null) {
+            showError("You're already checked in to ${existing.spot.name}. End that session first.")
+            return
+        }
         val groupSessionId = if (mode == StudyMode.Group) {
             uiState.value.groupSession?.id ?: run {
                 showError("Could not start a group session. Try again.")
@@ -144,18 +151,11 @@ class HomeViewModel(
             null
         }
         viewModelScope.launch {
-            val location = runCatching { locationRepository.getLastLocation() }.getOrNull()
-            if (location == null) {
-                showError("Turn on location access and try again so Spotra can verify you are at this study spot.")
-                return@launch
-            }
             runCatching {
                 repository.startCheckIn(
                     spotId = spot.id,
                     mode = mode,
                     groupSessionId = groupSessionId,
-                    latitude = location.first,
-                    longitude = location.second,
                 )
             }
                 .onSuccess { session ->
@@ -361,17 +361,23 @@ class HomeViewModel(
 
     fun updateUserLocation() {
         viewModelScope.launch {
-            val latLng = runCatching { locationRepository.getLastLocation() }.getOrNull()
-            if (latLng != null) {
-                val updatedSpots = _uiState.value.mapSpots.map { spot ->
-                    if (spot.latitude != null && spot.longitude != null) {
-                        spot.copy(distanceMeters = haversineMeters(latLng.first, latLng.second, spot.latitude, spot.longitude))
-                    } else spot
-                }
-                _uiState.update { it.copy(mapSpots = updatedSpots, error = null) }
+            val latLng = runCatching { locationRepository.getLastLocation() }.getOrNull() ?: return@launch
+            val (lat, lng) = latLng
+            _uiState.update { state ->
+                state.copy(
+                    soloSpot = state.soloSpot?.withDistanceFrom(lat, lng),
+                    groupSpots = state.groupSpots.map { it.withDistanceFrom(lat, lng) },
+                    mapSpots = state.mapSpots.map { it.withDistanceFrom(lat, lng) },
+                    error = null,
+                )
             }
         }
     }
+
+    private fun StudySpotSummary.withDistanceFrom(lat: Double, lng: Double): StudySpotSummary =
+        if (latitude != null && longitude != null) {
+            copy(distanceMeters = haversineMeters(lat, lng, latitude, longitude))
+        } else this
 
     fun updateInviteText(value: String) {
         _uiState.update { it.copy(inviteText = value, error = null) }
@@ -393,6 +399,10 @@ class HomeViewModel(
         val title = uiState.value.groupName.trim()
         val visibility = uiState.value.groupVisibility
         if (title.length < MIN_GROUP_NAME_LENGTH || uiState.value.isGroupActionInProgress) return
+        if (uiState.value.groupSession != null) {
+            showError("Leave your current group before creating another one.")
+            return
+        }
 
         viewModelScope.launch {
             _uiState.update { it.copy(isGroupActionInProgress = true, error = null) }
@@ -506,21 +516,7 @@ class HomeViewModel(
             _uiState.update { it.copy(isLoading = true, error = null) }
             runCatching { repository.loadHome() }
                 .onSuccess { snapshot ->
-                    _uiState.update { state ->
-                        state.copy(
-                            isLoading = false,
-                            loadError = null,
-                            userFirstName = snapshot.userFirstName,
-                            soloSpot = snapshot.soloSpot.withKnownOccupancy(state.occupancyBySpot),
-                            groupSession = snapshot.groupSession,
-                            groupSpots = snapshot.groupSpots.withKnownOccupancy(state.occupancyBySpot),
-                            publicGroups = snapshot.publicGroups,
-                            mapSpots = snapshot.mapSpots.withKnownOccupancy(state.occupancyBySpot),
-                            trendingCounts = snapshot.trendingCounts,
-                            selectedSpotId = snapshot.soloSpot.id,
-                            error = null
-                        )
-                    }
+                    applySnapshot(snapshot, isRefresh = false)
                     launch {
                         val userId = runCatching { authRepository.currentUser()?.id }.getOrNull()
                         if (userId != null) {
@@ -532,18 +528,65 @@ class HomeViewModel(
                             }
                         }
                     }
+                    launch {
+                        runCatching { repository.fetchActiveCheckIn() }
+                            .getOrNull()
+                            ?.let { (session, startMillis) ->
+                                _uiState.update { state ->
+                                    if (state.activeCheckIn == null) {
+                                        state.copy(
+                                            activeCheckIn = session,
+                                            sessionStartTimeMillis = startMillis,
+                                            showLiveSession = false,
+                                        )
+                                    } else state
+                                }
+                            }
+                    }
                     launch { updateUserLocation() }
                 }
-                .onFailure { error ->
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            loadError = error.toUserMessage(
-                                "We couldn't load live places. Check your connection and try again."
-                            )
-                        )
-                    }
-                }
+                .onFailure { error -> applyLoadFailure(error, isRefresh = false) }
+        }
+    }
+
+    private fun applySnapshot(snapshot: HomeSnapshot, isRefresh: Boolean) {
+        _uiState.update { state ->
+            state.copy(
+                isLoading = false,
+                isRefreshing = false,
+                loadError = null,
+                userFirstName = snapshot.userFirstName,
+                soloSpot = snapshot.soloSpot.withKnownOccupancy(state.occupancyBySpot),
+                groupSession = snapshot.groupSession,
+                groupSpots = snapshot.groupSpots.withKnownOccupancy(state.occupancyBySpot),
+                publicGroups = snapshot.publicGroups,
+                mapSpots = snapshot.mapSpots.withKnownOccupancy(state.occupancyBySpot),
+                trendingCounts = snapshot.trendingCounts,
+                // On refresh keep whatever spot the user was inspecting; on initial load default
+                // to the featured solo spot.
+                selectedSpotId = if (isRefresh) state.selectedSpotId else snapshot.soloSpot.id,
+                error = null,
+            )
+        }
+    }
+
+    private fun applyLoadFailure(error: Throwable, isRefresh: Boolean) {
+        val loadFallback = "We couldn't load live places. Check your connection and try again."
+        val refreshFallback = "Could not refresh live places. Try again."
+        _uiState.update { state ->
+            when {
+                !isRefresh || state.soloSpot == null -> state.copy(
+                    isLoading = false,
+                    isRefreshing = false,
+                    loadError = error.toUserMessage(loadFallback),
+                    error = null,
+                )
+                else -> state.copy(
+                    isLoading = false,
+                    isRefreshing = false,
+                    error = error.toUserMessage(refreshFallback),
+                )
+            }
         }
     }
 
@@ -563,41 +606,10 @@ class HomeViewModel(
             _uiState.update { it.copy(isRefreshing = true, error = null) }
             runCatching { repository.loadHome() }
                 .onSuccess { snapshot ->
-                    _uiState.update { state ->
-                        state.copy(
-                            isRefreshing = false,
-                            loadError = null,
-                            userFirstName = snapshot.userFirstName,
-                            soloSpot = snapshot.soloSpot.withKnownOccupancy(state.occupancyBySpot),
-                            groupSession = snapshot.groupSession,
-                            groupSpots = snapshot.groupSpots.withKnownOccupancy(state.occupancyBySpot),
-                            publicGroups = snapshot.publicGroups,
-                            mapSpots = snapshot.mapSpots.withKnownOccupancy(state.occupancyBySpot),
-                            trendingCounts = snapshot.trendingCounts,
-                            error = null
-                        )
-                    }
+                    applySnapshot(snapshot, isRefresh = true)
                     launch { updateUserLocation() }
                 }
-                .onFailure { error ->
-                    _uiState.update {
-                        it.copy(
-                            isRefreshing = false,
-                            loadError = if (it.soloSpot == null) {
-                                error.toUserMessage(
-                                    "We couldn't load live places. Check your connection and try again."
-                                )
-                            } else {
-                                it.loadError
-                            },
-                            error = if (it.soloSpot == null) {
-                                null
-                            } else {
-                                error.toUserMessage("Could not refresh live places. Try again.")
-                            }
-                        )
-                    }
-                }
+                .onFailure { error -> applyLoadFailure(error, isRefresh = true) }
         }
     }
 
@@ -612,6 +624,7 @@ class HomeViewModel(
                     delay(OCCUPANCY_RECONNECT_DELAY_MILLIS)
                     true
                 }
+                .catch { /* swallow: occupancy is best-effort, other state stays intact */ }
                 .collect { occupancy ->
                     _uiState.update { state ->
                         state.copy(

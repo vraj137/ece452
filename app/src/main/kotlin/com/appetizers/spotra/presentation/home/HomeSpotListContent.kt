@@ -42,7 +42,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
@@ -278,44 +277,54 @@ private fun BuildingSpaceRow(
     }
 }
 
+internal enum class SpotCardMode { Solo, Group }
+
 @Composable
-internal fun StudySpotCard(
+internal fun SpotCard(
     spot: StudySpotSummary,
     accent: Color,
+    mode: SpotCardMode = SpotCardMode.Solo,
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null
 ) {
+    val isGroup = mode == SpotCardMode.Group
+    val cornerRadius = if (isGroup) 18.dp else 22.dp
+    val borderColor = if (isGroup) GroupCardBorder else DividerLine
     val clickModifier = onClick?.let { action ->
         Modifier
             .clickable(onClick = action)
             .semantics {
                 role = Role.Button
-                contentDescription = if (spot.childCount > 0) {
-                    "${spot.name}. Open available study spaces"
-                } else {
-                    "${spot.name}. Open place details"
+                contentDescription = when (mode) {
+                    SpotCardMode.Solo -> if (spot.childCount > 0) "${spot.name}. Open available study spaces" else "${spot.name}. Open place details"
+                    SpotCardMode.Group -> "${spot.name}. Open group study options"
                 }
             }
     } ?: Modifier
     val walkingLabel = studySpotDistanceLabel(spot.distanceMeters, spot.studyContextLabel)
-    val statusIcon = noiseIcon(spot.badge)
-    val hoursLabel = remember(spot.operatingHours) {
-        spot.operatingHours?.statusLabelAt()
-    }
+    val hoursLabel = remember(spot.operatingHours) { spot.operatingHours?.statusLabelAt() }
+    val (badgeBg, badgeFg) = badgePillColors(spot.badge)
 
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .shadow(10.dp, RoundedCornerShape(22.dp), clip = false)
-            .background(Color.White, RoundedCornerShape(22.dp))
-            .border(1.dp, DividerLine, RoundedCornerShape(22.dp))
+            .run { if (isGroup) this else shadow(10.dp, RoundedCornerShape(cornerRadius), clip = false) }
+            .background(Color.White, RoundedCornerShape(cornerRadius))
+            .border(1.dp, borderColor, RoundedCornerShape(cornerRadius))
             .then(clickModifier)
             .padding(16.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            // Spots without a curated photo keep the original map glyph rather than showing an
-            // empty placeholder tile.
-            if (spot.photoUrl != null) {
+            if (isGroup) {
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .background(GroupSpotIconGreen, RoundedCornerShape(14.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Rounded.Map, contentDescription = null, tint = GroupGreen, modifier = Modifier.size(26.dp))
+                }
+            } else if (spot.photoUrl != null) {
                 SpotThumbnail(photoUrl = spot.photoUrl, size = 54.dp)
             } else {
                 Box(
@@ -324,7 +333,7 @@ internal fun StudySpotCard(
                         .background(CardBackground, RoundedCornerShape(16.dp)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(imageVector = Icons.Rounded.Map, contentDescription = null, tint = accent, modifier = Modifier.size(27.dp))
+                    Icon(Icons.Rounded.Map, contentDescription = null, tint = accent, modifier = Modifier.size(27.dp))
                 }
             }
             Spacer(Modifier.width(14.dp))
@@ -332,9 +341,9 @@ internal fun StudySpotCard(
                 Text(
                     text = spot.name,
                     color = Ink,
-                    fontSize = 21.sp,
+                    fontSize = if (isGroup) 20.sp else 21.sp,
                     fontWeight = FontWeight.ExtraBold,
-                    maxLines = 1,
+                    maxLines = if (isGroup) 2 else 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 if (walkingLabel.isNotBlank()) {
@@ -342,62 +351,64 @@ internal fun StudySpotCard(
                     Text(
                         text = walkingLabel,
                         color = BodyText,
-                        fontSize = 15.sp,
+                        fontSize = if (isGroup) 14.sp else 15.sp,
                         fontWeight = FontWeight.Medium,
                         maxLines = 1
                     )
                 }
             }
-            Icon(
-                imageVector = Icons.Rounded.ChevronRight,
-                contentDescription = null,
-                tint = Ink,
-                modifier = Modifier.size(26.dp)
-            )
+            Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = Ink, modifier = Modifier.size(26.dp))
         }
         if (hoursLabel != null) {
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(if (isGroup) 10.dp else 12.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    imageVector = Icons.Rounded.Schedule,
+                    Icons.Rounded.Schedule,
                     contentDescription = null,
                     tint = BodyText,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(if (isGroup) 17.dp else 18.dp)
                 )
                 Spacer(Modifier.width(7.dp))
-                Text(
-                    text = hoursLabel,
-                    color = BodyText,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium
-                )
+                Text(hoursLabel, color = BodyText, fontSize = if (isGroup) 13.sp else 14.sp, fontWeight = FontWeight.Medium)
             }
         }
         Spacer(Modifier.height(14.dp))
-        val (badgeBg, badgeFg) = badgePillColors(spot.badge)
-        Row(
-            modifier = Modifier
-                .background(badgeBg, RoundedCornerShape(18.dp))
-                .padding(horizontal = 12.dp, vertical = 7.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(statusIcon, contentDescription = null, tint = badgeFg, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(
-                text = spot.badge,
-                color = badgeFg,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.ExtraBold,
-                maxLines = 1
-            )
-            Spacer(Modifier.weight(1f))
-            Text(
-                text = if (spot.childCount > 0) "View study spaces" else "View place details",
-                color = Ink,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1
-            )
+        if (isGroup) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier
+                        .background(badgeBg, RoundedCornerShape(14.dp))
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(noiseIcon(spot.badge), contentDescription = null, tint = badgeFg, modifier = Modifier.size(17.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(spot.badge, color = badgeFg, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.width(12.dp))
+                Icon(Icons.Rounded.Group, contentDescription = null, tint = GroupGreen, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Good for groups", color = BodyText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            }
+        } else {
+            Row(
+                modifier = Modifier
+                    .background(badgeBg, RoundedCornerShape(18.dp))
+                    .padding(horizontal = 12.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(noiseIcon(spot.badge), contentDescription = null, tint = badgeFg, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(spot.badge, color = badgeFg, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = if (spot.childCount > 0) "View study spaces" else "View place details",
+                    color = Ink,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1
+                )
+            }
         }
     }
 }

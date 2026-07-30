@@ -3,6 +3,13 @@ package com.appetizers.spotra.presentation.home
 import com.appetizers.spotra.domain.model.StudyMode
 import com.appetizers.spotra.domain.model.StudySpotSummary
 
+object SpotAttributeOptions {
+    val NOISE = listOf("Silent", "Low", "Moderate", "Lively")
+    val LIGHTING = listOf("Poor", "Good", "Bright", "Natural")
+    val WIFI = listOf("Poor", "OK", "Good", "Fast")
+    val OCCUPANCY = listOf("Empty", "Some", "Busy", "Packed")
+}
+
 data class SpotFilters(
     val noise: String? = null,
     val lighting: String? = null,

@@ -306,6 +306,7 @@ fun HomeScreen(
                     reviewingSpotId = spotId
                 },
                 activeCheckInSpotId = activeCheckIn?.spot?.id,
+                activeCheckInSpotName = activeCheckIn?.spot?.name?.takeIf { activeCheckIn.spot.id != spotId },
                 onEndSession = {
                     viewModel.checkOut()
                     viewingSpotPath = emptyList()
@@ -338,6 +339,9 @@ fun HomeScreen(
     }
 
     if (state.selectedSection == HomeSection.Map && state.selectedMode == StudyMode.Group) {
+        LaunchedEffect(Unit) {
+            if (groupSession == null && !state.isRefreshing) viewModel.refresh()
+        }
         BackHandler { viewModel.returnToSoloMap() }
         Box(Modifier.fillMaxSize()) {
             if (groupSession == null) {

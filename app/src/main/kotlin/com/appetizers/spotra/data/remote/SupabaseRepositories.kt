@@ -4,6 +4,8 @@ import com.appetizers.spotra.domain.model.BadgeId
 import com.appetizers.spotra.domain.model.CheckInSession
 import com.appetizers.spotra.domain.model.CheckedInStudent
 import com.appetizers.spotra.domain.model.CompletedSession
+import com.appetizers.spotra.domain.model.initialsOf as pairInitialsOf
+import com.appetizers.spotra.domain.model.shortDisplayName
 import com.appetizers.spotra.domain.model.DailyOperatingHours
 import com.appetizers.spotra.domain.model.GroupMember
 import com.appetizers.spotra.domain.model.GroupStudySession
@@ -65,7 +67,7 @@ import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
-import java.time.ZoneOffset
+import java.time.ZoneId
 
 private fun Double.roundToSingleDecimal(): Double = (this * 10).roundToInt() / 10.0
 
@@ -172,6 +174,8 @@ private data class SpotDto(
 private data class CheckInRow(
     val id: String,
     @SerialName("spot_slug") val spotSlug: String,
+    val mode: String = "solo",
+    @SerialName("created_at") val createdAt: String? = null,
     @SerialName("ended_at") val endedAt: String? = null
 )
 
@@ -244,15 +248,6 @@ private data class AttendeeProfileRow(
     val program: String = "",
     @SerialName("is_friend") val isFriend: Boolean = false,
     @SerialName("has_sent_me_request") val hasSentMeRequest: Boolean = false,
-)
-
-@Serializable
-private data class SafeProfileRow(
-    val id: String,
-    @SerialName("first_name") val firstName: String,
-    @SerialName("last_name") val lastName: String,
-    val program: String = "",
-    @SerialName("study_term") val studyTerm: String? = null,
 )
 
 @Serializable
@@ -419,8 +414,6 @@ class SupabaseHomeRepository(
         spotId: String,
         mode: StudyMode,
         groupSessionId: String?,
-        latitude: Double,
-        longitude: Double,
     ): CheckInSession {
         val userId = client.auth.currentUserOrNull()?.id
             ?: error("You need to be signed in to check in.")
@@ -430,8 +423,6 @@ class SupabaseHomeRepository(
                 put("p_spot_slug", spotId)
                 put("p_mode", if (mode == StudyMode.Group) "group" else "solo")
                 put("p_group_session_id", groupSessionId?.let(::JsonPrimitive) ?: JsonNull)
-                put("p_latitude", latitude)
-                put("p_longitude", longitude)
             }
         ).decodeSingle<CheckInRow>()
 
@@ -456,11 +447,8 @@ class SupabaseHomeRepository(
         ).decodeList<AttendeeProfileRow>().filter { it.id != selfId }.map { p ->
             CheckedInStudent(
                 id = p.id,
-                initials = buildString {
-                    p.firstName.firstOrNull()?.uppercaseChar()?.let { append(it) }
-                    p.lastName.firstOrNull()?.uppercaseChar()?.let { append(it) }
-                }.ifBlank { "?" },
-                name = "${p.firstName} ${p.lastName.firstOrNull() ?: ""}.",
+                initials = pairInitialsOf(p.firstName, p.lastName),
+                name = shortDisplayName(p.firstName, p.lastName),
                 detail = p.program.ifBlank { "Studying here" },
                 isFriend = p.isFriend,
                 hasSentMeRequest = p.hasSentMeRequest,
@@ -473,6 +461,34 @@ class SupabaseHomeRepository(
         }) {
             filter { eq("id", sessionId) }
         }
+    }
+
+    override suspend fun fetchActiveCheckIn(): Pair<CheckInSession, Long>? {
+        val userId = client.auth.currentUserOrNull()?.id ?: return null
+        val row = client.from("check_ins")
+            .select {
+                filter {
+                    eq("user_id", userId)
+                    exact("ended_at", null)
+                }
+                order("created_at", Order.DESCENDING)
+                limit(1)
+            }
+            .decodeList<CheckInRow>()
+            .firstOrNull() ?: return null
+        val spot = spotCache[row.spotSlug] ?: dbSpotSummary(row.spotSlug) ?: return null
+        val createdAtMillis = row.createdAt?.let {
+            runCatching { Instant.parse(it).toEpochMilli() }.getOrNull()
+        } ?: System.currentTimeMillis()
+        val mode = if (row.mode == "group") StudyMode.Group else StudyMode.Solo
+        val self = CheckedInStudent(
+            id = "you",
+            initials = initialsOf(cachedFirstName),
+            name = "You",
+            detail = "Studying now",
+            isSelf = true
+        )
+        return CheckInSession(id = row.id, spot = spot, mode = mode, attendees = listOf(self)) to createdAtMillis
     }
 
     override suspend fun createGroup(
@@ -575,15 +591,12 @@ class SupabaseHomeRepository(
                 put("p_group_id", groupSessionId)
                 put("p_email", inviteText.trim())
             }
-        ).decodeSingle<SafeProfileRow>()
-        return run {
-            val initials = buildString {
-                append(profile.firstName.firstOrNull()?.uppercaseChar() ?: '?')
-                append(profile.lastName.firstOrNull()?.uppercaseChar() ?: '?')
-            }
-            val displayName = "${profile.firstName} ${profile.lastName.firstOrNull() ?: ""}."
-            GroupMember(id = profile.id, name = displayName, initials = initials)
-        }
+        ).decodeSingle<ProfileRow>()
+        return GroupMember(
+            id = profile.id,
+            name = shortDisplayName(profile.firstName, profile.lastName),
+            initials = pairInitialsOf(profile.firstName, profile.lastName),
+        )
     }
 
     private data class GroupData(
@@ -676,19 +689,19 @@ class SupabaseHomeRepository(
                     ))
                     put("p_limit", 50)
                 }
-            ).decodeList<SafeProfileRow>()
+            ).decodeList<ProfileRow>()
         }
         val ownProfile = if (userId in memberUserIds) {
             client.from("profiles")
                 .select { filter { eq("id", userId) } }
                 .decodeSingleOrNull<UserProfileDto>()
                 ?.let {
-                    SafeProfileRow(
+                    ProfileRow(
                         id = it.userId,
                         firstName = it.firstName,
                         lastName = it.lastName,
                         program = it.program,
-                        studyTerm = it.studyTerm?.label,
+                        term = it.studyTerm?.label.orEmpty(),
                     )
                 }
         } else {
@@ -698,12 +711,11 @@ class SupabaseHomeRepository(
 
         val members = allProfiles.map { profile ->
             val isSelf = profile.id == userId
-            val initials = buildString {
-                append(profile.firstName.firstOrNull()?.uppercaseChar() ?: '?')
-                append(profile.lastName.firstOrNull()?.uppercaseChar() ?: '?')
-            }
-            val displayName = if (isSelf) "You" else "${profile.firstName} ${profile.lastName.first()}."
-            GroupMember(id = profile.id, name = displayName, initials = initials)
+            GroupMember(
+                id = profile.id,
+                name = if (isSelf) "You" else shortDisplayName(profile.firstName, profile.lastName),
+                initials = pairInitialsOf(profile.firstName, profile.lastName),
+            )
         }.ifEmpty {
             listOf(GroupMember(userId, cachedFirstName, initialsOf(cachedFirstName)))
         }
@@ -772,11 +784,6 @@ class SupabaseHomeRepository(
     private fun String.toGroupVisibility(): GroupVisibility =
         if (equals("public", ignoreCase = true)) GroupVisibility.Public else GroupVisibility.Private
 
-    /**
-     * [stats] carries the crowdsourced consensus from `spot_review_stats`. Where students have
-     * reported a value it wins; the seeded column on `spots` stays as the fallback so a spot with
-     * no reviews yet still ranks sensibly on the Explore leaderboards.
-     */
     private fun SpotDto.toSummary(
         activeCount: Int,
         childCount: Int = 0,
@@ -809,16 +816,9 @@ class SupabaseHomeRepository(
         reviews: List<ReviewRow>,
         photos: List<SpotPhoto> = emptyList()
     ): StudySpotDetail {
-        val averageRating = reviews
-            .takeIf { it.isNotEmpty() }
-            ?.map { it.rating }
-            ?.average()
-            ?.roundToSingleDecimal()
         val occupancyValues = reviews.mapNotNull { it.occupancyPercent }
         val reportedOccupancyPercent = if (occupancyValues.isEmpty()) null
             else occupancyValues.average().roundToInt().coerceIn(0, 100)
-        // Same aggregation the spot_review_stats view applies for the leaderboards, so a spot's
-        // detail screen and its Explore ranking never disagree.
         val aggregates = SpotReviewAggregator.aggregate(
             ratings = reviews.map { it.rating },
             noiseLevels = reviews.map { it.noiseLevel },
@@ -1053,7 +1053,7 @@ class SupabaseStreakRepository(
                 .decodeSingleOrNull<StreakDto>()
         }.getOrNull() ?: return 0
 
-        val today = LocalDate.now(ZoneOffset.UTC)
+        val today = LocalDate.now(ZoneId.of(WATERLOO_TIME_ZONE))
         val lastLogin = dto.lastLoginDate?.let {
             runCatching { LocalDate.parse(it) }.getOrNull()
         }
@@ -1083,7 +1083,7 @@ class SupabaseStreakRepository(
         spotName: String,
         durationSeconds: Int,
     ): Int {
-        runCatching {
+        val insertResult = runCatching {
             client.from("study_sessions").insert(
                 StudySessionInsert(userId, spotId, spotName, durationSeconds)
             )
@@ -1094,6 +1094,7 @@ class SupabaseStreakRepository(
                 .decodeSingleOrNull<StreakDto>()
                 ?.checkoutCount ?: 0
         }.getOrDefault(0)
+        if (insertResult.isFailure) return current
         val newCount = current + 1
         runCatching {
             client.from("profiles").update({

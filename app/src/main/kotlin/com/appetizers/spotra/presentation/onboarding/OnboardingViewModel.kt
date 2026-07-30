@@ -41,7 +41,6 @@ object OnboardingValidation {
             .matches(value.trim())
 
     fun isValidOtp(value: String): Boolean = value.length == 6 && value.all(Char::isDigit)
-    fun isValidProgram(value: String): Boolean = value.trim().length >= 2
 }
 
 class OnboardingViewModel(
