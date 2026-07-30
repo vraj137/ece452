@@ -6,6 +6,7 @@ import com.appetizers.spotra.domain.model.CheckInSession
 import com.appetizers.spotra.domain.model.CheckedInStudent
 import com.appetizers.spotra.domain.model.CompletedSession
 import com.appetizers.spotra.domain.model.FriendProfile
+import com.appetizers.spotra.domain.model.EmailInviteResult
 import com.appetizers.spotra.domain.model.GroupMember
 import com.appetizers.spotra.domain.model.GroupStudySession
 import com.appetizers.spotra.domain.model.GroupVisibility
@@ -342,7 +343,8 @@ private class FailingHomeRepository : HomeRepository {
         groupSessionId: String?,
     ): CheckInSession = failed()
     override suspend fun checkOut(sessionId: String) = failed()
-    override suspend fun inviteToGroup(groupSessionId: String, inviteText: String): GroupMember = failed()
+    override suspend fun inviteToGroup(groupSessionId: String, inviteText: String): EmailInviteResult = failed()
+    override suspend fun inviteToGroupByUserId(groupSessionId: String, userId: String): GroupMember = failed()
 }
 
 private class FakeHomeRepository(
@@ -474,8 +476,13 @@ private class FakeHomeRepository(
     override suspend fun inviteToGroup(
         groupSessionId: String,
         inviteText: String
-    ): GroupMember =
-        GroupMember("invite-2", inviteText, "MR")
+    ): EmailInviteResult =
+        EmailInviteResult.Added(GroupMember("invite-2", inviteText, "MR"))
+
+    override suspend fun inviteToGroupByUserId(
+        groupSessionId: String,
+        userId: String
+    ): GroupMember = GroupMember(userId, userId, userId.take(2).uppercase())
 
     companion object {
         private fun defaultGroupSession() = GroupStudySession(
