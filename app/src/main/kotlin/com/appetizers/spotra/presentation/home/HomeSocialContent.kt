@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -41,6 +42,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -358,12 +361,39 @@ private fun SocialTabs(
     selectedTab: SocialTab,
     onTabSelected: (SocialTab) -> Unit
 ) {
+    val glassShape = RoundedCornerShape(22.dp)
+    val tabShape = RoundedCornerShape(18.dp)
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(42.dp)
-            .border(1.dp, DividerLine, RoundedCornerShape(0.dp)),
-        horizontalArrangement = Arrangement.SpaceBetween,
+            .height(54.dp)
+            .shadow(
+                elevation = 12.dp,
+                shape = glassShape,
+                ambientColor = SoloBlue.copy(alpha = 0.10f),
+                spotColor = SoloBlue.copy(alpha = 0.14f)
+            )
+            .clip(glassShape)
+            .background(
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = 0.94f),
+                        Color(0xFFE9EEFB).copy(alpha = 0.76f)
+                    )
+                )
+            )
+            .border(
+                width = 1.dp,
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        Color.White,
+                        SoloBlue.copy(alpha = 0.16f)
+                    )
+                ),
+                shape = glassShape
+            )
+            .padding(4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         SocialTab.entries.forEach { tab ->
@@ -373,26 +403,66 @@ private fun SocialTabs(
                 SocialTab.Requests -> "Requests"
                 SocialTab.Discover -> "Discover"
             }
-            Column(
+
+            Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxSize()
-                    .clickable { onTabSelected(tab) },
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
+                    .then(
+                        if (selected) {
+                            Modifier.shadow(
+                                elevation = 7.dp,
+                                shape = tabShape,
+                                ambientColor = Color.White.copy(alpha = 0.85f),
+                                spotColor = SoloBlue.copy(alpha = 0.16f)
+                            )
+                        } else {
+                            Modifier
+                        }
+                    )
+                    .clip(tabShape)
+                    .background(
+                        brush = if (selected) {
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.White.copy(alpha = 0.98f),
+                                    Color.White.copy(alpha = 0.78f)
+                                )
+                            )
+                        } else {
+                            Brush.verticalGradient(
+                                colors = listOf(Color.Transparent, Color.Transparent)
+                            )
+                        }
+                    )
+                    .then(
+                        if (selected) {
+                            Modifier.border(
+                                width = 1.dp,
+                                brush = Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.White,
+                                        SoloBlue.copy(alpha = 0.10f)
+                                    )
+                                ),
+                                shape = tabShape
+                            )
+                        } else {
+                            Modifier
+                        }
+                    )
+                    .selectable(
+                        selected = selected,
+                        role = Role.Tab,
+                        onClick = { onTabSelected(tab) }
+                    ),
+                contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = label,
                     color = if (selected) SoloBlue else HeaderMuted,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.ExtraBold
-                )
-                Spacer(Modifier.height(7.dp))
-                Box(
-                    Modifier
-                        .height(3.dp)
-                        .fillMaxWidth(.72f)
-                        .background(if (selected) SoloBlue else Color.Transparent)
                 )
             }
         }
