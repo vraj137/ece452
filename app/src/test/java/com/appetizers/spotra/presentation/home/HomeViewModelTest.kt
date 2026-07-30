@@ -345,6 +345,7 @@ private class FailingHomeRepository : HomeRepository {
     override suspend fun checkOut(sessionId: String) = failed()
     override suspend fun inviteToGroup(groupSessionId: String, inviteText: String): EmailInviteResult = failed()
     override suspend fun inviteToGroupByUserId(groupSessionId: String, userId: String): GroupMember = failed()
+    override suspend fun respondToGroupInvite(inviteId: String, accept: Boolean) = failed()
 }
 
 private class FakeHomeRepository(
@@ -483,6 +484,8 @@ private class FakeHomeRepository(
         groupSessionId: String,
         userId: String
     ): GroupMember = GroupMember(userId, userId, userId.take(2).uppercase())
+
+    override suspend fun respondToGroupInvite(inviteId: String, accept: Boolean) = Unit
 
     companion object {
         private fun defaultGroupSession() = GroupStudySession(
