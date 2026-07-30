@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -54,6 +56,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.appetizers.spotra.domain.model.FriendProfile
+import com.appetizers.spotra.domain.model.GroupInvite
 import com.appetizers.spotra.domain.model.GroupMember
 import com.appetizers.spotra.domain.model.GroupStudySession
 import com.appetizers.spotra.domain.model.GroupVisibility
@@ -64,11 +68,14 @@ internal fun GroupSetupContent(
     groupName: String,
     visibility: GroupVisibility,
     publicGroups: List<GroupStudySession>,
+    pendingGroupInvites: List<GroupInvite>,
     isCreating: Boolean,
     onGroupNameChange: (String) -> Unit,
     onVisibilityChange: (GroupVisibility) -> Unit,
     onCreateGroup: () -> Unit,
     onJoinPublicGroup: (String) -> Unit,
+    onAcceptInvite: (String) -> Unit,
+    onDeclineInvite: (String) -> Unit,
     onBack: () -> Unit,
     selectedSection: HomeSection,
     onSectionSelected: (HomeSection) -> Unit,
@@ -224,6 +231,36 @@ internal fun GroupSetupContent(
                             Text("Create group", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                         }
                     }
+                }
+            }
+            if (pendingGroupInvites.isNotEmpty()) {
+                item {
+                    Spacer(Modifier.height(30.dp))
+                    Text(
+                        text = "Group invitations",
+                        color = Ink,
+                        fontSize = 21.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    Spacer(Modifier.height(5.dp))
+                    Text(
+                        text = "Someone has invited you to study with them.",
+                        color = BodyText,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(Modifier.height(14.dp))
+                }
+                items(
+                    items = pendingGroupInvites,
+                    key = { it.id }
+                ) { invite ->
+                    GroupInviteCard(
+                        invite = invite,
+                        onAccept = { onAcceptInvite(invite.id) },
+                        onDecline = { onDeclineInvite(invite.id) }
+                    )
+                    Spacer(Modifier.height(12.dp))
                 }
             }
             item {
@@ -396,15 +433,86 @@ private fun PublicGroupCard(
     }
 }
 
+@Composable
+private fun GroupInviteCard(
+    invite: GroupInvite,
+    onAccept: () -> Unit,
+    onDecline: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.White, RoundedCornerShape(18.dp))
+            .border(1.dp, GroupCardBorder, RoundedCornerShape(18.dp))
+            .padding(16.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(46.dp)
+                    .background(GroupSpotIconGreen, RoundedCornerShape(14.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.PersonAdd,
+                    contentDescription = null,
+                    tint = GroupGreen,
+                    modifier = Modifier.size(23.dp)
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = invite.groupTitle,
+                    color = Ink,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = "Invited by ${invite.inviterName}",
+                    color = BodyText,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedButton(
+                onClick = onDecline,
+                modifier = Modifier.weight(1f).height(44.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("Decline", fontWeight = FontWeight.Bold, color = BodyText)
+            }
+            Button(
+                onClick = onAccept,
+                modifier = Modifier.weight(1f).height(44.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = GroupGreen),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("Join group", fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun GroupModeContent(
     groupSession: GroupStudySession,
     spots: List<StudySpotSummary>,
     inviteText: String,
+    invitableFriends: List<FriendProfile>,
     isActionInProgress: Boolean,
     onInviteTextChange: (String) -> Unit,
     onSendInvite: () -> Unit,
+    onInviteFriend: (String) -> Unit,
     onLeaveGroup: () -> Unit,
     onBack: () -> Unit,
     selectedSection: HomeSection,
@@ -476,14 +584,17 @@ internal fun GroupModeContent(
     }
 
     if (showInviteSheet) {
+        val currentMemberIds = groupSession.members.map { it.id }.toSet()
         GroupInviteSheet(
-            value = inviteText,
-            onValueChange = onInviteTextChange,
+            friends = invitableFriends.filter { it.id !in currentMemberIds },
+            emailValue = inviteText,
+            onEmailValueChange = onInviteTextChange,
             isSending = isActionInProgress,
-            onSend = {
+            onSendEmail = {
                 onSendInvite()
                 showInviteSheet = false
             },
+            onInviteFriend = onInviteFriend,
             onDismiss = { showInviteSheet = false }
         )
     }
@@ -682,14 +793,16 @@ private fun GroupAvatarStrip(members: List<GroupMember>) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun GroupInviteSheet(
-    value: String,
-    onValueChange: (String) -> Unit,
+    friends: List<FriendProfile>,
+    emailValue: String,
+    onEmailValueChange: (String) -> Unit,
     isSending: Boolean,
-    onSend: () -> Unit,
+    onSendEmail: () -> Unit,
+    onInviteFriend: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val trimmedValue = value.trim()
-    val emailLooksValid = trimmedValue.contains("@") && trimmedValue.substringAfterLast("@").contains(".")
+    val trimmedEmail = emailValue.trim()
+    val emailLooksValid = trimmedEmail.contains("@") && trimmedEmail.substringAfterLast("@").contains(".")
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -698,13 +811,14 @@ private fun GroupInviteSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(start = 24.dp, end = 24.dp, bottom = 32.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Invite member", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
                     Spacer(Modifier.height(4.dp))
-                    Text("Send an invitation to join this study session.", color = BodyText, fontSize = 15.sp)
+                    Text("Add friends or invite someone by email.", color = BodyText, fontSize = 15.sp)
                 }
                 Box(
                     modifier = Modifier.size(44.dp).clickable(onClick = onDismiss),
@@ -713,44 +827,128 @@ private fun GroupInviteSheet(
                     Icon(Icons.Rounded.Close, contentDescription = "Close invite", tint = Ink)
                 }
             }
-            Spacer(Modifier.height(20.dp))
-            Text("Email address", color = Ink, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+
+            if (friends.isNotEmpty()) {
+                Spacer(Modifier.height(20.dp))
+                Text(
+                    text = "YOUR FRIENDS",
+                    color = SectionLabel,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Spacer(Modifier.height(10.dp))
+                friends.forEach { friend ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .background(avatarColorFor(friend.id), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = friend.initials,
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                text = friend.fullName,
+                                color = Ink,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (friend.displayDetail.isNotBlank()) {
+                                Text(
+                                    text = friend.displayDetail,
+                                    color = BodyText,
+                                    fontSize = 13.sp,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Button(
+                            onClick = { onInviteFriend(friend.id) },
+                            enabled = !isSending,
+                            contentPadding = PaddingValues(horizontal = 14.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = GroupGreen,
+                                disabledContainerColor = SwitcherTrack
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Add", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Box(modifier = Modifier.weight(1f).height(1.dp).background(DividerLine))
+                    Text(
+                        text = "  OR  ",
+                        color = HeaderMuted,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Box(modifier = Modifier.weight(1f).height(1.dp).background(DividerLine))
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+            Text("Invite by email", color = Ink, fontSize = 14.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(54.dp)
-                    .border(1.dp, if (value.isNotBlank() && !emailLooksValid) ModerateFitText else DividerLine, RoundedCornerShape(14.dp))
+                    .border(
+                        1.dp,
+                        if (emailValue.isNotBlank() && !emailLooksValid) ModerateFitText else DividerLine,
+                        RoundedCornerShape(14.dp)
+                    )
                     .padding(horizontal = 14.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(Icons.Rounded.MailOutline, contentDescription = null, tint = BodyText, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(10.dp))
                 BasicTextField(
-                    value = value,
-                    onValueChange = onValueChange,
+                    value = emailValue,
+                    onValueChange = onEmailValueChange,
                     enabled = !isSending,
                     singleLine = true,
                     textStyle = TextStyle(color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Medium),
                     modifier = Modifier.weight(1f),
                     decorationBox = { inner ->
-                        if (value.isBlank()) Text("name@uwaterloo.ca", color = HeaderMuted, fontSize = 16.sp)
+                        if (emailValue.isBlank()) Text("name@uwaterloo.ca", color = HeaderMuted, fontSize = 16.sp)
                         inner()
                     }
                 )
             }
-            if (value.isNotBlank() && !emailLooksValid) {
+            if (emailValue.isNotBlank() && !emailLooksValid) {
                 Spacer(Modifier.height(6.dp))
                 Text("Enter a complete email address.", color = ModerateFitText, fontSize = 13.sp, fontWeight = FontWeight.Medium)
             }
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedButton(
                     onClick = onDismiss,
                     modifier = Modifier.weight(1f).height(50.dp)
                 ) { Text("Cancel") }
                 Button(
-                    onClick = onSend,
+                    onClick = onSendEmail,
                     enabled = emailLooksValid && !isSending,
                     modifier = Modifier.weight(1.4f).height(50.dp),
                     colors = ButtonDefaults.buttonColors(

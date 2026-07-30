@@ -7,8 +7,20 @@ import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.realtime.broadcastFlow
+import io.github.jan.supabase.realtime.channel
+import io.github.jan.supabase.realtime.realtime
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
@@ -131,6 +143,24 @@ class SupabaseFriendRepository(
                 .map { FriendProfile(it.id, it.firstName, it.lastName) }
         }.getOrDefault(emptyList())
 
+    override fun observeFriendRequests(currentUserId: String): Flow<Unit> = channelFlow {
+        val realtimeChannel = client.channel("friend-requests-$currentUserId") { isPrivate = true }
+        val collector = launch(start = CoroutineStart.UNDISPATCHED) {
+            realtimeChannel
+                .broadcastFlow<FriendRequestBroadcast>("friend_request_received")
+                .collect { send(Unit) }
+        }
+        try {
+            withTimeout(FRIEND_REQUEST_SUBSCRIBE_TIMEOUT_MILLIS) {
+                realtimeChannel.subscribe(blockUntilSubscribed = true)
+            }
+            awaitCancellation()
+        } finally {
+            collector.cancelAndJoin()
+            client.realtime.removeChannel(realtimeChannel)
+        }
+    }.buffer(Channel.CONFLATED)
+
     private suspend fun safeProfiles(
         ids: List<String>? = null,
         query: String? = null,
@@ -187,3 +217,11 @@ private data class FriendStreakRow(
     @SerialName("user_id") val userId: String,
     @SerialName("login_streak") val loginStreak: Int,
 )
+
+@Serializable
+private data class FriendRequestBroadcast(
+    @SerialName("from_user_id") val fromUserId: String,
+    val status: String = "pending"
+)
+
+private const val FRIEND_REQUEST_SUBSCRIBE_TIMEOUT_MILLIS = 15_000L

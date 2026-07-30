@@ -2,9 +2,13 @@ package com.appetizers.spotra.domain.repository
 
 import com.appetizers.spotra.domain.model.BadgeId
 import com.appetizers.spotra.domain.model.CheckInSession
+import com.appetizers.spotra.domain.model.CheckedInStudent
+import com.appetizers.spotra.domain.model.EmailInviteResult
+import com.appetizers.spotra.domain.model.GroupInvite
 import com.appetizers.spotra.domain.model.GroupMember
 import com.appetizers.spotra.domain.model.GroupStudySession
 import com.appetizers.spotra.domain.model.GroupVisibility
+import com.appetizers.spotra.domain.model.GroupSessionEvent
 import com.appetizers.spotra.domain.model.HomeSnapshot
 import com.appetizers.spotra.domain.model.OnboardingDraft
 import com.appetizers.spotra.domain.model.Review
@@ -65,6 +69,7 @@ interface BadgeRepository {
 
 interface HomeRepository {
     fun observeOccupancy(): Flow<SpotOccupancy> = emptyFlow()
+    fun observeGroupSession(groupSessionId: String): Flow<GroupSessionEvent> = emptyFlow()
     suspend fun loadHome(): HomeSnapshot
     suspend fun fetchActiveCheckIn(): Pair<CheckInSession, Long>? = null
     suspend fun spotDetail(spotId: String): StudySpotDetail
@@ -78,5 +83,12 @@ interface HomeRepository {
         groupSessionId: String?,
     ): CheckInSession
     suspend fun checkOut(sessionId: String)
-    suspend fun inviteToGroup(groupSessionId: String, inviteText: String): GroupMember
+    suspend fun inviteToGroup(groupSessionId: String, inviteText: String): EmailInviteResult
+    suspend fun inviteToGroupByUserId(groupSessionId: String, userId: String): GroupMember
+    fun observePublicGroups(): Flow<Unit> = emptyFlow()
+    fun observeGroupInvites(currentUserId: String): Flow<Unit> = emptyFlow()
+    suspend fun loadPublicGroupsSnapshot(excludingId: String?): List<GroupStudySession> = emptyList()
+    suspend fun loadCheckInAttendees(spotSlug: String): List<CheckedInStudent> = emptyList()
+    suspend fun fetchPendingGroupInvites(): List<GroupInvite> = emptyList()
+    suspend fun respondToGroupInvite(inviteId: String, accept: Boolean)
 }

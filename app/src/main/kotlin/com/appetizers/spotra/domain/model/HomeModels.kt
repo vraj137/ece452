@@ -176,6 +176,23 @@ data class HomeSnapshot(
     val trendingCounts: Map<String, Int> = emptyMap(),
 )
 
+sealed interface GroupSessionEvent {
+    data class MembersChanged(val members: List<GroupMember>) : GroupSessionEvent
+    data object Ended : GroupSessionEvent
+}
+
+data class GroupInvite(
+    val id: String,
+    val groupSessionId: String,
+    val groupTitle: String,
+    val inviterName: String,
+)
+
+sealed interface EmailInviteResult {
+    data class Added(val member: GroupMember) : EmailInviteResult
+    data class InviteSent(val recipientName: String) : EmailInviteResult
+}
+
 data class CompletedSession(
     val spotName: String,
     val durationSeconds: Int,

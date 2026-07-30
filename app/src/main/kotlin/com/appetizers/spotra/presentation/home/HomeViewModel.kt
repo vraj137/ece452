@@ -6,7 +6,12 @@ import androidx.lifecycle.viewModelScope
 import com.appetizers.spotra.data.location.LocationRepository
 import com.appetizers.spotra.domain.model.BadgeId
 import com.appetizers.spotra.domain.model.CheckInSession
+import com.appetizers.spotra.domain.model.CheckedInStudent
 import com.appetizers.spotra.domain.model.CompletedSession
+import com.appetizers.spotra.domain.model.EmailInviteResult
+import com.appetizers.spotra.domain.model.FriendProfile
+import com.appetizers.spotra.domain.model.GroupInvite
+import com.appetizers.spotra.domain.model.GroupSessionEvent
 import com.appetizers.spotra.domain.model.GroupStudySession
 import com.appetizers.spotra.domain.model.GroupVisibility
 import com.appetizers.spotra.domain.model.HomeSnapshot
@@ -23,6 +28,7 @@ import com.appetizers.spotra.domain.repository.StreakRepository
 import com.appetizers.spotra.domain.usecase.AwardBadgesUseCase
 import com.appetizers.spotra.domain.usecase.ReviewQualityScorer
 import com.appetizers.spotra.presentation.toUserMessage
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -56,6 +62,8 @@ data class HomeUiState(
     val groupVisibility: GroupVisibility = GroupVisibility.Private,
     val inviteText: String = "",
     val isGroupActionInProgress: Boolean = false,
+    val invitableFriends: List<FriendProfile> = emptyList(),
+    val pendingGroupInvites: List<GroupInvite> = emptyList(),
     val error: String? = null,
     val newBadge: BadgeId? = null,
     val showReviewPrompt: Boolean = false,
@@ -100,10 +108,14 @@ class HomeViewModel(
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     private var pendingCheckoutBadge: BadgeId? = null
+    private var groupObserverJob: Job? = null
+    private var currentObservedGroupId: String? = null
 
     init {
         observeOccupancy()
+        observePublicGroups()
         loadHome()
+        subscribeGroupInvites()
     }
 
     fun selectMode(mode: StudyMode) {
@@ -418,6 +430,8 @@ class HomeViewModel(
                             error = null
                         )
                     }
+                    startObservingGroupSession(session.id)
+                    loadInvitableFriends()
                 }
                 .onFailure { error ->
                     _uiState.update { it.copy(isGroupActionInProgress = false) }
@@ -441,6 +455,8 @@ class HomeViewModel(
                             error = null
                         )
                     }
+                    startObservingGroupSession(session.id)
+                    loadInvitableFriends()
                 }
                 .onFailure { error ->
                     _uiState.update { it.copy(isGroupActionInProgress = false) }
@@ -457,6 +473,7 @@ class HomeViewModel(
             _uiState.update { it.copy(isGroupActionInProgress = true, error = null) }
             runCatching { repository.leaveGroup(groupSession.id) }
                 .onSuccess {
+                    stopObservingGroupSession()
                     _uiState.update { state ->
                         val publicGroups = if (
                             groupSession.visibility == GroupVisibility.Public && !groupSession.isOwner
@@ -472,6 +489,7 @@ class HomeViewModel(
                             groupSession = null,
                             publicGroups = publicGroups,
                             inviteText = "",
+                            invitableFriends = emptyList(),
                             isGroupActionInProgress = false,
                             error = null
                         )
@@ -492,16 +510,31 @@ class HomeViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(isGroupActionInProgress = true, error = null) }
             runCatching { repository.inviteToGroup(groupSession.id, inviteText) }
-                .onSuccess { member ->
-                    _uiState.update { state ->
-                        state.copy(
-                            groupSession = groupSession.copy(
-                                members = groupSession.members + member
-                            ),
-                            inviteText = "",
-                            isGroupActionInProgress = false,
-                            error = null
-                        )
+                .onSuccess { result ->
+                    when (result) {
+                        is EmailInviteResult.Added -> {
+                            _uiState.update { state ->
+                                state.copy(
+                                    groupSession = state.groupSession?.copy(
+                                        members = (state.groupSession.members + result.member).distinctBy { it.id }
+                                    ),
+                                    inviteText = "",
+                                    invitableFriends = state.invitableFriends.filterNot { it.id == result.member.id },
+                                    isGroupActionInProgress = false,
+                                    error = null
+                                )
+                            }
+                        }
+                        is EmailInviteResult.InviteSent -> {
+                            _uiState.update { state ->
+                                state.copy(
+                                    inviteText = "",
+                                    isGroupActionInProgress = false,
+                                    error = null
+                                )
+                            }
+                            showError("Invite sent to ${result.recipientName}. They'll see it on their group page.")
+                        }
                     }
                 }
                 .onFailure { error ->
@@ -509,6 +542,131 @@ class HomeViewModel(
                     showError(error.toUserMessage("Could not send invite."))
                 }
         }
+    }
+
+    fun acceptGroupInvite(inviteId: String) {
+        viewModelScope.launch {
+            runCatching { repository.respondToGroupInvite(inviteId, accept = true) }
+                .onSuccess {
+                    _uiState.update { state ->
+                        state.copy(pendingGroupInvites = state.pendingGroupInvites.filterNot { it.id == inviteId })
+                    }
+                    // Reload home to pick up the new group session
+                    runCatching { repository.loadHome() }
+                        .onSuccess { snapshot -> applySnapshot(snapshot, isRefresh = true) }
+                }
+                .onFailure { error ->
+                    showError(error.toUserMessage("Could not join the group. It may have ended."))
+                    _uiState.update { state ->
+                        state.copy(pendingGroupInvites = state.pendingGroupInvites.filterNot { it.id == inviteId })
+                    }
+                }
+        }
+    }
+
+    fun declineGroupInvite(inviteId: String) {
+        viewModelScope.launch {
+            runCatching { repository.respondToGroupInvite(inviteId, accept = false) }
+            _uiState.update { state ->
+                state.copy(pendingGroupInvites = state.pendingGroupInvites.filterNot { it.id == inviteId })
+            }
+        }
+    }
+
+    private fun loadPendingGroupInvites() {
+        viewModelScope.launch {
+            val invites = runCatching { repository.fetchPendingGroupInvites() }.getOrDefault(emptyList())
+            _uiState.update { it.copy(pendingGroupInvites = invites) }
+        }
+    }
+
+    private fun subscribeGroupInvites() {
+        viewModelScope.launch {
+            val userId = runCatching { authRepository.currentUser()?.id }.getOrNull() ?: return@launch
+            repository.observeGroupInvites(userId)
+                .retryWhen { _, _ ->
+                    delay(GROUP_INVITE_RECONNECT_DELAY_MILLIS)
+                    true
+                }
+                .catch { /* best-effort */ }
+                .collect { loadPendingGroupInvites() }
+        }
+    }
+
+    fun inviteFriendToGroup(userId: String) {
+        val groupSession = uiState.value.groupSession ?: return
+        if (uiState.value.isGroupActionInProgress) return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isGroupActionInProgress = true, error = null) }
+            runCatching { repository.inviteToGroupByUserId(groupSession.id, userId) }
+                .onSuccess { member ->
+                    _uiState.update { state ->
+                        state.copy(
+                            groupSession = state.groupSession?.copy(
+                                members = (state.groupSession.members + member).distinctBy { it.id }
+                            ),
+                            invitableFriends = state.invitableFriends.filterNot { it.id == userId },
+                            isGroupActionInProgress = false,
+                            error = null
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update { it.copy(isGroupActionInProgress = false) }
+                    showError(error.toUserMessage("Could not invite this friend."))
+                }
+        }
+    }
+
+    fun loadInvitableFriends() {
+        viewModelScope.launch {
+            val friends = runCatching { friendRepository.fetchFriendProfiles() }.getOrDefault(emptyList())
+            _uiState.update { it.copy(invitableFriends = friends.filter { f -> f.isAccepted }) }
+        }
+    }
+
+    private fun startObservingGroupSession(groupSessionId: String) {
+        if (groupSessionId == currentObservedGroupId) return
+        groupObserverJob?.cancel()
+        currentObservedGroupId = groupSessionId
+        groupObserverJob = viewModelScope.launch {
+            repository.observeGroupSession(groupSessionId)
+                .retryWhen { _, _ ->
+                    delay(GROUP_OBSERVER_RECONNECT_DELAY_MILLIS)
+                    true
+                }
+                .catch { /* group updates are best-effort */ }
+                .collect { event ->
+                    when (event) {
+                        is GroupSessionEvent.MembersChanged -> {
+                            _uiState.update { state ->
+                                state.copy(
+                                    groupSession = state.groupSession?.copy(members = event.members)
+                                )
+                            }
+                        }
+                        GroupSessionEvent.Ended -> {
+                            val wasOwner = _uiState.value.groupSession?.isOwner ?: false
+                            stopObservingGroupSession()
+                            _uiState.update { state ->
+                                state.copy(
+                                    groupSession = null,
+                                    invitableFriends = emptyList(),
+                                    inviteText = "",
+                                    error = if (!wasOwner) "The group session has ended." else null,
+                                )
+                            }
+                        }
+                    }
+                }
+        }
+    }
+
+    private fun stopObservingGroupSession() {
+        groupObserverJob?.cancel()
+        groupObserverJob = null
+        currentObservedGroupId = null
     }
 
     private fun loadHome() {
@@ -544,6 +702,7 @@ class HomeViewModel(
                             }
                     }
                     launch { updateUserLocation() }
+                    launch { loadPendingGroupInvites() }
                 }
                 .onFailure { error -> applyLoadFailure(error, isRefresh = false) }
         }
@@ -567,6 +726,10 @@ class HomeViewModel(
                 selectedSpotId = if (isRefresh) state.selectedSpotId else snapshot.soloSpot.id,
                 error = null,
             )
+        }
+        snapshot.groupSession?.let { group ->
+            startObservingGroupSession(group.id)
+            if (!isRefresh) loadInvitableFriends()
         }
     }
 
@@ -637,6 +800,45 @@ class HomeViewModel(
                             },
                         )
                     }
+                    val activeSpotId = _uiState.value.activeCheckIn?.spot?.id
+                    if (activeSpotId == occupancy.spotId) {
+                        refreshCheckInAttendees(activeSpotId)
+                    }
+                }
+        }
+    }
+
+    private fun refreshCheckInAttendees(spotSlug: String) {
+        viewModelScope.launch {
+            val coAttendees = runCatching { repository.loadCheckInAttendees(spotSlug) }.getOrNull()
+                ?: return@launch
+            _uiState.update { state ->
+                val self = state.activeCheckIn?.attendees?.firstOrNull { it.isSelf }
+                state.copy(
+                    activeCheckIn = state.activeCheckIn?.copy(
+                        attendees = listOfNotNull(self) + coAttendees
+                    )
+                )
+            }
+        }
+    }
+
+    private fun observePublicGroups() {
+        viewModelScope.launch {
+            repository.observePublicGroups()
+                .retryWhen { _, _ ->
+                    delay(PUBLIC_GROUPS_RECONNECT_DELAY_MILLIS)
+                    true
+                }
+                .catch { /* public groups updates are best-effort */ }
+                .collect {
+                    val currentGroupId = _uiState.value.groupSession?.id
+                    val fresh = runCatching {
+                        repository.loadPublicGroupsSnapshot(excludingId = currentGroupId)
+                    }.getOrNull()
+                    if (fresh != null) {
+                        _uiState.update { state -> state.copy(publicGroups = fresh) }
+                    }
                 }
         }
     }
@@ -683,3 +885,6 @@ private fun List<StudySpotSummary>.withKnownOccupancy(
     map { it.withKnownOccupancy(occupancies) }
 
 private const val OCCUPANCY_RECONNECT_DELAY_MILLIS = 5_000L
+private const val GROUP_OBSERVER_RECONNECT_DELAY_MILLIS = 5_000L
+private const val PUBLIC_GROUPS_RECONNECT_DELAY_MILLIS = 5_000L
+private const val GROUP_INVITE_RECONNECT_DELAY_MILLIS = 5_000L
