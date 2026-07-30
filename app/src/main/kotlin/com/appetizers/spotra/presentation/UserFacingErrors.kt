@@ -1,12 +1,13 @@
 package com.appetizers.spotra.presentation
 
-/**
- * Converts failures into text that is safe to render in the app.
- * Backend SDK exceptions can contain request URLs and authorization headers,
- * so their raw messages must never cross the presentation boundary.
- */
+import io.github.jan.supabase.exceptions.RestException
+
 fun Throwable.toUserMessage(fallback: String): String {
-    val candidate = (this as? IllegalArgumentException)?.message?.trim()
+    val candidate = when (this) {
+        is IllegalArgumentException -> message?.trim()
+        is RestException -> error.trim().ifEmpty { null }
+        else -> null
+    }
     return candidate
         ?.takeIf { it.length in 1..160 }
         ?.takeIf { '\n' !in it && '\r' !in it }
@@ -27,5 +28,11 @@ private val SENSITIVE_ERROR_MARKERS = listOf(
     "rest/v1",
     "rpc/",
     "supabase.co",
-    "url:"
+    "url:",
+    "schema cache",
+    "public.",
+    "could not find the function",
+    "p_spot_slug",
+    "p_mode",
+    "p_group_session_id",
 )

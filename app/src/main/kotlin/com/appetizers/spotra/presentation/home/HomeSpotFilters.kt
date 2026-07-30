@@ -21,7 +21,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.VolumeDown
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.Tune
@@ -43,9 +42,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 
-private val NOISE_FILTER_OPTIONS = listOf("Silent", "Low", "Moderate", "Lively")
-private val LIGHTING_FILTER_OPTIONS = listOf("Poor", "Good", "Bright", "Natural")
-private val WIFI_FILTER_OPTIONS = listOf("Poor", "OK", "Good", "Fast")
 private val AMENITY_OPTIONS = listOf("Wi-Fi", "Outlets", "Whiteboard", "Accessible")
 private val OCCUPANCY_OPTIONS = listOf(50 to "< 50% full", 75 to "< 75% full")
 
@@ -144,10 +140,10 @@ internal fun SpotFiltersSheet(
                 NoiseFilterChips(noise, accent, onNoiseSelect)
             }
             FilterSection("Lighting") {
-                StringFilterChips("Any lighting", LIGHTING_FILTER_OPTIONS, lighting, accent, onLightingSelect)
+                StringFilterChips("Any lighting", SpotAttributeOptions.LIGHTING, lighting, accent, onLightingSelect)
             }
             FilterSection("Wi-Fi") {
-                StringFilterChips("Any Wi-Fi", WIFI_FILTER_OPTIONS, wifi, accent, onWifiSelect)
+                StringFilterChips("Any Wi-Fi", SpotAttributeOptions.WIFI, wifi, accent, onWifiSelect)
             }
             FilterSection("Space type") {
                 SpaceTypeFilterChips(spaceType, accent, onSpaceTypeSelect)
@@ -210,7 +206,7 @@ private fun NoiseFilterChips(selected: String?, accent: Color, onSelect: (String
         item {
             FilterChip(label = "All noise", selected = selected == null, accent = accent, onClick = { onSelect(null) })
         }
-        items(NOISE_FILTER_OPTIONS) { option ->
+        items(SpotAttributeOptions.NOISE) { option ->
             FilterChip(label = option, selected = selected == option, accent = accent, onClick = {
                 onSelect(if (selected == option) null else option)
             })
@@ -288,81 +284,6 @@ private fun FilterChip(label: String, selected: Boolean, accent: Color, onClick:
         fontWeight = FontWeight.ExtraBold,
         maxLines = 1
     )
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun NoiseFilterSheet(
-    selected: String?,
-    accent: Color,
-    onSelect: (String?) -> Unit,
-    onDismiss: () -> Unit
-) {
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = Color.White
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 24.dp, end = 24.dp, bottom = 32.dp)
-        ) {
-            Text(
-                text = "Noise level",
-                color = Ink,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.ExtraBold
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = "Choose the environment that helps you focus.",
-                color = BodyText,
-                fontSize = 15.sp
-            )
-            Spacer(Modifier.height(18.dp))
-            val choices = listOf<String?>(null) + NOISE_FILTER_OPTIONS
-            choices.forEach { option ->
-                val isSelected = selected == option
-                val label = option ?: "Any noise"
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(54.dp)
-                        .background(
-                            if (isSelected) accent.copy(alpha = 0.10f) else Color.Transparent,
-                            RoundedCornerShape(14.dp)
-                        )
-                        .clickable { onSelect(option) }
-                        .padding(horizontal = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = noiseIcon(label),
-                        contentDescription = null,
-                        tint = if (isSelected) accent else BodyText,
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(Modifier.width(14.dp))
-                    Text(
-                        text = label,
-                        modifier = Modifier.weight(1f),
-                        color = Ink,
-                        fontSize = 17.sp,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                    )
-                    if (isSelected) {
-                        Icon(
-                            imageVector = Icons.Rounded.Check,
-                            contentDescription = "Selected",
-                            tint = accent,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                }
-                Spacer(Modifier.height(4.dp))
-            }
-        }
-    }
 }
 
 internal fun noiseIcon(label: String): ImageVector = when (label.lowercase()) {

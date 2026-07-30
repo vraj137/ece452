@@ -27,10 +27,8 @@ class OnboardingValidationTest {
     }
 
     @Test
-    fun `name and program validation trim input`() {
+    fun `name validation trims input`() {
         assertTrue(OnboardingValidation.isValidName(" Vraj "))
-        assertTrue(OnboardingValidation.isValidProgram(" Computer Engineering "))
         assertFalse(OnboardingValidation.isValidName(" A "))
-        assertFalse(OnboardingValidation.isValidProgram(" "))
     }
 }

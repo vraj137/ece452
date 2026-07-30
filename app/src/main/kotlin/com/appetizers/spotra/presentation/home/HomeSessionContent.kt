@@ -108,25 +108,25 @@ internal fun PostCheckoutReviewSheet(
             }
             LabelSlider(
                 label = "Noise level",
-                options = listOf("Silent", "Low", "Moderate", "Lively"),
+                options = SpotAttributeOptions.NOISE,
                 selectedIndex = noiseIndex,
                 onSelect = { noiseIndex = it },
             )
             LabelSlider(
                 label = "Lighting",
-                options = listOf("Poor", "Good", "Bright", "Natural"),
+                options = SpotAttributeOptions.LIGHTING,
                 selectedIndex = lightingIndex,
                 onSelect = { lightingIndex = it },
             )
             LabelSlider(
                 label = "WiFi quality",
-                options = listOf("Poor", "OK", "Good", "Fast"),
+                options = SpotAttributeOptions.WIFI,
                 selectedIndex = wifiIndex,
                 onSelect = { wifiIndex = it },
             )
             LabelSlider(
                 label = "How busy was it?",
-                options = listOf("Empty", "Some", "Busy", "Packed"),
+                options = SpotAttributeOptions.OCCUPANCY,
                 selectedIndex = occupancyIndex,
                 onSelect = { occupancyIndex = it },
             )
@@ -203,9 +203,7 @@ internal fun LiveCheckInScreen(
                 students = session.attendees,
                 requestedBuddyIds = requestedBuddyIds,
                 onBuddyClick = { student -> selectedBuddy = student },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
+                modifier = Modifier.fillMaxWidth().weight(1f)
             )
             CheckInSessionPanel(
                 sessionStartTimeMillis = sessionStartTimeMillis,
@@ -241,13 +239,13 @@ private fun CheckInAttendeeList(
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
-    Box(modifier = modifier.fillMaxWidth().background(Color.White)) {
+    Box(modifier = modifier.background(Color.White)) {
         LazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxWidth(),
             userScrollEnabled = true,
             contentPadding = PaddingValues(
-                start = 36.dp, top = 20.dp, end = 24.dp, bottom = 104.dp
+                start = 36.dp, top = 20.dp, end = 24.dp, bottom = 16.dp
             )
         ) {
             item {
@@ -313,16 +311,16 @@ private fun LiveCheckInHeader(spotName: String, peopleHere: Int, onBack: () -> U
         Text(
             text = spotName,
             color = Color.White,
-            fontSize = 29.sp,
+            fontSize = 26.sp,
             fontWeight = FontWeight.ExtraBold,
-            maxLines = 1,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            text = "You checked in - $peopleHere people studying now",
+            text = "You checked in · ${if (peopleHere == 1) "1 person" else "$peopleHere people"} studying now",
             color = HeaderSecondary,
-            fontSize = 20.sp,
+            fontSize = 16.sp,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
@@ -655,17 +653,22 @@ private fun SessionElapsedText(
     fontSize: androidx.compose.ui.unit.TextUnit,
     fontWeight: FontWeight
 ) {
+    val hasValidStart = sessionStartTimeMillis > 0L
     var elapsedSeconds by remember(sessionStartTimeMillis) {
-        mutableIntStateOf(((System.currentTimeMillis() - sessionStartTimeMillis) / 1000).toInt())
+        mutableIntStateOf(
+            if (hasValidStart) ((System.currentTimeMillis() - sessionStartTimeMillis) / 1000).toInt()
+            else 0
+        )
     }
     LaunchedEffect(sessionStartTimeMillis) {
+        if (!hasValidStart) return@LaunchedEffect
         while (true) {
             delay(1000)
             elapsedSeconds = ((System.currentTimeMillis() - sessionStartTimeMillis) / 1000).toInt()
         }
     }
     Text(
-        text = elapsedSeconds.asSessionTime(),
+        text = if (hasValidStart) elapsedSeconds.asSessionTime() else "--:--",
         color = color,
         fontSize = fontSize,
         fontWeight = fontWeight

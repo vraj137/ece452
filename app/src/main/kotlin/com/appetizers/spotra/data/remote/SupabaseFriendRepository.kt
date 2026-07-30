@@ -91,7 +91,7 @@ class SupabaseFriendRepository(
                 "discover_profiles",
                 buildJsonObject { put("p_limit", 20) }
             )
-                .decodeList<FriendProfileRow>()
+                .decodeList<ProfileRow>()
                 .filter { it.id !in acceptedFriendIds }
                 .map { FriendProfile(it.id, it.firstName, it.lastName, it.email, it.program, it.term) }
         }.getOrDefault(emptyList())
@@ -115,7 +115,6 @@ class SupabaseFriendRepository(
     }
 
     override suspend fun removeFriendship(friendshipId: String) {
-        // Deleting from friendships directly is not granted; the RPC checks the caller is a party.
         client.postgrest.rpc(
             "remove_friendship",
             buildJsonObject { put("p_friendship_id", friendshipId) }
@@ -137,7 +136,7 @@ class SupabaseFriendRepository(
         query: String? = null,
         program: String? = null,
         limit: Int = 20,
-    ): List<FriendProfileRow> =
+    ): List<ProfileRow> =
         client.postgrest.rpc(
             "safe_profiles",
             buildJsonObject {
@@ -167,7 +166,7 @@ private data class FriendshipInsert(
 )
 
 @Serializable
-private data class FriendProfileRow(
+internal data class ProfileRow(
     val id: String,
     @SerialName("first_name") val firstName: String,
     @SerialName("last_name") val lastName: String,

@@ -1,10 +1,4 @@
 -- Curated photos so students can see what a study spot actually looks like before walking there.
---
--- Read-only to clients: no insert/update/delete grant, matching how public.spots itself is
--- curated. Rows are added by migration or through the Supabase dashboard, not by the app, so
--- there is no user-upload path and no moderation surface to build.
---
--- sort_order 0 is the cover image — the one shown as a thumbnail on Explore and Map cards.
 
 create table if not exists public.spot_photos (
     id         uuid primary key default gen_random_uuid(),
@@ -39,14 +33,3 @@ create policy "Spot photos are publicly readable"
 on storage.objects for select
 to public
 using (bucket_id = 'spot-photos');
-
--- No rows are seeded: the real photos have to be taken and uploaded first. To add them, upload
--- into the spot-photos bucket via the Supabase dashboard, then add a migration in this shape
--- (the public URL is https://<project>.supabase.co/storage/v1/object/public/spot-photos/<file>):
---
--- insert into public.spot_photos (spot_slug, url, caption, sort_order) values
---     ('e7-study-hall', 'https://.../e7-hall-wide.jpg',  'Long shared tables under the skylights', 0),
---     ('e7-study-hall', 'https://.../e7-hall-booth.jpg', 'Booth seating along the back wall',      1);
---
--- caption is read out as the image's content description, so write it as a description of the
--- space. sort_order 0 is the cover shown on Explore and Map cards.

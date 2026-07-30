@@ -127,13 +127,13 @@ internal fun SpotThumbnail(
 private fun SpotPhotoImage(
     photo: SpotPhoto,
     spotName: String,
+    position: Int,
+    total: Int,
     modifier: Modifier = Modifier,
-    position: Int? = null,
-    total: Int? = null,
 ) {
     val description = buildString {
         append(photo.caption?.takeIf { it.isNotBlank() } ?: "Photo of $spotName")
-        if (position != null && total != null && total > 1) {
+        if (total > 1) {
             append(" (")
             append(position)
             append(" of ")

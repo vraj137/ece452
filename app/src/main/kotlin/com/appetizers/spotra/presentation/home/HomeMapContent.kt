@@ -165,7 +165,7 @@ internal fun MapTabContent(
         val displayedSpot = remember(allMapSpots, selectedSpotId, soloSpot) {
             allMapSpots.firstOrNull { it.id == selectedSpotId } ?: soloSpot
         }
-        StudySpotCard(
+        SpotCard(
             spot = displayedSpot,
             accent = accent,
             modifier = Modifier.padding(start = 20.dp, top = 12.dp, end = 20.dp),

@@ -1,14 +1,5 @@
 -- Aggregates crowdsourced review data per spot so the Explore leaderboards rank on what
--- students actually reported, instead of the static noise_level/lighting values seeded in
--- 20260722001_add_noise_lighting_to_spots.sql.
---
--- IMPORTANT: the aggregation rules here (average rounded to one decimal; modal label =
--- highest count, ties broken alphabetically ascending) are mirrored in Kotlin by
--- app/src/main/kotlin/com/appetizers/spotra/domain/usecase/SpotReviewAggregates.kt,
--- which computes the same values for the spot detail screen. Keep the two in step.
---
--- Exposes no user_id and no comment text, so anonymous reviews stay anonymous. The
--- underlying reviews table is already readable by any signed-in user.
+-- students actually reported, instead of the static noise_level/lighting values
 
 create or replace view public.spot_review_stats as
 with labelled as (

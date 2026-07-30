@@ -7,26 +7,6 @@ enum class StudyMode {
     Group
 }
 
-enum class SpotFeatureType {
-    Seating,
-    Whiteboard,
-    Wifi,
-    Accessible,
-    Outlets,
-    Noise,
-    Projector,
-    NearbyCafe
-}
-
-data class SpotFeature(
-    val label: String,
-    val type: SpotFeatureType
-)
-
-/**
- * A curated photo of a study spot. [caption] doubles as the image's content description, so it
- * should read as a description of the space rather than a marketing line.
- */
 data class SpotPhoto(
     val url: String,
     val caption: String? = null
@@ -44,8 +24,6 @@ data class StudySpotSummary(
     val reviewCount: Int = 0,
     val photoUrl: String? = null,
     val studyContextLabel: String? = null,
-    val features: List<SpotFeature> = emptyList(),
-    val bestFit: Boolean = false,
     val latitude: Double? = null,
     val longitude: Double? = null,
     val occupancyPercent: Int? = null,
@@ -81,8 +59,6 @@ data class StudySpotDetail(
     val reportedOccupancyPercent: Int? = null,
     val peopleHere: Int = 0,
     val amenities: List<String> = emptyList(),
-    val features: List<SpotFeature> = emptyList(),
-    val bestFit: Boolean = false,
     val latitude: Double? = null,
     val longitude: Double? = null,
     val bookingUrl: String? = null,
@@ -100,8 +76,6 @@ data class StudySpotDetail(
         reviewCount = reviewCount,
         photoUrl = photos.firstOrNull()?.url,
         studyContextLabel = studyContextLabel,
-        features = features,
-        bestFit = bestFit,
         latitude = latitude,
         longitude = longitude,
         occupancyPercent = occupancyPercent,
