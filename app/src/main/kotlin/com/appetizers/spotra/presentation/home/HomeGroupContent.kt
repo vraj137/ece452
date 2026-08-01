@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.Lock
@@ -509,6 +510,7 @@ internal fun GroupModeContent(
     spots: List<StudySpotSummary>,
     inviteText: String,
     invitableFriends: List<FriendProfile>,
+    invitedGroupFriendIds: Set<String> = emptySet(),
     isActionInProgress: Boolean,
     onInviteTextChange: (String) -> Unit,
     onSendInvite: () -> Unit,
@@ -587,6 +589,7 @@ internal fun GroupModeContent(
         val currentMemberIds = groupSession.members.map { it.id }.toSet()
         GroupInviteSheet(
             friends = invitableFriends.filter { it.id !in currentMemberIds },
+            invitedFriendIds = invitedGroupFriendIds,
             emailValue = inviteText,
             onEmailValueChange = onInviteTextChange,
             isSending = isActionInProgress,
@@ -794,6 +797,7 @@ private fun GroupAvatarStrip(members: List<GroupMember>) {
 @Composable
 private fun GroupInviteSheet(
     friends: List<FriendProfile>,
+    invitedFriendIds: Set<String> = emptySet(),
     emailValue: String,
     onEmailValueChange: (String) -> Unit,
     isSending: Boolean,
@@ -877,17 +881,24 @@ private fun GroupInviteSheet(
                             }
                         }
                         Spacer(Modifier.width(10.dp))
+                        val alreadyInvited = friend.id in invitedFriendIds
                         Button(
-                            onClick = { onInviteFriend(friend.id) },
-                            enabled = !isSending,
+                            onClick = { if (!alreadyInvited) onInviteFriend(friend.id) },
+                            enabled = !isSending && !alreadyInvited,
                             contentPadding = PaddingValues(horizontal = 14.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = GroupGreen,
-                                disabledContainerColor = SwitcherTrack
+                                containerColor = if (alreadyInvited) SwitcherTrack else GroupGreen,
+                                disabledContainerColor = if (alreadyInvited) SwitcherTrack else SwitcherTrack
                             ),
                             shape = RoundedCornerShape(12.dp)
                         ) {
-                            Text("Add", fontWeight = FontWeight.Bold)
+                            if (alreadyInvited) {
+                                Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(15.dp), tint = GroupGreen)
+                                Spacer(Modifier.width(4.dp))
+                                Text("Added", fontWeight = FontWeight.Bold, color = GroupGreen)
+                            } else {
+                                Text("Add", fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }

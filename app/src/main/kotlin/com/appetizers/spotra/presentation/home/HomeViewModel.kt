@@ -63,6 +63,7 @@ data class HomeUiState(
     val inviteText: String = "",
     val isGroupActionInProgress: Boolean = false,
     val invitableFriends: List<FriendProfile> = emptyList(),
+    val invitedGroupFriendIds: Set<String> = emptySet(),
     val pendingGroupInvites: List<GroupInvite> = emptyList(),
     val error: String? = null,
     val newBadge: BadgeId? = null,
@@ -600,13 +601,11 @@ class HomeViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(isGroupActionInProgress = true, error = null) }
             runCatching { repository.inviteToGroupByUserId(groupSession.id, userId) }
-                .onSuccess { member ->
+                .onSuccess {
+                    // Friend is now pending in their inbox
                     _uiState.update { state ->
                         state.copy(
-                            groupSession = state.groupSession?.copy(
-                                members = (state.groupSession.members + member).distinctBy { it.id }
-                            ),
-                            invitableFriends = state.invitableFriends.filterNot { it.id == userId },
+                            invitedGroupFriendIds = state.invitedGroupFriendIds + userId,
                             isGroupActionInProgress = false,
                             error = null
                         )
@@ -622,7 +621,7 @@ class HomeViewModel(
     fun loadInvitableFriends() {
         viewModelScope.launch {
             val friends = runCatching { friendRepository.fetchFriendProfiles() }.getOrDefault(emptyList())
-            _uiState.update { it.copy(invitableFriends = friends.filter { f -> f.isAccepted }) }
+            _uiState.update { it.copy(invitableFriends = friends.filter { f -> f.isAccepted }, invitedGroupFriendIds = emptySet()) }
         }
     }
 
