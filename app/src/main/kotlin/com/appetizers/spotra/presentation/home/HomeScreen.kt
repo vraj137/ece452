@@ -368,6 +368,7 @@ fun HomeScreen(
                     spots = state.groupSpots,
                     inviteText = state.inviteText,
                     invitableFriends = state.invitableFriends,
+                    invitedGroupFriendIds = state.invitedGroupFriendIds,
                     isActionInProgress = state.isGroupActionInProgress,
                     onInviteTextChange = viewModel::updateInviteText,
                     onSendInvite = viewModel::sendGroupInvite,
