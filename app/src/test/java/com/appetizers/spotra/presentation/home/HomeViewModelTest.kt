@@ -8,6 +8,7 @@ import com.appetizers.spotra.domain.model.CompletedSession
 import com.appetizers.spotra.domain.model.FriendProfile
 import com.appetizers.spotra.domain.model.EmailInviteResult
 import com.appetizers.spotra.domain.model.GroupMember
+import com.appetizers.spotra.domain.model.GroupSessionEvent
 import com.appetizers.spotra.domain.model.GroupStudySession
 import com.appetizers.spotra.domain.model.GroupVisibility
 import com.appetizers.spotra.domain.model.HomeSnapshot
@@ -108,6 +109,29 @@ class HomeViewModelTest {
         assertEquals("Busy", state.soloSpot?.badge)
         assertEquals(90, state.mapSpots.first { it.id == "e7-study-hall" }.occupancyPercent)
         assertEquals(18, state.occupancyBySpot["e7-study-hall"]?.activeCount)
+    }
+
+    @Test
+    fun `group member broadcasts update the open group immediately`() = runTest(dispatcher) {
+        val repository = FakeHomeRepository()
+        val viewModel = buildViewModel(repository)
+        advanceUntilIdle()
+
+        repository.groupSessionEvents.emit(
+            GroupSessionEvent.MembersChanged(
+                listOf(
+                    GroupMember("you", "You", "VB"),
+                    GroupMember("akshat", "Akshat J.", "AJ"),
+                    GroupMember("new-member", "New Member", "NM"),
+                )
+            )
+        )
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf("you", "akshat", "new-member"),
+            viewModel.uiState.value.groupSession?.members?.map { it.id }
+        )
     }
 
     @Test
@@ -353,6 +377,7 @@ private class FakeHomeRepository(
     initialPublicGroups: List<GroupStudySession> = emptyList(),
 ) : HomeRepository {
     val occupancyUpdates = MutableSharedFlow<SpotOccupancy>(extraBufferCapacity = 1)
+    val groupSessionEvents = MutableSharedFlow<GroupSessionEvent>(extraBufferCapacity = 1)
     var lastStartGroupSessionId: String? = null
         private set
     var lastCreatedGroupName: String? = null
@@ -367,6 +392,7 @@ private class FakeHomeRepository(
     private var publicGroups: List<GroupStudySession> = initialPublicGroups
 
     override fun observeOccupancy() = occupancyUpdates
+    override fun observeGroupSession(groupSessionId: String) = groupSessionEvents
 
     private val soloSpot = StudySpotSummary(
         id = "e7-study-hall",
