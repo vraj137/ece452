@@ -12,7 +12,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,7 +23,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Remove
@@ -143,13 +141,7 @@ internal fun CampusMap(
                             label = spot.name,
                             color = occupancyPinColor(spot),
                             selected = spot.id == selectedSpotId,
-                            sharedPeopleCount = spot.friendsHere,
-                            contentDescription = buildString {
-                                append("${spot.name}, occupancy ${spot.badge}")
-                                if (spot.friendsHere > 0) {
-                                    append(", ${spot.friendsHere} people sharing an active check-in here")
-                                }
-                            },
+                            contentDescription = "${spot.name}, occupancy ${spot.badge}",
                             modifier = Modifier.clickable(
                                 interactionSource = interactionSource,
                                 indication = null
@@ -303,7 +295,6 @@ private fun MapPin(
     label: String,
     color: Color,
     selected: Boolean,
-    sharedPeopleCount: Int,
     modifier: Modifier = Modifier,
     contentDescription: String = label
 ) {
@@ -338,31 +329,6 @@ private fun MapPin(
             fontWeight = FontWeight.ExtraBold,
             maxLines = 1
         )
-        if (sharedPeopleCount > 0) {
-            Spacer(Modifier.height(4.dp))
-            Row(
-                modifier = Modifier
-                    .shadow(4.dp, pillShape, clip = false)
-                    .background(SoloBlue, pillShape)
-                    .border(1.dp, Color.White, pillShape)
-                    .padding(horizontal = 7.dp, vertical = 3.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Groups,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(12.dp),
-                )
-                Text(
-                    text = sharedPeopleCount.toString(),
-                    color = Color.White,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                )
-            }
-        }
         Spacer(Modifier.height(3.dp))
         Box(
             modifier = Modifier
