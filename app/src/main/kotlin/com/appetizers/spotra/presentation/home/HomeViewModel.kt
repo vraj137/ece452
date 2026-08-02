@@ -110,6 +110,8 @@ class HomeViewModel(
 
     private var pendingCheckoutBadge: BadgeId? = null
     private var groupObserverJob: Job? = null
+    private var attendeeRefreshJob: Job? = null
+    private var sharedLocationCountsRefreshJob: Job? = null
     private var currentObservedGroupId: String? = null
 
     init {
@@ -820,10 +822,12 @@ class HomeViewModel(
     }
 
     private fun refreshCheckInAttendees(spotSlug: String) {
-        viewModelScope.launch {
+        attendeeRefreshJob?.cancel()
+        attendeeRefreshJob = viewModelScope.launch {
             val coAttendees = runCatching { repository.loadCheckInAttendees(spotSlug) }.getOrNull()
                 ?: return@launch
             _uiState.update { state ->
+                if (state.activeCheckIn?.spot?.id != spotSlug) return@update state
                 val self = state.activeCheckIn?.attendees?.firstOrNull { it.isSelf }
                 state.copy(
                     activeCheckIn = state.activeCheckIn?.copy(
@@ -843,17 +847,27 @@ class HomeViewModel(
                 }
                 .catch { /* shared-location updates are best-effort */ }
                 .collect {
-                    val counts = runCatching { repository.loadSharedLocationCounts() }.getOrNull()
-                        ?: return@collect
-                    _uiState.update { state ->
-                        state.copy(
-                            soloSpot = state.soloSpot?.withSharedLocationCount(counts),
-                            groupSpots = state.groupSpots.map { it.withSharedLocationCount(counts) },
-                            mapSpots = state.mapSpots.map { it.withSharedLocationCount(counts) },
-                        )
-                    }
+                    // Privacy changes must update the open "Who's Here" list immediately.
+                    // Keep this independent from the best-effort map count request so a slow
+                    // or failed count cannot leave a newly hidden person visible.
                     _uiState.value.activeCheckIn?.spot?.id?.let(::refreshCheckInAttendees)
+                    refreshSharedLocationCounts()
                 }
+        }
+    }
+
+    private fun refreshSharedLocationCounts() {
+        sharedLocationCountsRefreshJob?.cancel()
+        sharedLocationCountsRefreshJob = viewModelScope.launch {
+            val counts = runCatching { repository.loadSharedLocationCounts() }.getOrNull()
+                ?: return@launch
+            _uiState.update { state ->
+                state.copy(
+                    soloSpot = state.soloSpot?.withSharedLocationCount(counts),
+                    groupSpots = state.groupSpots.map { it.withSharedLocationCount(counts) },
+                    mapSpots = state.mapSpots.map { it.withSharedLocationCount(counts) },
+                )
+            }
         }
     }
 

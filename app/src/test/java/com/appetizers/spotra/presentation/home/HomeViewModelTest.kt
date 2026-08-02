@@ -155,6 +155,42 @@ class HomeViewModelTest {
     }
 
     @Test
+    fun `shared location broadcasts remove hidden attendee even when map counts fail`() = runTest(dispatcher) {
+        val repository = FakeHomeRepository()
+        val friends = RealtimeFriendRepository()
+        val viewModel = buildViewModel(repository, friends)
+        advanceUntilIdle()
+
+        viewModel.startCheckIn(requireNotNull(viewModel.uiState.value.soloSpot), StudyMode.Solo)
+        advanceUntilIdle()
+        repository.checkInAttendees = listOf(
+            CheckedInStudent(
+                id = "friend-1",
+                initials = "VP",
+                name = "Vishvam P.",
+                detail = "Computer Engineering",
+            )
+        )
+        repository.failSharedLocationCounts = true
+
+        friends.sharedLocationUpdates.emit(Unit)
+        advanceUntilIdle()
+        assertEquals(
+            listOf("you", "friend-1"),
+            viewModel.uiState.value.activeCheckIn?.attendees?.map { it.id },
+        )
+
+        repository.checkInAttendees = emptyList()
+        friends.sharedLocationUpdates.emit(Unit)
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf("you"),
+            viewModel.uiState.value.activeCheckIn?.attendees?.map { it.id },
+        )
+    }
+
+    @Test
     fun `review stats and cover photos reach the map spots`() = runTest(dispatcher) {
         val viewModel = buildViewModel()
         advanceUntilIdle()
@@ -399,6 +435,8 @@ private class FakeHomeRepository(
     val occupancyUpdates = MutableSharedFlow<SpotOccupancy>(extraBufferCapacity = 1)
     val groupSessionEvents = MutableSharedFlow<GroupSessionEvent>(extraBufferCapacity = 1)
     var sharedLocationCounts: Map<String, Int> = emptyMap()
+    var failSharedLocationCounts = false
+    var checkInAttendees: List<CheckedInStudent> = emptyList()
     var lastStartGroupSessionId: String? = null
         private set
     var lastCreatedGroupName: String? = null
@@ -414,7 +452,13 @@ private class FakeHomeRepository(
 
     override fun observeOccupancy() = occupancyUpdates
     override fun observeGroupSession(groupSessionId: String) = groupSessionEvents
-    override suspend fun loadSharedLocationCounts(): Map<String, Int> = sharedLocationCounts
+    override suspend fun loadSharedLocationCounts(): Map<String, Int> {
+        if (failSharedLocationCounts) error("Shared-location counts unavailable")
+        return sharedLocationCounts
+    }
+
+    override suspend fun loadCheckInAttendees(spotSlug: String): List<CheckedInStudent> =
+        checkInAttendees
 
     private val soloSpot = StudySpotSummary(
         id = "e7-study-hall",
