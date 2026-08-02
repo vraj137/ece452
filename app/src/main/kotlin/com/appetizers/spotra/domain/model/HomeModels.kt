@@ -147,7 +147,11 @@ data class GroupStudySession(
     val members: List<GroupMember>,
     val isOwner: Boolean = false,
     val visibility: GroupVisibility = GroupVisibility.Private,
-)
+) {
+    /** Ending closes the session for everyone, so only the creator may see that action. */
+    val canEndGroup: Boolean
+        get() = isOwner
+}
 
 data class CheckedInStudent(
     val id: String,

@@ -603,7 +603,7 @@ internal fun GroupModeContent(
     }
     if (showLeaveSheet) {
         LeaveGroupSheet(
-            isOwner = groupSession.isOwner,
+            isOwner = groupSession.canEndGroup,
             isLeaving = isActionInProgress,
             onConfirm = {
                 onLeaveGroup()
@@ -639,7 +639,7 @@ private fun GroupModeHeader(
         ) {
             GroupHeaderTopRow(onBack, Modifier.weight(1f))
             Text(
-                text = if (groupSession.isOwner) "End group" else "Leave",
+                text = if (groupSession.canEndGroup) "End group" else "Leave group",
                 color = ModerateFitText,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
