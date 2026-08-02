@@ -91,4 +91,5 @@ interface HomeRepository {
     suspend fun loadCheckInAttendees(spotSlug: String): List<CheckedInStudent> = emptyList()
     suspend fun fetchPendingGroupInvites(): List<GroupInvite> = emptyList()
     suspend fun respondToGroupInvite(inviteId: String, accept: Boolean)
+    suspend fun fetchGroupSessionMembers(groupSessionId: String): List<GroupMember> = emptyList()
 }

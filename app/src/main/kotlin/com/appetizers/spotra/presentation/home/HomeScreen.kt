@@ -342,6 +342,7 @@ fun HomeScreen(
     if (state.selectedSection == HomeSection.Map && state.selectedMode == StudyMode.Group) {
         LaunchedEffect(Unit) {
             if (groupSession == null && !state.isRefreshing) viewModel.refresh()
+            else viewModel.refreshGroupMembers()
         }
         BackHandler { viewModel.returnToSoloMap() }
         Box(Modifier.fillMaxSize()) {

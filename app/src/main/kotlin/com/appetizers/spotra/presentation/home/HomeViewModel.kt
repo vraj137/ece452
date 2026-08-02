@@ -618,6 +618,17 @@ class HomeViewModel(
         }
     }
 
+    fun refreshGroupMembers() {
+        val groupId = uiState.value.groupSession?.id ?: return
+        viewModelScope.launch {
+            val members = runCatching { repository.fetchGroupSessionMembers(groupId) }.getOrNull()
+                ?: return@launch
+            _uiState.update { state ->
+                state.copy(groupSession = state.groupSession?.copy(members = members))
+            }
+        }
+    }
+
     fun loadInvitableFriends() {
         viewModelScope.launch {
             val friends = runCatching { friendRepository.fetchFriendProfiles() }.getOrDefault(emptyList())

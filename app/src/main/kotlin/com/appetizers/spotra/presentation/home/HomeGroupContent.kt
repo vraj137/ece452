@@ -683,29 +683,27 @@ private fun GroupModeHeader(
                 GroupAvatarStrip(groupSession.members)
             }
             Spacer(Modifier.weight(1f))
-            if (groupSession.isOwner) {
-                Row(
-                    modifier = Modifier
-                        .height(44.dp)
-                        .border(1.5.dp, SoloBlue, RoundedCornerShape(13.dp))
-                        .clickable(onClick = onInvite)
-                        .padding(horizontal = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.PersonAdd,
-                        contentDescription = null,
-                        tint = SoloBlue,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "Invite member",
-                        color = SoloBlue,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+            Row(
+                modifier = Modifier
+                    .height(44.dp)
+                    .border(1.5.dp, SoloBlue, RoundedCornerShape(13.dp))
+                    .clickable(onClick = onInvite)
+                    .padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.PersonAdd,
+                    contentDescription = null,
+                    tint = SoloBlue,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "Invite member",
+                    color = SoloBlue,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }

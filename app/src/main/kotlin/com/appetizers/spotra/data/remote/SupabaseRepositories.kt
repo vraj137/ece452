@@ -751,6 +751,11 @@ class SupabaseHomeRepository(
     override suspend fun loadPublicGroupsSnapshot(excludingId: String?): List<GroupStudySession> =
         loadPublicGroups(excludingId)
 
+    override suspend fun fetchGroupSessionMembers(groupSessionId: String): List<GroupMember> {
+        val userId = client.auth.currentUserOrNull()?.id ?: return emptyList()
+        return runCatching { fetchGroupMembersList(groupSessionId, userId) }.getOrDefault(emptyList())
+    }
+
     override suspend fun loadCheckInAttendees(spotSlug: String): List<CheckedInStudent> {
         val userId = client.auth.currentUserOrNull()?.id ?: return emptyList()
         return runCatching { loadCoAttendees(userId, spotSlug) }.getOrDefault(emptyList())
