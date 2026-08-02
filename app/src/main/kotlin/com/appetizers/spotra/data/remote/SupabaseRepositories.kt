@@ -785,6 +785,10 @@ class SupabaseHomeRepository(
             withTimeout(GROUP_SESSION_SUBSCRIBE_TIMEOUT_MILLIS) {
                 realtimeChannel.subscribe(blockUntilSubscribed = true)
             }
+            // Re-read after the subscription is active so a join committed between the screen's
+            // initial snapshot and WebSocket subscription cannot be missed.
+            val currentMembers = fetchGroupMembersList(groupSessionId, userId)
+            send(GroupSessionEvent.MembersChanged(currentMembers))
             awaitCancellation()
         } finally {
             membersChangedJob.cancelAndJoin()
