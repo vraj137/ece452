@@ -56,7 +56,6 @@ data class StudySpotDetail(
     val capacity: Int? = null,
     val occupancyPercent: Int? = null,
     val occupancyPercentIsLive: Boolean = false,
-    val reportedOccupancyPercent: Int? = null,
     val peopleHere: Int = 0,
     val amenities: List<String> = emptyList(),
     val latitude: Double? = null,
@@ -93,9 +92,12 @@ data class SpotOccupancy(
     val capacity: Int?,
 ) {
     val percent: Int?
-        get() = capacity
-            ?.takeIf { it > 0 }
-            ?.let { ((activeCount.toDouble() / it) * 100).roundToInt().coerceIn(0, 100) }
+        get() = when {
+            activeCount <= 0 -> 0
+            else -> capacity
+                ?.takeIf { it > 0 }
+                ?.let { ((activeCount.toDouble() / it) * 100).roundToInt().coerceIn(0, 100) }
+        }
 
     val badge: String
         get() = when {
@@ -120,7 +122,7 @@ fun StudySpotDetail.withOccupancy(occupancy: SpotOccupancy): StudySpotDetail =
         copy(
             badge = occupancy.badge,
             capacity = occupancy.capacity,
-            occupancyPercent = occupancy.percent ?: reportedOccupancyPercent,
+            occupancyPercent = occupancy.percent,
             occupancyPercentIsLive = occupancy.percent != null,
             peopleHere = occupancy.activeCount,
         )

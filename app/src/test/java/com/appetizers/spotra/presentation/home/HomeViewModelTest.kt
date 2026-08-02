@@ -463,7 +463,6 @@ private class FakeHomeRepository(
             capacity = 24,
             occupancyPercent = 26,
             occupancyPercentIsLive = true,
-            reportedOccupancyPercent = 26,
             peopleHere = 6,
             latitude = soloSpot.latitude,
             longitude = soloSpot.longitude

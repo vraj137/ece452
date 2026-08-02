@@ -35,6 +35,11 @@ interface AuthRepository {
 interface ProfileRepository {
     suspend fun getProfile(userId: String): UserProfile?
     suspend fun saveProfile(profile: UserProfile)
+
+    suspend fun updateLocationVisibility(userId: String, visibility: String) {
+        val current = requireNotNull(getProfile(userId)) { "Profile not found." }
+        saveProfile(current.copy(locationVisibility = visibility))
+    }
 }
 
 interface OnboardingDraftRepository {

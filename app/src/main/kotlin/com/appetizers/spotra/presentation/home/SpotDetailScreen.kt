@@ -189,6 +189,17 @@ internal fun SpotDetailScreen(
             }
     }
 
+    // Realtime is the primary path. This small fallback keeps privacy changes correct if a
+    // device briefly misses a WebSocket event while this detail screen remains open.
+    LaunchedEffect(friendRepository, spotId, "visibility-fallback") {
+        val repository = friendRepository ?: return@LaunchedEffect
+        while (true) {
+            delay(SHARED_LOCATIONS_FALLBACK_REFRESH_MILLIS)
+            friendsAtSpot = runCatching { repository.fetchFriendsAtSpot(spotId) }
+                .getOrDefault(friendsAtSpot)
+        }
+    }
+
     val displayedReviews = when (reviewFilter) {
         ReviewFilter.Friends -> reviews.filter { it.reviewerId == selfId || it.reviewerId in acceptedFriendIds }
         ReviewFilter.All -> reviews
@@ -506,7 +517,7 @@ private fun SpotAvailabilitySummary(spot: StudySpotDetail) {
         occupancy < 75 -> "Filling up"
         else -> "Nearly full"
     }
-    val occupancyDetail = occupancy?.let { "$it% full" } ?: "No recent occupancy report"
+    val occupancyDetail = occupancy?.let { "$it% full" } ?: "Live occupancy unavailable"
     val ratingLabel = spot.rating?.let { String.format(Locale.US, "%.1f", it) } ?: "New"
     val ratingDescription = spot.rating?.let { "${String.format(Locale.US, "%.1f", it)} out of 5 rating" }
         ?: "No ratings yet"
@@ -1206,6 +1217,7 @@ private fun BookRoomBanner(url: String) {
 private val StudySpotDetail.isLive: Boolean get() = peopleHere > 0
 
 private const val SHARED_LOCATIONS_RECONNECT_DELAY_MILLIS = 5_000L
+private const val SHARED_LOCATIONS_FALLBACK_REFRESH_MILLIS = 2_000L
 
 private fun List<FriendProfile>.friendStatusLabel(): String = when (size) {
     0 -> ""

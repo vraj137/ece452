@@ -133,6 +133,15 @@ enum class LocationVisibility(val databaseValue: String) {
         Approximate -> "Friends see the building, not the exact spot"
         Hidden -> "Your checked-in spot stays private"
     }
+
+    companion object {
+        fun fromDatabaseValue(value: String?): LocationVisibility = when (value) {
+            "everyone" -> Everyone
+            "visible" -> Visible
+            "approximate" -> Approximate
+            else -> Hidden
+        }
+    }
 }
 
 class ProfileViewModel(
@@ -170,12 +179,7 @@ class ProfileViewModel(
             val badges = user?.let {
                 runCatching { badgeRepository.getBadges(it.id) }.getOrDefault(emptyList())
             } ?: emptyList()
-            val restoredVisibility = when (profile?.locationVisibility) {
-                "everyone" -> LocationVisibility.Everyone
-                "visible" -> LocationVisibility.Visible
-                "approximate" -> LocationVisibility.Approximate
-                else -> LocationVisibility.Hidden
-            }
+            val restoredVisibility = LocationVisibility.fromDatabaseValue(profile?.locationVisibility)
             _state.value = State(
                 isLoading = false,
                 profile = profile,
@@ -209,27 +213,50 @@ class ProfileViewModel(
     }
 
     fun setLocationVisibility(visibility: LocationVisibility) {
+        val previousProfile = _state.value.profile
+        val previousVisibility = _state.value.locationVisibility
         val updatedProfile = _state.value.profile?.copy(
             locationVisibility = visibility.databaseValue
         )
         _state.value = _state.value.copy(
             profile = updatedProfile,
             locationVisibility = visibility,
+            academicProfileError = null,
         )
         viewModelScope.launch {
+            var attemptedVisibility = visibility
             runCatching {
                 profileSaveMutex.withLock {
                     val latestProfile = _state.value.profile ?: return@withLock
-                    profileRepository.saveProfile(
-                        latestProfile.copy(
-                            locationVisibility = _state.value.locationVisibility.databaseValue
-                        )
+                    attemptedVisibility = _state.value.locationVisibility
+                    profileRepository.updateLocationVisibility(
+                        userId = latestProfile.userId,
+                        visibility = attemptedVisibility.databaseValue,
                     )
                 }
+            }.onSuccess {
+                _state.value = _state.value.copy(academicProfileError = null)
             }.onFailure { error ->
-                _state.value = _state.value.copy(
-                    academicProfileError = error.toUserMessage("Could not update location visibility.")
-                )
+                val authoritativeProfile = previousProfile?.let { profile ->
+                    runCatching { profileRepository.getProfile(profile.userId) }.getOrNull()
+                }
+                _state.value = _state.value.let { current ->
+                    if (current.locationVisibility != attemptedVisibility) {
+                        current.copy(
+                            academicProfileError = error.toUserMessage("Could not update location visibility.")
+                        )
+                    } else {
+                        val restoredProfile = authoritativeProfile ?: previousProfile
+                        val restoredVisibility = authoritativeProfile
+                            ?.let { LocationVisibility.fromDatabaseValue(it.locationVisibility) }
+                            ?: previousVisibility
+                        current.copy(
+                            profile = restoredProfile,
+                            locationVisibility = restoredVisibility,
+                            academicProfileError = error.toUserMessage("Could not update location visibility."),
+                        )
+                    }
+                }
             }
         }
     }

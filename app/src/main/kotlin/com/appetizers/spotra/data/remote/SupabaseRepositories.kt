@@ -116,6 +116,18 @@ class SupabaseProfileRepository(
     override suspend fun saveProfile(profile: UserProfile) {
         client.from("profiles").upsert(profile.toDto())
     }
+
+    override suspend fun updateLocationVisibility(userId: String, visibility: String) {
+        val signedInUserId = client.auth.currentUserOrNull()?.id
+            ?: error("You need to be signed in to change location visibility.")
+        require(signedInUserId == userId) { "You can only change your own location visibility." }
+
+        val savedVisibility = client.postgrest.rpc(
+            "set_location_visibility",
+            buildJsonObject { put("p_visibility", visibility) }
+        ).decodeAs<String>()
+        check(savedVisibility == visibility) { "Location visibility was not saved." }
+    }
 }
 
 @Serializable
@@ -967,9 +979,6 @@ class SupabaseHomeRepository(
         reviews: List<ReviewRow>,
         photos: List<SpotPhoto> = emptyList()
     ): StudySpotDetail {
-        val occupancyValues = reviews.mapNotNull { it.occupancyPercent }
-        val reportedOccupancyPercent = if (occupancyValues.isEmpty()) null
-            else occupancyValues.average().roundToInt().coerceIn(0, 100)
         val aggregates = SpotReviewAggregator.aggregate(
             ratings = reviews.map { it.rating },
             noiseLevels = reviews.map { it.noiseLevel },
@@ -994,9 +1003,8 @@ class SupabaseHomeRepository(
             lighting = aggregates.lighting ?: lighting,
             wifiQuality = aggregates.wifiQuality ?: wifiQuality,
             capacity = capacity,
-            occupancyPercent = liveOccupancyPercent ?: reportedOccupancyPercent,
+            occupancyPercent = liveOccupancyPercent,
             occupancyPercentIsLive = liveOccupancyPercent != null,
-            reportedOccupancyPercent = reportedOccupancyPercent,
             peopleHere = activeCount,
             amenities = amenities,
             latitude = latitude,

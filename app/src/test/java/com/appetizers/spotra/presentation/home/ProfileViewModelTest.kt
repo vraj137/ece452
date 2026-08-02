@@ -110,6 +110,10 @@ private class RecordingProfileRepository(
     override suspend fun saveProfile(profile: UserProfile) {
         savedProfile = profile
     }
+
+    override suspend fun updateLocationVisibility(userId: String, visibility: String) {
+        savedProfile = initialProfile.copy(locationVisibility = visibility)
+    }
 }
 
 private class ProfileAuthRepository : AuthRepository {
