@@ -586,32 +586,14 @@ class SupabaseHomeRepository(
     }
 
     override suspend fun leaveGroup(groupSessionId: String) {
-        val userId = client.auth.currentUserOrNull()?.id
+        client.auth.currentUserOrNull()?.id
             ?: error("You need to be signed in to leave a group.")
         require(groupSessionId.isNotBlank()) { "A live group session is required." }
 
-        val session = client.from("group_sessions")
-            .select { filter { eq("id", groupSessionId) } }
-            .decodeSingleOrNull<GroupSessionDto>()
-            ?: error("This group is no longer active.")
-
-        if (session.createdBy == userId) {
-            client.from("group_sessions").update({
-                set("ended_at", Instant.now().toString())
-            }) {
-                filter {
-                    eq("id", groupSessionId)
-                    exact("ended_at", null)
-                }
-            }
-        } else {
-            client.from("group_session_members").delete {
-                filter {
-                    eq("session_id", groupSessionId)
-                    eq("user_id", userId)
-                }
-            }
-        }
+        client.postgrest.rpc(
+            "leave_group_session",
+            buildJsonObject { put("p_group_session_id", groupSessionId) }
+        ).decodeAs<String>()
 
         if (activeGroupSessionId == groupSessionId) {
             activeGroupSessionId = null
