@@ -69,6 +69,7 @@ interface BadgeRepository {
 
 interface HomeRepository {
     fun observeOccupancy(): Flow<SpotOccupancy> = emptyFlow()
+    suspend fun loadSharedLocationCounts(): Map<String, Int> = emptyMap()
     fun observeGroupSession(groupSessionId: String): Flow<GroupSessionEvent> = emptyFlow()
     suspend fun loadHome(): HomeSnapshot
     suspend fun fetchActiveCheckIn(): Pair<CheckInSession, Long>? = null

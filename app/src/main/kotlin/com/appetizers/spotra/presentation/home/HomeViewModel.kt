@@ -114,6 +114,7 @@ class HomeViewModel(
 
     init {
         observeOccupancy()
+        observeSharedLocations()
         observePublicGroups()
         loadHome()
         subscribeGroupInvites()
@@ -833,6 +834,29 @@ class HomeViewModel(
         }
     }
 
+    private fun observeSharedLocations() {
+        viewModelScope.launch {
+            friendRepository.observeSharedLocations()
+                .retryWhen { _, _ ->
+                    delay(SHARED_LOCATIONS_RECONNECT_DELAY_MILLIS)
+                    true
+                }
+                .catch { /* shared-location updates are best-effort */ }
+                .collect {
+                    val counts = runCatching { repository.loadSharedLocationCounts() }.getOrNull()
+                        ?: return@collect
+                    _uiState.update { state ->
+                        state.copy(
+                            soloSpot = state.soloSpot?.withSharedLocationCount(counts),
+                            groupSpots = state.groupSpots.map { it.withSharedLocationCount(counts) },
+                            mapSpots = state.mapSpots.map { it.withSharedLocationCount(counts) },
+                        )
+                    }
+                    _uiState.value.activeCheckIn?.spot?.id?.let(::refreshCheckInAttendees)
+                }
+        }
+    }
+
     private fun observePublicGroups() {
         viewModelScope.launch {
             repository.observePublicGroups()
@@ -884,6 +908,9 @@ class HomeViewModel(
     }
 }
 
+private fun StudySpotSummary.withSharedLocationCount(counts: Map<String, Int>): StudySpotSummary =
+    copy(friendsHere = counts[id] ?: 0)
+
 private fun StudySpotSummary.withKnownOccupancy(
     occupancies: Map<String, SpotOccupancy>
 ): StudySpotSummary =
@@ -895,6 +922,7 @@ private fun List<StudySpotSummary>.withKnownOccupancy(
     map { it.withKnownOccupancy(occupancies) }
 
 private const val OCCUPANCY_RECONNECT_DELAY_MILLIS = 5_000L
+private const val SHARED_LOCATIONS_RECONNECT_DELAY_MILLIS = 5_000L
 private const val GROUP_OBSERVER_RECONNECT_DELAY_MILLIS = 5_000L
 private const val PUBLIC_GROUPS_RECONNECT_DELAY_MILLIS = 5_000L
 private const val GROUP_INVITE_RECONNECT_DELAY_MILLIS = 5_000L

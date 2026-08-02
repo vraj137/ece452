@@ -79,6 +79,19 @@ class ProfileViewModelTest {
         assertEquals(LocationVisibility.Visible, viewModel.state.value.locationVisibility)
     }
 
+    @Test
+    fun `everyone visibility persists its explicit database value`() = runTest(dispatcher) {
+        val profiles = RecordingProfileRepository(initialProfile)
+        val viewModel = buildViewModel(profiles)
+        advanceUntilIdle()
+
+        viewModel.setLocationVisibility(LocationVisibility.Everyone)
+        advanceUntilIdle()
+
+        assertEquals("everyone", profiles.savedProfile?.locationVisibility)
+        assertEquals(LocationVisibility.Everyone, viewModel.state.value.locationVisibility)
+    }
+
     private fun buildViewModel(profiles: ProfileRepository) = ProfileViewModel(
         profileRepository = profiles,
         authRepository = ProfileAuthRepository(),

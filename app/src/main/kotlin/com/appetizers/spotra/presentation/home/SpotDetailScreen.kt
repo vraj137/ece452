@@ -96,6 +96,8 @@ import com.appetizers.spotra.domain.repository.HomeRepository
 import com.appetizers.spotra.domain.repository.ReviewRepository
 import com.appetizers.spotra.presentation.toUserMessage
 import java.util.Locale
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.launch
 
 private enum class ReviewFilter { Friends, All }
@@ -172,6 +174,19 @@ internal fun SpotDetailScreen(
                 }.getOrDefault(friendsAtSpot)
             }
         }
+    }
+
+    LaunchedEffect(friendRepository, spotId) {
+        val repository = friendRepository ?: return@LaunchedEffect
+        repository.observeSharedLocations()
+            .retryWhen { _, _ ->
+                delay(SHARED_LOCATIONS_RECONNECT_DELAY_MILLIS)
+                true
+            }
+            .collect {
+                friendsAtSpot = runCatching { repository.fetchFriendsAtSpot(spotId) }
+                    .getOrDefault(friendsAtSpot)
+            }
     }
 
     val displayedReviews = when (reviewFilter) {
@@ -1189,6 +1204,8 @@ private fun BookRoomBanner(url: String) {
 }
 
 private val StudySpotDetail.isLive: Boolean get() = peopleHere > 0
+
+private const val SHARED_LOCATIONS_RECONNECT_DELAY_MILLIS = 5_000L
 
 private fun List<FriendProfile>.friendStatusLabel(): String = when (size) {
     0 -> ""

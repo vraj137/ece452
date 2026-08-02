@@ -306,6 +306,12 @@ class SupabaseHomeRepository(
     private var cachedFirstName: String = "there"
     private var spotCache: Map<String, StudySpotSummary> = emptyMap()
 
+    override suspend fun loadSharedLocationCounts(): Map<String, Int> =
+        client.postgrest.rpc("friends_all_spots")
+            .decodeList<FriendsAllSpotsRow>()
+            .groupingBy { it.spotSlug }
+            .eachCount()
+
     override fun observeOccupancy(): Flow<SpotOccupancy> = channelFlow {
         val realtimeChannel = client.channel(OCCUPANCY_CHANNEL) {
             isPrivate = true
@@ -355,10 +361,7 @@ class SupabaseHomeRepository(
         }
         val friendsAtSpotsDeferred = async {
             runCatching {
-                client.postgrest.rpc("friends_all_spots")
-                    .decodeList<FriendsAllSpotsRow>()
-                    .groupBy { it.spotSlug }
-                    .mapValues { (_, rows) -> rows.size }
+                loadSharedLocationCounts()
             }.getOrDefault(emptyMap())
         }
 

@@ -23,4 +23,5 @@ interface FriendRepository {
     suspend fun fetchFriendsAtSpot(spotSlug: String): List<FriendProfile>
 
     fun observeFriendRequests(currentUserId: String): Flow<Unit> = emptyFlow()
+    fun observeSharedLocations(): Flow<Unit> = emptyFlow()
 }

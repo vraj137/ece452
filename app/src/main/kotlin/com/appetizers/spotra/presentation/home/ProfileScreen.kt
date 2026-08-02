@@ -115,17 +115,23 @@ private fun Int.toDurationLabel(): String {
     }
 }
 
-enum class LocationVisibility {
-    Visible, Approximate, Hidden;
+enum class LocationVisibility(val databaseValue: String) {
+    Everyone("everyone"),
+    Visible("visible"),
+    Approximate("approximate"),
+    Hidden("hidden");
+
     val label get() = when (this) {
+        Everyone -> "Visible to everyone"
         Visible -> "Visible to friends"
         Approximate -> "Approximate only"
         Hidden -> "Hidden"
     }
     val description get() = when (this) {
-        Visible -> "Friends can see which spot you're at"
-        Approximate -> "Friends see your general area only"
-        Hidden -> "Your activity is private"
+        Everyone -> "Anyone signed in can see your active checked-in spot"
+        Visible -> "Friends can see your active checked-in spot"
+        Approximate -> "Friends see the building, not the exact spot"
+        Hidden -> "Your checked-in spot stays private"
     }
 }
 
@@ -165,6 +171,7 @@ class ProfileViewModel(
                 runCatching { badgeRepository.getBadges(it.id) }.getOrDefault(emptyList())
             } ?: emptyList()
             val restoredVisibility = when (profile?.locationVisibility) {
+                "everyone" -> LocationVisibility.Everyone
                 "visible" -> LocationVisibility.Visible
                 "approximate" -> LocationVisibility.Approximate
                 else -> LocationVisibility.Hidden
@@ -203,7 +210,7 @@ class ProfileViewModel(
 
     fun setLocationVisibility(visibility: LocationVisibility) {
         val updatedProfile = _state.value.profile?.copy(
-            locationVisibility = visibility.name.lowercase()
+            locationVisibility = visibility.databaseValue
         )
         _state.value = _state.value.copy(
             profile = updatedProfile,
@@ -215,7 +222,7 @@ class ProfileViewModel(
                     val latestProfile = _state.value.profile ?: return@withLock
                     profileRepository.saveProfile(
                         latestProfile.copy(
-                            locationVisibility = _state.value.locationVisibility.name.lowercase()
+                            locationVisibility = _state.value.locationVisibility.databaseValue
                         )
                     )
                 }

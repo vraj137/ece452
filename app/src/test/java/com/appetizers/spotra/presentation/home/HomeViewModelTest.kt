@@ -57,14 +57,17 @@ class HomeViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun buildViewModel(home: HomeRepository = FakeHomeRepository()) = HomeViewModel(
+    private fun buildViewModel(
+        home: HomeRepository = FakeHomeRepository(),
+        friends: FriendRepository = NoOpFriendRepository(),
+    ) = HomeViewModel(
         repository = home,
         authRepository = NullAuthRepository(),
         streakRepository = NoOpStreakRepository(),
         reviewRepository = NoOpReviewRepository(),
         awardBadgesUseCase = AwardBadgesUseCase(NoOpBadgeRepository(), NoOpReviewRepository()),
         locationRepository = NoOpLocationRepository(),
-        friendRepository = NoOpFriendRepository(),
+        friendRepository = friends,
     )
 
     @Test
@@ -132,6 +135,23 @@ class HomeViewModelTest {
             listOf("you", "akshat", "new-member"),
             viewModel.uiState.value.groupSession?.members?.map { it.id }
         )
+    }
+
+    @Test
+    fun `shared location broadcasts refresh visible check in counts`() = runTest(dispatcher) {
+        val repository = FakeHomeRepository()
+        val friends = RealtimeFriendRepository()
+        val viewModel = buildViewModel(repository, friends)
+        advanceUntilIdle()
+
+        repository.sharedLocationCounts = mapOf("e7-study-hall" to 2)
+        friends.sharedLocationUpdates.emit(Unit)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(2, state.soloSpot?.friendsHere)
+        assertEquals(2, state.mapSpots.first { it.id == "e7-study-hall" }.friendsHere)
+        assertEquals(0, state.mapSpots.first { it.id == "dc-library" }.friendsHere)
     }
 
     @Test
@@ -378,6 +398,7 @@ private class FakeHomeRepository(
 ) : HomeRepository {
     val occupancyUpdates = MutableSharedFlow<SpotOccupancy>(extraBufferCapacity = 1)
     val groupSessionEvents = MutableSharedFlow<GroupSessionEvent>(extraBufferCapacity = 1)
+    var sharedLocationCounts: Map<String, Int> = emptyMap()
     var lastStartGroupSessionId: String? = null
         private set
     var lastCreatedGroupName: String? = null
@@ -393,6 +414,7 @@ private class FakeHomeRepository(
 
     override fun observeOccupancy() = occupancyUpdates
     override fun observeGroupSession(groupSessionId: String) = groupSessionEvents
+    override suspend fun loadSharedLocationCounts(): Map<String, Int> = sharedLocationCounts
 
     private val soloSpot = StudySpotSummary(
         id = "e7-study-hall",
@@ -556,6 +578,21 @@ private class NoOpFriendRepository : FriendRepository {
     override suspend fun declineRequest(friendshipId: String) = Unit
     override suspend fun removeFriendship(friendshipId: String) = Unit
     override suspend fun fetchFriendsAtSpot(spotSlug: String): List<FriendProfile> = emptyList()
+}
+
+private class RealtimeFriendRepository : FriendRepository {
+    val sharedLocationUpdates = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+
+    override suspend fun currentUserId(): String? = null
+    override suspend fun fetchFriendProfiles(): List<FriendProfile> = emptyList()
+    override suspend fun searchUsers(query: String, excludeIds: Set<String>): List<FriendProfile> = emptyList()
+    override suspend fun fetchSuggested(acceptedFriendIds: Set<String>): List<FriendProfile> = emptyList()
+    override suspend fun sendRequest(toUserId: String) = Unit
+    override suspend fun acceptRequest(friendshipId: String) = Unit
+    override suspend fun declineRequest(friendshipId: String) = Unit
+    override suspend fun removeFriendship(friendshipId: String) = Unit
+    override suspend fun fetchFriendsAtSpot(spotSlug: String): List<FriendProfile> = emptyList()
+    override fun observeSharedLocations() = sharedLocationUpdates
 }
 
 private class NoOpBadgeRepository : BadgeRepository {

@@ -161,6 +161,24 @@ class SupabaseFriendRepository(
         }
     }.buffer(Channel.CONFLATED)
 
+    override fun observeSharedLocations(): Flow<Unit> = channelFlow {
+        val realtimeChannel = client.channel(SHARED_LOCATIONS_CHANNEL) { isPrivate = true }
+        val collector = launch(start = CoroutineStart.UNDISPATCHED) {
+            realtimeChannel
+                .broadcastFlow<SharedLocationsChangedBroadcast>(SHARED_LOCATIONS_EVENT)
+                .collect { send(Unit) }
+        }
+        try {
+            withTimeout(SHARED_LOCATIONS_SUBSCRIBE_TIMEOUT_MILLIS) {
+                realtimeChannel.subscribe(blockUntilSubscribed = true)
+            }
+            awaitCancellation()
+        } finally {
+            collector.cancelAndJoin()
+            client.realtime.removeChannel(realtimeChannel)
+        }
+    }.buffer(Channel.CONFLATED)
+
     private suspend fun safeProfiles(
         ids: List<String>? = null,
         query: String? = null,
@@ -224,4 +242,12 @@ private data class FriendRequestBroadcast(
     val status: String = "pending"
 )
 
+@Serializable
+private data class SharedLocationsChangedBroadcast(
+    val changed: Boolean = true,
+)
+
 private const val FRIEND_REQUEST_SUBSCRIBE_TIMEOUT_MILLIS = 15_000L
+private const val SHARED_LOCATIONS_CHANNEL = "shared-locations"
+private const val SHARED_LOCATIONS_EVENT = "shared_locations_changed"
+private const val SHARED_LOCATIONS_SUBSCRIBE_TIMEOUT_MILLIS = 15_000L
