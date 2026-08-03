@@ -724,7 +724,7 @@ private fun ProfileStats(sessions: List<CompletedSession>) {
     ) {
         StatCard(value = totalDisplay, label = "STUDIED", modifier = Modifier.weight(1f))
         StatCard(value = "$uniqueSpots", label = "SPOTS", modifier = Modifier.weight(1f))
-        StatCard(value = "$thisWeek", label = "THIS WEEK", modifier = Modifier.weight(1f))
+        StatCard(value = "$thisWeek", label = "SESSIONS\nTHIS WEEK", modifier = Modifier.weight(1f))
     }
 }
 
@@ -747,7 +747,8 @@ private fun StatCard(value: String, label: String, modifier: Modifier = Modifier
             text = label,
             color = SectionLabel,
             fontSize = 11.sp,
-            fontWeight = FontWeight.ExtraBold
+            fontWeight = FontWeight.ExtraBold,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
     }
 }
