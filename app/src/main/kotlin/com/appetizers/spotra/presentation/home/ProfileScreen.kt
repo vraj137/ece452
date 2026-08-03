@@ -715,7 +715,6 @@ private fun ProfileStats(sessions: List<CompletedSession>) {
     val uniqueSpots = sessions.map { it.spotName }.distinct().size
     val weekAgo = System.currentTimeMillis() - 7L * 24 * 60 * 60 * 1000
     val thisWeek = sessions.count { it.finishedAtMillis >= weekAgo }
-
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -724,7 +723,7 @@ private fun ProfileStats(sessions: List<CompletedSession>) {
     ) {
         StatCard(value = totalDisplay, label = "STUDIED", modifier = Modifier.weight(1f))
         StatCard(value = "$uniqueSpots", label = "SPOTS", modifier = Modifier.weight(1f))
-        StatCard(value = "$thisWeek", label = "SESSIONS\nTHIS WEEK", modifier = Modifier.weight(1f))
+        StatCard(value = "$thisWeek", label = "SESSIONS", modifier = Modifier.weight(1f))
     }
 }
 
