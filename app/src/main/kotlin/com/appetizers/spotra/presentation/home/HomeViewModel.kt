@@ -811,6 +811,9 @@ class HomeViewModel(
                             activeCheckIn = state.activeCheckIn?.let { session ->
                                 session.copy(spot = session.spot.withOccupancy(occupancy))
                             },
+                            trendingCounts = occupancy.checkIns7d?.let { checkIns7d ->
+                                state.trendingCounts + (occupancy.spotId to checkIns7d)
+                            } ?: state.trendingCounts,
                         )
                     }
                     val activeSpotId = _uiState.value.activeCheckIn?.spot?.id

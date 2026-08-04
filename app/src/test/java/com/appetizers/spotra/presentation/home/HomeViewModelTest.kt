@@ -103,6 +103,7 @@ class HomeViewModelTest {
                 spotId = "e7-study-hall",
                 activeCount = 18,
                 capacity = 20,
+                checkIns7d = 31,
             )
         )
         advanceUntilIdle()
@@ -112,6 +113,7 @@ class HomeViewModelTest {
         assertEquals("Busy", state.soloSpot?.badge)
         assertEquals(90, state.mapSpots.first { it.id == "e7-study-hall" }.occupancyPercent)
         assertEquals(18, state.occupancyBySpot["e7-study-hall"]?.activeCount)
+        assertEquals(31, state.trendingCounts["e7-study-hall"])
     }
 
     @Test
