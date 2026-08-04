@@ -259,6 +259,7 @@ fun HomeScreen(
             spotSlug = slug,
             reviewRepository = reviewRepository,
             existingReview = editingReview,
+            onSubmitted = viewModel::refresh,
             onBack = {
                 reviewingSpotId = null
                 editingReview = null

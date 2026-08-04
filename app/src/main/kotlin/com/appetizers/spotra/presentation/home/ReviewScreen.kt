@@ -69,6 +69,7 @@ internal fun ReviewScreen(
     spotSlug: String,
     reviewRepository: ReviewRepository,
     existingReview: Review? = null,
+    onSubmitted: () -> Unit = {},
     onBack: () -> Unit
 ) {
     var rating by remember(existingReview?.id) { mutableIntStateOf(existingReview?.rating ?: 0) }
@@ -163,6 +164,7 @@ internal fun ReviewScreen(
                                 } else {
                                     reviewRepository.update(existingReview.id, draft)
                                 }
+                                onSubmitted()
                                 submitted = true
                             }.onFailure {
                                 error = friendlyError(it)
