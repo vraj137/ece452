@@ -90,6 +90,7 @@ data class SpotOccupancy(
     val spotId: String,
     val activeCount: Int,
     val capacity: Int?,
+    val checkIns7d: Int? = null,
 ) {
     val percent: Int?
         get() = when {

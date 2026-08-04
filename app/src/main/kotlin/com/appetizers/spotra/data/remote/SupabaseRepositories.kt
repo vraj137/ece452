@@ -229,6 +229,7 @@ private data class OccupancyBroadcast(
     @SerialName("spot_slug") val spotSlug: String,
     @SerialName("active_count") val activeCount: Int,
     val capacity: Int? = null,
+    @SerialName("checkins_7d") val checkIns7d: Int? = null,
 )
 
 @Serializable
@@ -337,6 +338,7 @@ class SupabaseHomeRepository(
                             spotId = update.spotSlug,
                             activeCount = update.activeCount,
                             capacity = update.capacity,
+                            checkIns7d = update.checkIns7d,
                         )
                     )
                 }
