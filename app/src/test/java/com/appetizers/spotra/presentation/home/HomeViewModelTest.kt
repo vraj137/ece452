@@ -60,12 +60,13 @@ class HomeViewModelTest {
     private fun buildViewModel(
         home: HomeRepository = FakeHomeRepository(),
         friends: FriendRepository = NoOpFriendRepository(),
+        reviews: ReviewRepository = NoOpReviewRepository(),
     ) = HomeViewModel(
         repository = home,
         authRepository = NullAuthRepository(),
         streakRepository = NoOpStreakRepository(),
-        reviewRepository = NoOpReviewRepository(),
-        awardBadgesUseCase = AwardBadgesUseCase(NoOpBadgeRepository(), NoOpReviewRepository()),
+        reviewRepository = reviews,
+        awardBadgesUseCase = AwardBadgesUseCase(NoOpBadgeRepository(), reviews),
         locationRepository = NoOpLocationRepository(),
         friendRepository = friends,
     )
@@ -378,6 +379,34 @@ class HomeViewModelTest {
     }
 
     @Test
+    fun `posting checkout review refreshes filterable spot attributes`() = runTest(dispatcher) {
+        val home = FakeHomeRepository()
+        val reviews = RecordingReviewRepository()
+        val viewModel = buildViewModel(home = home, reviews = reviews)
+        advanceUntilIdle()
+
+        viewModel.startCheckIn(requireNotNull(viewModel.uiState.value.soloSpot), StudyMode.Solo)
+        advanceUntilIdle()
+        viewModel.checkOut()
+        advanceUntilIdle()
+        val loadCountBeforeReview = home.loadHomeCalls
+
+        viewModel.submitPostCheckoutReview(
+            rating = 5,
+            noiseLevel = "Silent",
+            lighting = "Natural",
+            wifiQuality = "Fast",
+            occupancyPercent = 40,
+            comment = "Quiet and bright",
+        )
+        advanceUntilIdle()
+
+        assertEquals(loadCountBeforeReview + 1, home.loadHomeCalls)
+        assertEquals("Silent", reviews.lastSubmittedDraft?.noiseLevel)
+        assertFalse(viewModel.uiState.value.showReviewPrompt)
+    }
+
+    @Test
     fun `successful group check in uses group session and invokes success callback`() = runTest(dispatcher) {
         val repository = FakeHomeRepository()
         val viewModel = buildViewModel(repository)
@@ -434,6 +463,8 @@ private class FakeHomeRepository(
     initialGroupSession: GroupStudySession? = defaultGroupSession(),
     initialPublicGroups: List<GroupStudySession> = emptyList(),
 ) : HomeRepository {
+    var loadHomeCalls = 0
+        private set
     val occupancyUpdates = MutableSharedFlow<SpotOccupancy>(extraBufferCapacity = 1)
     val groupSessionEvents = MutableSharedFlow<GroupSessionEvent>(extraBufferCapacity = 1)
     var sharedLocationCounts: Map<String, Int> = emptyMap()
@@ -484,8 +515,9 @@ private class FakeHomeRepository(
         longitude = -80.5424
     )
 
-    override suspend fun loadHome(): HomeSnapshot =
-        HomeSnapshot(
+    override suspend fun loadHome(): HomeSnapshot {
+        loadHomeCalls += 1
+        return HomeSnapshot(
             userFirstName = "Vraj",
             soloSpot = soloSpot,
             groupSession = activeGroupSession,
@@ -493,6 +525,7 @@ private class FakeHomeRepository(
             publicGroups = publicGroups,
             mapSpots = listOf(soloSpot, secondaryMapSpot)
         )
+    }
 
     override suspend fun spotDetail(spotId: String): StudySpotDetail =
         StudySpotDetail(
@@ -648,6 +681,20 @@ private class NoOpBadgeRepository : BadgeRepository {
 private class NoOpReviewRepository : ReviewRepository {
     override suspend fun reviewsFor(spotSlug: String): List<Review> = emptyList()
     override suspend fun submit(draft: ReviewDraft) = Unit
+    override suspend fun update(reviewId: String, draft: ReviewDraft) = Unit
+    override suspend fun delete(reviewId: String) = Unit
+    override suspend fun getReviewCount(userId: String) = 0
+    override suspend fun getQualityReviewCount(userId: String) = 0
+}
+
+private class RecordingReviewRepository : ReviewRepository {
+    var lastSubmittedDraft: ReviewDraft? = null
+        private set
+
+    override suspend fun reviewsFor(spotSlug: String): List<Review> = emptyList()
+    override suspend fun submit(draft: ReviewDraft) {
+        lastSubmittedDraft = draft
+    }
     override suspend fun update(reviewId: String, draft: ReviewDraft) = Unit
     override suspend fun delete(reviewId: String) = Unit
     override suspend fun getReviewCount(userId: String) = 0

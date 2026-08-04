@@ -299,6 +299,7 @@ class HomeViewModel(
                             newBadge = reviewBadge ?: checkoutBadge,
                         )
                     }
+                    refresh()
                 }
                 .onFailure { throwable ->
                     _uiState.update {
